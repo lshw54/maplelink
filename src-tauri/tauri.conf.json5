@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MapleLink",
+  "version": "0.1.0",
+  "identifier": "com.maplelink.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "MAPLELINK",
+        "width": 340,
+        "height": 520,
+        "decorations": false,
+        "transparent": false,
+        "resizable": false,
+        "shadow": true,
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msSmartScreenProtection,msPasswordManagerAutoFill,msAutofillEdge --edge-webview-enable-builtin-background-extensions=0"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.beanfun.com; style-src 'self' 'unsafe-inline' https://*.beanfun.com; img-src 'self' https://*.beanfun.com https://*.gamania.com data:; font-src 'self' https://*.beanfun.com; connect-src 'self' https://*.beanfun.com; object-src 'none'; base-uri 'self'; form-action https://*.beanfun.com 'self'; frame-src https://*.beanfun.com https://*.gamania.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources/lr/*"],
+    "copyright": "© 2026 MapleLink",
+    "shortDescription": "Third-party launcher for Beanfun games",
+    "longDescription": "MapleLink is a modern third-party launcher for Beanfun games built with Tauri v2, supporting HK and TW regions.",
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

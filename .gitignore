@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# AI tool local settings
+.kiro/
+
+# Temp build artifacts
+app-icon-square.png
+app-icon.jpg
+tsconfig.tsbuildinfo

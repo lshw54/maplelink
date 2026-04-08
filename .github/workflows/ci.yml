@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── PR Check: runs on every push & PR ──────────────────────────
+  rust-checks:
+    name: Rust (fmt + clippy + test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo fmt --all --check
+        run: cargo fmt --all --check
+        working-directory: src-tauri
+
+      - name: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+
+      - name: cargo test
+        run: cargo test
+        working-directory: src-tauri
+
+  frontend-checks:
+    name: Frontend (lint + format + typecheck)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: npm run lint
+        run: npm run lint
+
+      - name: prettier --check
+        run: npx prettier --check "src/**/*.{ts,tsx,css,json}"
+
+      - name: tsc --noEmit
+        run: npx tsc -b --noEmit
+
+  # ── Merge to main: full Tauri build ────────────────────────────
+  tauri-build:
+    name: Tauri Build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [rust-checks, frontend-checks]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: cargo tauri build
+        run: cargo install tauri-cli --version "^2" && cargo tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
