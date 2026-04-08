@@ -23,6 +23,36 @@ use models::app_state::AppState;
 use models::config::AppConfig;
 use services::{account_storage, config_service, update_service};
 
+/// Check if the current process is running with admin privileges.
+#[cfg(target_os = "windows")]
+fn is_elevated() -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+
+        let mut elevation: TOKEN_ELEVATION = std::mem::zeroed();
+        let mut size = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut size,
+        );
+        CloseHandle(token);
+
+        ok != 0 && elevation.TokenIsElevated != 0
+    }
+}
+
 /// Initialise and run the Tauri application.
 ///
 /// Startup sequence:
@@ -35,6 +65,43 @@ use services::{account_storage, config_service, update_service};
 ///    d. Check for auto-update (non-blocking, respects config toggle)
 /// 4. Window starts at login size (340×520) — defined in `tauri.conf.json5`
 pub fn run() {
+    // Self-elevate to admin if not already elevated.
+    // Required for auto-paste (PostMessage to game window) and LR DLL injection.
+    #[cfg(target_os = "windows")]
+    {
+        if !is_elevated() {
+            let exe = std::env::current_exe().expect("failed to get current exe path");
+            let exe_str = exe.to_string_lossy();
+
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            fn to_wide(s: &str) -> Vec<u16> {
+                OsStr::new(s)
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect()
+            }
+
+            let verb = to_wide("runas");
+            let file = to_wide(&exe_str);
+            let result = unsafe {
+                windows_sys::Win32::UI::Shell::ShellExecuteW(
+                    std::ptr::null_mut(),
+                    verb.as_ptr(),
+                    file.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+                )
+            };
+            if result as usize > 32 {
+                // Successfully launched elevated instance, exit this one
+                std::process::exit(0);
+            }
+            // If ShellExecute failed (user cancelled UAC), continue without admin
+        }
+    }
+
     tauri::Builder::default()
         // -- Plugins --------------------------------------------------------
         .plugin(tauri_plugin_dialog::init())
@@ -198,6 +265,15 @@ pub fn run() {
             } else {
                 tracing::info!("auto-update disabled, skipping startup check");
             }
+
+            // 5. Pre-extract LR files so they're ready for game launch.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match services::lr_service::ensure_lr_files(&app_handle).await {
+                    Ok(path) => tracing::info!("LR files ready at {}", path.display()),
+                    Err(e) => tracing::warn!("failed to extract LR files: {e}"),
+                }
+            });
 
             // Window starts at login page size (340×520) per tauri.conf.json5.
             tracing::info!("startup complete — showing login page");

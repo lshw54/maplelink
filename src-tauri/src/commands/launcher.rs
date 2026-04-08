@@ -228,6 +228,34 @@ async fn kill_patcher_loop(game_dir: &str) {
 /// `traditional_login=true`: only GUID + game path (user logs in manually in-game).
 /// `traditional_login=false`: GUID + game path + server/port/BeanFun/account/otp
 ///   (game auto-connects with credentials).
+/// Launch the game via Locale Remulator.
+///
+/// `traditional_login=true`: only GUID + game path (user logs in manually).
+/// `traditional_login=false` + TW: also passes server/port/account/otp.
+/// Launch the game via Locale Remulator.
+///
+/// Uses ShellExecuteW (matching C# UseShellExecute=true) to avoid
+/// flashing a console window for LRProc.exe.
+/// Launch the game via Locale Remulator.
+///
+/// Uses CreateProcessW with SW_HIDE to prevent console window flash.
+/// Launch the game via Locale Remulator.
+///
+/// Uses ShellExecuteW matching C# `UseShellExecute = true`.
+/// LRProc.exe is GUI subsystem so ShellExecuteW won't open a console.
+/// Launch the game via Locale Remulator.
+///
+/// Matches C# exactly: ShellExecuteW with "runas" verb.
+/// Launch the game via Locale Remulator.
+///
+/// Since maplelink.exe self-elevates to admin on startup, LRProc inherits
+/// admin privileges. Uses CreateProcessW with SW_HIDE to avoid console flash.
+/// Launch the game via Locale Remulator.
+///
+/// Matches C# `startByLR` exactly:
+/// - LR files are in the same directory as maplelink.exe
+/// - ShellExecuteW (no console window for GUI subsystem exe)
+/// - WorkingDirectory = game directory
 async fn launch_with_lr(
     app: &tauri::AppHandle,
     launch_cmd: &game_launcher::LaunchCommand,
@@ -238,13 +266,11 @@ async fn launch_with_lr(
     let lr_proc = lr_service::ensure_lr_files(app).await?;
     let lr_path = lr_proc.to_string_lossy().to_string();
 
-    // Only TW supports direct login via command line args.
-    // HK uses login_action_type=8 which doesn't support command line login —
-    // HK always launches the game then auto-pastes credentials.
     let use_cmd_args = !traditional_login && matches!(region, crate::models::session::Region::TW);
 
+    // C# builds: commandLine = "\"gamepath\" " + command
+    // Then: Arguments = "GUID " + commandLine
     let lr_args = if use_cmd_args {
-        // TW non-traditional: GUID "gamepath" server port BeanFun account otp
         format!(
             "{} \"{}\" tw.login.maplestory.beanfun.com 8484 BeanFun {} {}",
             lr_service::LR_PROFILE_GUID,
@@ -253,7 +279,6 @@ async fn launch_with_lr(
             credentials.otp,
         )
     } else {
-        // Traditional / HK: just launch the game
         format!(
             "{} \"{}\"",
             lr_service::LR_PROFILE_GUID,
@@ -268,26 +293,42 @@ async fn launch_with_lr(
         "launching game via Locale Remulator"
     );
 
+    // C# uses: UseShellExecute = true (no console window)
+    // Since maplelink.exe self-elevates, we don't need "runas" verb.
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
 
-        let ps_cmd = format!(
-            "-NoProfile -Command Start-Process -FilePath '{}' -ArgumentList '{}' -WorkingDirectory '{}'",
-            lr_path, lr_args, launch_cmd.working_dir
-        );
+        fn to_wide(s: &str) -> Vec<u16> {
+            OsStr::new(s)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        }
 
-        Command::new("powershell")
-            .raw_arg(&ps_cmd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e: std::io::Error| ProcessError::SpawnFailed {
-                path: lr_path.clone(),
-                reason: e.to_string(),
-            })?;
+        let file = to_wide(&lr_path);
+        let params = to_wide(&lr_args);
+        let dir = to_wide(&launch_cmd.working_dir);
+
+        let result = unsafe {
+            windows_sys::Win32::UI::Shell::ShellExecuteW(
+                std::ptr::null_mut(),
+                std::ptr::null(), // default verb (open)
+                file.as_ptr(),
+                params.as_ptr(),
+                dir.as_ptr(),
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            )
+        };
+
+        let result_int = result as usize;
+        if result_int <= 32 {
+            return Err(ProcessError::SpawnFailed {
+                path: lr_path,
+                reason: format!("ShellExecuteW failed with code {result_int}"),
+            });
+        }
 
         Ok(0)
     }

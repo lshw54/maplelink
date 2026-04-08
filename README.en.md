@@ -12,7 +12,7 @@
   <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://github.com/lshw54/maplelink/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/lshw54/maplelink" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
 
 <p align="center">

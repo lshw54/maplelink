@@ -253,6 +253,7 @@ mod tests {
                         debug_logging,
                         gamepass_incognito: true,
                         font_size: crate::models::config::FontSize::Medium,
+                        traditional_login: true,
                     }
                 },
             )

@@ -102,6 +102,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 debug_logging,
                 gamepass_incognito,
                 font_size,
+                traditional_login: true,
             }
         },
     )

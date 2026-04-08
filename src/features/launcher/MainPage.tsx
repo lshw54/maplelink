@@ -53,7 +53,7 @@ export function MainPage() {
     }
   }, [isAuthenticated, setPage]);
 
-  // Fetch remain points on mount
+  // Fetch remain points on mount + auto-detect game path if empty
   useEffect(() => {
     commands
       .getRemainPoint()
@@ -63,6 +63,22 @@ export function MainPage() {
       .getAppVersion()
       .then(setAppVersion)
       .catch(() => {});
+    // Auto-detect game path if not set
+    const currentConfig = useConfigStore.getState().config;
+    if (!currentConfig?.gamePath) {
+      commands
+        .detectGamePath()
+        .then((path) => {
+          if (path) {
+            commands.setConfig("game_path", path).catch(() => {});
+            const current = useConfigStore.getState().config;
+            if (current) {
+              useConfigStore.getState().setConfig({ ...current, gamePath: path });
+            }
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   // Session keep-alive: ping every 60 seconds (matching C# PingWorker)

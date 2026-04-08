@@ -165,8 +165,14 @@ pub async fn detect_game_path(
                     if let Ok(key) = hkcu.open_subkey(&reg_path) {
                         if let Ok(dir) = key.get_value::<String, _>(&val_name) {
                             if !dir.is_empty() {
-                                let full = std::path::Path::new(&dir).join(&exe_name);
-                                let full_str = full.to_string_lossy().to_string();
+                                let full_str = if dir.to_lowercase().ends_with(".exe") {
+                                    dir
+                                } else {
+                                    std::path::Path::new(&dir)
+                                        .join(&exe_name)
+                                        .to_string_lossy()
+                                        .to_string()
+                                };
                                 tracing::info!("detected game path from HKCU: {full_str}");
                                 return Ok(Some(full_str));
                             }
@@ -177,8 +183,14 @@ pub async fn detect_game_path(
                     if let Ok(key) = hklm.open_subkey(&reg_path) {
                         if let Ok(dir) = key.get_value::<String, _>(&val_name) {
                             if !dir.is_empty() {
-                                let full = std::path::Path::new(&dir).join(&exe_name);
-                                let full_str = full.to_string_lossy().to_string();
+                                let full_str = if dir.to_lowercase().ends_with(".exe") {
+                                    dir
+                                } else {
+                                    std::path::Path::new(&dir)
+                                        .join(&exe_name)
+                                        .to_string_lossy()
+                                        .to_string()
+                                };
                                 tracing::info!("detected game path from HKLM: {full_str}");
                                 return Ok(Some(full_str));
                             }
