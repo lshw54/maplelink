@@ -72,6 +72,8 @@
   "settings.font_size.extra_large": "特大",
   "settings.gamepass_incognito": "GamePass 無痕模式",
   "settings.gamepass_incognito_desc": "不保存 GamePass 瀏覽器的登入狀態",
+  "settings.traditional_login": "傳統模式登入",
+  "settings.traditional_login_desc": "啟動遊戲時不傳送伺服器連線參數。關閉此選項會將伺服器/連接埠/帳號/OTP 直接傳給遊戲。",
 
   "toolbox.title": "工具箱",
   "toolbox.tabs.tools": "工具",

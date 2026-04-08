@@ -31,12 +31,13 @@ mod win32 {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, MAPVK_VK_TO_VSC};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId, PostMessageW,
-        SetForegroundWindow, ShowWindow, SW_RESTORE,
+        FindWindowW, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowThreadProcessId,
+        PostMessageW, SetCursorPos, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
 
     extern "system" {
@@ -47,7 +48,6 @@ mod win32 {
     const WM_KEYDOWN: u32 = 0x0100;
     const WM_CHAR: u32 = 0x0102;
     const WM_LBUTTONDOWN: u32 = 0x0201;
-    const WM_LBUTTONUP: u32 = 0x0202;
 
     // Virtual key codes
     const VK_BACK: u32 = 0x08;
@@ -57,7 +57,12 @@ mod win32 {
     const VK_END: u32 = 0x23;
 
     /// Known MapleStory window class names.
-    const CLASS_NAMES: &[&str] = &["MapleStoryClass", "MapleStoryClassTW"];
+    const CLASS_NAMES: &[&str] = &[
+        "MapleStoryClass",
+        "MapleStoryClassTW",
+        "MapleStoryClassHK",
+        "StartUpDlgClass",
+    ];
 
     /// Encode a Rust string to a null-terminated wide (UTF-16) string.
     fn to_wide(s: &str) -> Vec<u16> {
@@ -87,6 +92,15 @@ mod win32 {
                 return Some(hwnd);
             }
         }
+
+        // Fallback: try to find by window title containing "MapleStory"
+        let title = to_wide("MapleStory");
+        let hwnd = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+        if !hwnd.is_null() {
+            tracing::info!("found MapleStory window by title");
+            return Some(hwnd);
+        }
+
         None
     }
 
@@ -102,18 +116,6 @@ mod win32 {
     fn send_char(hwnd: HWND, ch: char) {
         unsafe {
             PostMessageW(hwnd, WM_CHAR, ch as WPARAM, 0);
-        }
-    }
-
-    /// Send a mouse click at a specific position within the client area.
-    fn send_click(hwnd: HWND, x: i32, y: i32) {
-        let lparam = ((y as LPARAM) << 16) | (x as LPARAM & 0xFFFF);
-        unsafe {
-            PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
-        }
-        sleep_ms(50);
-        unsafe {
-            PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
         }
     }
 
@@ -142,13 +144,31 @@ mod win32 {
 
     /// Main auto-paste implementation.
     pub fn do_auto_paste(account_id: &str, otp: &str, is_hk: bool) -> bool {
-        let hwnd = match find_maple_window() {
-            Some(h) => h,
-            None => {
-                tracing::info!("MapleStory window not found, skipping auto-paste");
-                return false;
+        // Wait for the MapleStory window to appear (up to 30 seconds).
+        // The game may take time to load, especially after patching.
+        let hwnd = {
+            let mut found = None;
+            for attempt in 0..60 {
+                if let Some(h) = find_maple_window() {
+                    found = Some(h);
+                    break;
+                }
+                if attempt % 10 == 0 && attempt > 0 {
+                    tracing::debug!("waiting for MapleStory window... ({attempt}/60)");
+                }
+                sleep_ms(500);
+            }
+            match found {
+                Some(h) => h,
+                None => {
+                    tracing::info!("MapleStory window not found after 30s, skipping auto-paste");
+                    return false;
+                }
             }
         };
+
+        // Give the window a moment to fully initialize
+        sleep_ms(500);
 
         // Bring the game window to the foreground reliably
         // Windows restricts SetForegroundWindow — use AttachThreadInput trick
@@ -171,7 +191,7 @@ mod win32 {
         sleep_ms(200);
 
         // For HK MapleStory: press ESC to close any dialog, then click the
-        // account text box at approximately 50% width, 40% height.
+        // account text box — matching C# exactly: SetCursorPos + PostMessage
         if is_hk {
             send_key(hwnd, VK_ESCAPE);
             sleep_ms(100);
@@ -184,10 +204,27 @@ mod win32 {
             };
             let got_rect = unsafe { GetClientRect(hwnd, &mut rect) };
             if got_rect != 0 {
-                let click_x = (rect.right - rect.left) / 2;
-                let click_y = ((rect.bottom - rect.top) as f64 * 0.4) as i32;
-                send_click(hwnd, click_x, click_y);
-                sleep_ms(100);
+                let w = rect.right - rect.left;
+                let h = rect.bottom - rect.top;
+                let text_box_x = w / 2;
+                let text_box_y = (h as f64 * 0.4) as i32;
+
+                // Save old cursor position
+                let mut old_point = POINT { x: 0, y: 0 };
+                unsafe { GetCursorPos(&mut old_point) };
+
+                // Convert client coords to screen coords
+                let mut screen_point = POINT { x: 0, y: 0 };
+                unsafe { ClientToScreen(hwnd, &mut screen_point) };
+
+                // Move cursor to the account text box and click
+                unsafe { SetCursorPos(screen_point.x + text_box_x, screen_point.y + text_box_y) };
+                let pos = ((text_box_y as LPARAM) << 16) | (text_box_x as LPARAM & 0xFFFF);
+                unsafe { PostMessageW(hwnd, WM_LBUTTONDOWN, 1, pos) };
+                sleep_ms(200);
+
+                // Restore cursor
+                unsafe { SetCursorPos(old_point.x, old_point.y) };
             }
         }
 

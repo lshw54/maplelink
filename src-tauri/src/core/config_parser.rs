@@ -80,6 +80,10 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.gamepass_incognito =
                 parse_bool(v, "gamepass_incognito", defaults.gamepass_incognito);
         }
+        if let Some(v) = general.get("traditional_login") {
+            config.traditional_login =
+                parse_bool(v, "traditional_login", defaults.traditional_login);
+        }
     }
 
     // --- [game] ---
@@ -146,6 +150,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "gamepass_incognito = {}\n",
         config.gamepass_incognito
+    ));
+    out.push_str(&format!(
+        "traditional_login = {}\n",
+        config.traditional_login
     ));
     out.push('\n');
 
@@ -416,6 +424,7 @@ x = not_a_number
             debug_logging: true,
             gamepass_incognito: false,
             font_size: crate::models::config::FontSize::Large,
+            traditional_login: false,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

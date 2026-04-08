@@ -1,48 +1,55 @@
 <p align="center">
-  <img src="app-icon-square.png" width="80" />
+  <img src="public/app-icon.png" width="80" />
 </p>
 
 <h1 align="center">MapleLink</h1>
 
 <p align="center">
-  新一代 Beanfun 第三方啟動器
+  新世代 Beanfun 第三方啟動器
 </p>
 
 <p align="center">
-  <a href="../../releases/latest">下載</a> · <a href="#功能">功能</a> · <a href="#架構">架構</a> · <a href="#開發">開發</a> · <a href="README.en.md">English</a>
+  <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://github.com/lshw54/maplelink/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
+  <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/lshw54/maplelink" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="../../releases/latest">下載</a> · <a href="#功能特色">功能</a> · <a href="#架構設計">架構</a> · <a href="#開發指南">開發</a> · <a href="README.en.md">English</a>
 </p>
 
 ---
 
-⚠️ **本程式並非遊戲橘子官方產品。** 使用前請自行評估風險，並確認下載來源安全。
+⚠️ **本程式並非遊戲橘子官方產品。** 使用前請自行評估風險，並確認下載來源是否安全。
 
-## 為什麼做 MapleLink？
+## 為什麼要做 MapleLink？
 
-原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 用了很久，但架構老舊 — .NET WinForms、難以擴展。MapleLink 是完全重寫：
+原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 使用多年，但底層架構已經老舊 — .NET WinForms，不易維護也難以擴充。MapleLink 是從零開始的全新重寫：
 
-- Rust 後端 — 所有邏輯都在 Rust，session 管理、OTP、帳號解析，零妥協
-- WebView2 前端 — React 19 + Tailwind，輕量快速
+- Rust 後端 — 所有邏輯都在 Rust 中處理，包含 session 管理、OTP、帳號解析
+- WebView2 前端 — React 19 + Tailwind，輕量且快速
 - 單一設定檔 — 一個 `config.ini`，HK / TW 通用
 
-## 功能
+## 功能特色
 
 - 登入方式：帳號密碼、TOTP、QR Code、GamePass、進階驗證
-- 多帳號管理，按地區記住密碼
+- 多帳號管理，依地區記住密碼
 - OTP 一鍵取得、自動貼入遊戲視窗
 - 完整支援 HK + TW 地區
 - 深色 / 淺色 / 跟隨系統主題，三語介面（EN、繁中、简中）
 - 自動更新（正式版 / 測試版頻道）
 - 相容遊戲加速器（UU 等）的 SSL 容錯
-- 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動區域模擬啟動
+- 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動進行區域模擬啟動
 
 ## 使用方式
 
 **系統需求：** Windows 10 以上、[WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win11 已內建）
 
-1. 到 [Releases](../../releases/latest) 下載最新版
-2. 安裝後直接執行
+1. 前往 [Releases](../../releases/latest) 下載最新版本
+2. 安裝後直接執行即可
 
-> `%APPDATA%` 下的 `EBWebView` 資料夾是 WebView2 的快取，屬正常現象。如不想保留 GamePass 登入狀態，可在設定中開啟「GamePass 無痕模式」。
+> `%APPDATA%` 中的 `EBWebView` 資料夾是 WebView2 的快取，屬於正常現象。若不想保留 GamePass 的登入狀態，可在設定中開啟「GamePass 無痕模式」。
 
 ## 技術棧
 
@@ -54,17 +61,17 @@
 | 狀態管理 | [Zustand](https://zustand.docs.pmnd.rs/) + [TanStack Query](https://tanstack.com/query) |
 | 區域模擬 | [Locale Remulator](https://github.com/InWILL/Locale_Remulator) |
 
-## 架構
+## 架構設計
 
-Rust 後端擁有所有業務邏輯、副作用與資料；React/TypeScript 前端純粹負責 UI 渲染與呼叫 Tauri commands。
+Rust 後端負責所有業務邏輯、副作用與資料管理；React/TypeScript 前端僅負責 UI 呈現與呼叫 Tauri commands。
 
 ### 設計原則
 
-1. **Rust 為唯一真相來源** — 驗證、認證、設定解析、DLL 注入、程序管理全部在 Rust，前端不做業務邏輯
-2. **分層架構** — `commands/` → `core/` → `services/` → `models/`，遵循 Clean Architecture
-3. **INI 設定檔 round-trip 保證** — 寫入再讀取 = 原始值不變
-4. **憑證僅存於記憶體** — Session token 與密碼不落地，登出或關閉即清除
-5. **DLL 注入前完整性驗證** — 注入 Locale_Remulator 前以 SHA-256 比對已知雜湊值
+1. **所有邏輯都在 Rust** — 驗證、認證、設定解析、DLL 注入、程序管理由後端統一處理，前端只負責畫面
+2. **分層架構** — `commands/` → `core/` → `services/` → `models/`，依照 Clean Architecture 劃分職責
+3. **設定檔讀寫一致** — INI 設定檔寫入後再讀取，內容保持不變
+4. **憑證不落地** — Session token 與密碼只存在記憶體中，登出或關閉程式時立即清除
+5. **DLL 注入前先驗證** — 注入 Locale_Remulator 前會以 SHA-256 比對已知雜湊值，確保檔案未被竄改
 
 <details>
 <summary>整體架構圖</summary>
@@ -88,7 +95,7 @@ graph TB
     subgraph 外部 ["外部服務"]
         Beanfun[Beanfun API]
         FS[檔案系統]
-        Process[作業系統程序]
+        Process[OS 程序]
         Updater[更新伺服器]
     end
 
@@ -121,7 +128,7 @@ sequenceDiagram
     participant 外部 as 外部服務
 
     前端->>指令: invoke("login", {account, password})
-    指令->>指令: 驗證與反序列化參數
+    指令->>指令: 驗證並反序列化參數
     指令->>核心: auth::authenticate(credentials)
     核心->>服務: BeanfunService::login(credentials)
     服務->>外部: HTTPS POST 至 Beanfun
@@ -169,10 +176,10 @@ src/
 | Main | 750 × 520 | 帳號列表、OTP、啟動按鈕 |
 | Toolbox | 740 × 480 | 工具、設定、帳號管理、關於 |
 
-## 開發
+## 開發指南
 
 ```bash
-npm install                # 安裝前端依賴
+npm install                # 安裝前端相依套件
 cargo tauri dev            # 開發模式（熱重載）
 cargo tauri build          # 正式建置
 ```
@@ -192,14 +199,14 @@ npm run format             # Prettier 格式化
 # feat: / fix: / refactor: / chore: ...
 ```
 
-## 貢獻
+## 貢獻方式
 
-Fork → 開分支 → 測試 → 發 PR。
+Fork → 建立分支 → 測試 → 發送 PR。
 
 ## 致謝
 
 靈感來自 [pungin/Beanfun](https://github.com/pungin/Beanfun)。
 
-## 授權
+## 授權條款
 
 MIT

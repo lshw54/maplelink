@@ -26,6 +26,11 @@ pub struct AppConfig {
     pub gamepass_incognito: bool,
     #[serde(default = "default_font_size")]
     pub font_size: FontSize,
+    /// Traditional login mode (default: true).
+    /// When true, only GUID + game path are passed to LRProc.
+    /// When false, also passes server/port/account/otp args.
+    #[serde(default = "default_true")]
+    pub traditional_login: bool,
 }
 
 fn default_true() -> bool {
@@ -55,6 +60,7 @@ impl Default for AppConfig {
             debug_logging: false,
             gamepass_incognito: true,
             font_size: FontSize::Medium,
+            traditional_login: true,
         }
     }
 }

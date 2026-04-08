@@ -35,6 +35,7 @@ export interface AppConfigDto {
   gamepassIncognito: boolean;
   updateChannel: "release" | "pre-release";
   fontSize: "small" | "medium" | "large" | "extra-large";
+  traditionalLogin: boolean;
 }
 
 export interface ErrorDto {

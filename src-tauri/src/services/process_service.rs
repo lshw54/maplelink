@@ -6,6 +6,9 @@ use crate::core::error::ProcessError;
 
 /// Spawns a process and returns its PID.
 ///
+/// Uses `CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP` on Windows
+/// so the child process survives when MapleLink exits.
+///
 /// # Errors
 ///
 /// Returns [`ProcessError::SpawnFailed`] if the process cannot be started.
@@ -14,16 +17,56 @@ pub async fn spawn_process(
     working_dir: &str,
     args: &[String],
 ) -> Result<u32, ProcessError> {
-    let child = Command::new(executable)
-        .current_dir(working_dir)
-        .args(args)
-        .spawn()
-        .map_err(|e| ProcessError::SpawnFailed {
-            path: executable.to_string(),
-            reason: e.to_string(),
-        })?;
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_BREAKAWAY_FROM_JOB (0x01000000) + CREATE_NEW_PROCESS_GROUP (0x00000200)
+        let child = Command::new(executable)
+            .current_dir(working_dir)
+            .args(args)
+            .creation_flags(0x01000200)
+            .spawn()
+            .map_err(|e| ProcessError::SpawnFailed {
+                path: executable.to_string(),
+                reason: e.to_string(),
+            })?;
+        Ok(child.id())
+    }
 
-    Ok(child.id())
+    #[cfg(not(target_os = "windows"))]
+    {
+        let child = Command::new(executable)
+            .current_dir(working_dir)
+            .args(args)
+            .spawn()
+            .map_err(|e| ProcessError::SpawnFailed {
+                path: executable.to_string(),
+                reason: e.to_string(),
+            })?;
+        Ok(child.id())
+    }
+}
+
+/// Checks if any process with the given executable name is running.
+pub fn is_process_name_running(name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        Command::new("tasklist")
+            .args(["/FI", &format!("IMAGENAME eq {name}"), "/NH", "/FO", "CSV"])
+            .output()
+            .map(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout.to_lowercase().contains(&name.to_lowercase())
+            })
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = name;
+        false
+    }
 }
 
 /// Checks if a process with the given PID is still running.

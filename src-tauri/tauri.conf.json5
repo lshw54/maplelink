@@ -39,7 +39,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/lr/*"],
+    "resources": [],
     "copyright": "© 2026 MapleLink",
     "shortDescription": "Third-party launcher for Beanfun games",
     "longDescription": "MapleLink is a modern third-party launcher for Beanfun games built with Tauri v2, supporting HK and TW regions.",

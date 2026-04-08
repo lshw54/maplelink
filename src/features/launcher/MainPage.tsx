@@ -4,6 +4,7 @@ import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
@@ -22,6 +23,22 @@ export function MainPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [pid, setPid] = useState<number | null>(null);
+
+  // Poll game process status — clear pid when process exits
+  useEffect(() => {
+    if (pid === null) return;
+    const interval = setInterval(async () => {
+      try {
+        const alive = await commands.getProcessStatus(pid);
+        if (!alive) {
+          setPid(null);
+        }
+      } catch {
+        setPid(null);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [pid]);
   const [remainPoint, setRemainPoint] = useState<number>(0);
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -48,20 +65,27 @@ export function MainPage() {
       .catch(() => {});
   }, []);
 
-  // Session keep-alive: ping every 60 seconds (matching reference client)
-  // The ping itself keeps the server-side session alive.
-  // We do NOT auto-logout on ping failure — let the user's next action
-  // discover the expired session naturally (matching C# reference behavior).
+  // Session keep-alive: ping every 60 seconds (matching C# PingWorker)
+  // If server says session is dead → immediately logout + redirect to login
   useEffect(() => {
-    const interval = setInterval(async () => {
+    async function doPing() {
       try {
-        await commands.pingSession();
+        const alive = await commands.pingSession();
+        if (!alive) {
+          useErrorToastStore.getState().addToast({
+            message: t("errors.AUTH_SESSION_EXPIRED"),
+            category: "authentication",
+            critical: true,
+          });
+          useAuthStore.getState().clearSession();
+        }
       } catch {
         // Network error — ignore, don't logout
       }
-    }, 60_000);
+    }
+    const interval = setInterval(doPing, 60_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [t]);
 
   const handleSelectAccount = useCallback((account: GameAccountDto) => {
     setSelectedAccountId(account.id);
@@ -72,7 +96,7 @@ export function MainPage() {
     setLaunching(true);
     try {
       const processId = await commands.launchGame(accountId);
-      setPid(processId);
+      if (processId > 0) setPid(processId);
     } finally {
       setLaunching(false);
     }

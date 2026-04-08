@@ -87,9 +87,15 @@ pub async fn launch_game(
     let use_lr = !system_is_zhtw;
 
     let pid = if use_lr {
-        launch_with_lr(&app, &launch_cmd)
-            .await
-            .map_err(proc_err_to_dto)?
+        launch_with_lr(
+            &app,
+            &launch_cmd,
+            config.traditional_login,
+            &config.region,
+            &credentials,
+        )
+        .await
+        .map_err(proc_err_to_dto)?
     } else {
         tracing::info!("system locale is Traditional Chinese, launching directly");
         process_service::spawn_process(
@@ -101,43 +107,198 @@ pub async fn launch_game(
         .map_err(proc_err_to_dto)?
     };
 
-    // 8. Record PID in active processes
-    state
-        .active_processes
-        .write()
-        .await
-        .insert(pid, account_id.clone());
+    // 8. Record PID in active processes (skip PID 0 from PowerShell launch)
+    if pid > 0 {
+        state
+            .active_processes
+            .write()
+            .await
+            .insert(pid, account_id.clone());
+    }
+
+    // 9. Auto-kill Patcher.exe (matching C# checkPatcher_Tick)
+    // The game may spawn Patcher.exe for auto-update before MapleStory.exe.
+    // Kill it so the game launches directly with our OTP credentials.
+    let game_dir = launch_cmd.working_dir.clone();
+    tauri::async_runtime::spawn(async move {
+        kill_patcher_loop(&game_dir).await;
+    });
 
     tracing::info!(pid, account_id = %account_id, use_lr, "game launched");
     Ok(pid)
+}
+
+/// Poll for Patcher.exe in the game directory and kill it.
+///
+/// Matches C# `checkPatcher_Tick`: every 100ms for up to 30 seconds,
+/// check if Patcher.exe from the game directory is running and kill it.
+/// This prevents the game's auto-updater from blocking the direct launch.
+async fn kill_patcher_loop(game_dir: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+
+        let patcher_path = std::path::Path::new(game_dir)
+            .join("Patcher.exe")
+            .to_string_lossy()
+            .to_lowercase();
+
+        // Poll for up to 30 seconds (300 × 100ms)
+        for _ in 0..300 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            let output = match Command::new("wmic")
+                .args([
+                    "process",
+                    "where",
+                    "name='Patcher.exe'",
+                    "get",
+                    "ProcessId,ExecutablePath",
+                    "/format:csv",
+                ])
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => continue,
+            };
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let lower = line.to_lowercase();
+                if lower.contains(&patcher_path) {
+                    // Extract PID from CSV: Node,ExecutablePath,ProcessId
+                    if let Some(pid_str) = line.split(',').next_back() {
+                        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                            let _ = Command::new("taskkill")
+                                .args(["/PID", &pid.to_string(), "/F"])
+                                .output();
+                            tracing::info!("killed Patcher.exe (PID {pid})");
+                            return; // Done — patcher killed
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = game_dir;
+    }
 }
 
 /// Launch the game via Locale Remulator.
 ///
 /// Extracts LR files to app data, then spawns `LRProc.exe` with the
 /// profile GUID and game path + args.
+/// Matches C# reference: UseShellExecute=true, Verb="runas" (admin),
+/// WorkingDirectory = game directory.
+/// Launch the game via Locale Remulator.
+///
+/// Extracts LR files to app data, then spawns `LRProc.exe` with the
+/// profile GUID and game path + args.
+/// Since maplelink.exe runs as admin (via manifest), LRProc inherits
+/// elevation — no need for ShellExecute/runas.
+/// Launch the game via Locale Remulator.
+///
+/// Launch the game via Locale Remulator.
+///
+/// Extracts LR files to app data, then spawns `LRProc.exe`.
+/// C# reference: `LRProc.exe GUID "gamepath" server port BeanFun account otp`
+/// WorkingDirectory = game directory.
+/// Launch the game via Locale Remulator.
+///
+/// Extracts LR files to app data, then spawns `LRProc.exe`.
+/// C# reference: `LRProc.exe GUID "gamepath" server port BeanFun account otp`
+/// WorkingDirectory = game directory.
+/// Launch the game via Locale Remulator.
+///
+/// Extracts LR files to app data, then spawns `LRProc.exe`.
+/// Uses `powershell Start-Process` to match the confirmed working behavior.
+/// Launch the game via Locale Remulator.
+///
+/// Extracts LR files to app data, then spawns `LRProc.exe` via PowerShell
+/// Start-Process (confirmed working).
+/// Launch the game via Locale Remulator.
+///
+/// When `traditional_login` is true, passes full server/port/account/otp args.
+/// When false, only passes GUID + game path (simpler, more compatible).
+/// Launch the game via Locale Remulator.
+///
+/// `traditional_login=true`: only GUID + game path (user logs in manually in-game).
+/// `traditional_login=false`: GUID + game path + server/port/BeanFun/account/otp
+///   (game auto-connects with credentials).
 async fn launch_with_lr(
     app: &tauri::AppHandle,
     launch_cmd: &game_launcher::LaunchCommand,
+    traditional_login: bool,
+    region: &crate::models::session::Region,
+    credentials: &crate::models::game_account::GameCredentials,
 ) -> Result<u32, ProcessError> {
     let lr_proc = lr_service::ensure_lr_files(app).await?;
+    let lr_path = lr_proc.to_string_lossy().to_string();
+
+    // Only TW supports direct login via command line args.
+    // HK uses login_action_type=8 which doesn't support command line login —
+    // HK always launches the game then auto-pastes credentials.
+    let use_cmd_args = !traditional_login && matches!(region, crate::models::session::Region::TW);
+
+    let lr_args = if use_cmd_args {
+        // TW non-traditional: GUID "gamepath" server port BeanFun account otp
+        format!(
+            "{} \"{}\" tw.login.maplestory.beanfun.com 8484 BeanFun {} {}",
+            lr_service::LR_PROFILE_GUID,
+            launch_cmd.executable,
+            credentials.account_id,
+            credentials.otp,
+        )
+    } else {
+        // Traditional / HK: just launch the game
+        format!(
+            "{} \"{}\"",
+            lr_service::LR_PROFILE_GUID,
+            launch_cmd.executable
+        )
+    };
 
     tracing::info!(
-        lr_proc = %lr_proc.display(),
-        game = %launch_cmd.executable,
+        lr_proc = %lr_path,
+        lr_args = %lr_args,
+        traditional_login,
         "launching game via Locale Remulator"
     );
 
-    // LRProc.exe expects: <GUID> "<game_path>" [game_args...]
-    let mut lr_args = vec![
-        lr_service::LR_PROFILE_GUID.to_string(),
-        launch_cmd.executable.clone(),
-    ];
-    lr_args.extend(launch_cmd.args.iter().cloned());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
 
-    let lr_proc_str = lr_proc.to_str().unwrap_or_default();
+        let ps_cmd = format!(
+            "-NoProfile -Command Start-Process -FilePath '{}' -ArgumentList '{}' -WorkingDirectory '{}'",
+            lr_path, lr_args, launch_cmd.working_dir
+        );
 
-    process_service::spawn_process(lr_proc_str, &launch_cmd.working_dir, &lr_args).await
+        Command::new("powershell")
+            .raw_arg(&ps_cmd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e: std::io::Error| ProcessError::SpawnFailed {
+                path: lr_path.clone(),
+                reason: e.to_string(),
+            })?;
+
+        Ok(0)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(ProcessError::SpawnFailed {
+            path: lr_path,
+            reason: "LR launch is only supported on Windows".to_string(),
+        })
+    }
 }
 
 /// Check if any MapleStory process is currently running.
@@ -145,39 +306,17 @@ async fn launch_with_lr(
 /// Checks both tracked PIDs and the MapleStory window class name.
 #[tauri::command]
 pub async fn is_game_running(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
-    // Check tracked processes first
+    // Check tracked PIDs first
     let active = state.active_processes.read().await;
     for &pid in active.keys() {
-        if process_service::is_process_running(pid) {
+        if pid > 0 && process_service::is_process_running(pid) {
             return Ok(true);
         }
     }
     drop(active);
 
-    // Also check by window class name (in case game was launched externally)
-    #[cfg(target_os = "windows")]
-    {
-        use std::ffi::OsStr;
-        use std::os::windows::ffi::OsStrExt;
-        let class_names = ["MapleStoryClass", "MapleStoryClassTW"];
-        for name in class_names {
-            let wide: Vec<u16> = OsStr::new(name)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-            let hwnd = unsafe {
-                windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW(
-                    wide.as_ptr(),
-                    std::ptr::null(),
-                )
-            };
-            if !hwnd.is_null() {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
+    // Check if MapleStory.exe process exists (covers LR-launched games where PID=0)
+    Ok(process_service::is_process_name_running("MapleStory.exe"))
 }
 
 /// Check whether a tracked game process is still running (Req 4.5).

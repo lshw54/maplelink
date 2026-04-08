@@ -22,6 +22,10 @@ pub struct GameCredentials {
     /// One-time password (10-digit).
     pub otp: String,
     pub retrieved_at: chrono::DateTime<chrono::Utc>,
+    /// Command line template from service INI (e.g. "server port BeanFun %s %s").
+    /// `%s` placeholders are replaced with account_id and otp at launch time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line_template: Option<String>,
 }
 
 #[cfg(test)]

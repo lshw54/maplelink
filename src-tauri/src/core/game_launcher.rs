@@ -146,6 +146,7 @@ mod tests {
             account_id: "acc123".to_string(),
             otp: otp.to_string(),
             retrieved_at: Utc::now(),
+            command_line_template: None,
         }
     }
 
@@ -267,6 +268,7 @@ mod tests {
                 account_id,
                 otp,
                 retrieved_at: Utc::now(),
+                command_line_template: None,
             })
     }
 

@@ -72,6 +72,8 @@
   "settings.font_size.extra_large": "XL",
   "settings.gamepass_incognito": "GamePass Incognito Mode",
   "settings.gamepass_incognito_desc": "Don't save login session in GamePass browser",
+  "settings.traditional_login": "Traditional Login Mode",
+  "settings.traditional_login_desc": "Launch the game without passing server connection args. Disable this to pass server/port/account/OTP directly to the game.",
 
   "toolbox.title": "Toolbox",
   "toolbox.tabs.tools": "Tools",

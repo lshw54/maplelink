@@ -1,5 +1,5 @@
-//! Locale Remulator (LR) file management — extracting bundled LR files
-//! to the app data directory and detecting system locale.
+//! Locale Remulator (LR) file management — embedded LR binaries are
+//! extracted to the app data directory at runtime.
 //!
 //! LR spoofs the system locale so MapleStory runs under Traditional Chinese
 //! code-page (950) without requiring the user to change their Windows locale.
@@ -11,26 +11,38 @@ use crate::core::error::ProcessError;
 /// The LR profile GUID for "Run in Taiwan (Admin)" in `LRConfig.xml`.
 pub const LR_PROFILE_GUID: &str = "ef3e7b42-a87c-4c07-ae3e-eeebeef12762";
 
-/// LR files that must be co-located with `LRProc.exe`.
-const LR_FILES: &[&str] = &[
-    "LRProc.exe",
-    "LRHookx32.dll",
-    "LRHookx64.dll",
-    "LRConfig.xml",
-    "LRSubMenus.dll",
+/// Embedded LR files — compiled directly into the binary so a standalone
+/// `maplelink.exe` works without needing a `resources/lr/` folder alongside it.
+const EMBEDDED_LR: &[(&str, &[u8])] = &[
+    (
+        "LRProc.exe",
+        include_bytes!("../../resources/lr/LRProc.exe"),
+    ),
+    (
+        "LRHookx32.dll",
+        include_bytes!("../../resources/lr/LRHookx32.dll"),
+    ),
+    (
+        "LRHookx64.dll",
+        include_bytes!("../../resources/lr/LRHookx64.dll"),
+    ),
+    (
+        "LRConfig.xml",
+        include_bytes!("../../resources/lr/LRConfig.xml"),
+    ),
+    (
+        "LRSubMenus.dll",
+        include_bytes!("../../resources/lr/LRSubMenus.dll"),
+    ),
 ];
 
-/// Extract LR files from bundled resources to the app data directory.
+/// Extract embedded LR files to the app data directory.
 ///
 /// Returns the path to `LRProc.exe`. All LR files are placed in
 /// `<app_data_dir>/lr/` so they are co-located as required by LRProc.
 ///
-/// Files are only copied when they are missing or their size differs from
-/// the bundled version (simple staleness check).
-///
-/// # Errors
-///
-/// Returns [`ProcessError::SpawnFailed`] if resource resolution or file I/O fails.
+/// Files are only written when missing or their size differs from the
+/// embedded version (simple staleness check).
 pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, ProcessError> {
     use tauri::Manager;
 
@@ -50,42 +62,23 @@ pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, P
             reason: format!("Failed to create LR directory: {e}"),
         })?;
 
-    for filename in LR_FILES {
+    for &(filename, data) in EMBEDDED_LR {
         let dest = lr_dir.join(filename);
-        let source = app_handle
-            .path()
-            .resolve(
-                format!("resources/lr/{filename}"),
-                tauri::path::BaseDirectory::Resource,
-            )
-            .map_err(|e| ProcessError::SpawnFailed {
-                path: filename.to_string(),
-                reason: format!("Failed to resolve bundled resource: {e}"),
-            })?;
 
-        // Copy if destination is missing or size differs from source.
-        let should_copy = match (
-            tokio::fs::metadata(&source).await,
-            tokio::fs::metadata(&dest).await,
-        ) {
-            (Ok(src_meta), Ok(dst_meta)) => src_meta.len() != dst_meta.len(),
-            (Ok(_), Err(_)) => true,
-            (Err(e), _) => {
-                return Err(ProcessError::SpawnFailed {
-                    path: source.display().to_string(),
-                    reason: format!("Bundled LR resource not found: {e}"),
-                });
-            }
+        // Write if destination is missing or size differs.
+        let should_write = match tokio::fs::metadata(&dest).await {
+            Ok(meta) => meta.len() != data.len() as u64,
+            Err(_) => true,
         };
 
-        if should_copy {
-            tokio::fs::copy(&source, &dest)
+        if should_write {
+            tokio::fs::write(&dest, data)
                 .await
                 .map_err(|e| ProcessError::SpawnFailed {
                     path: dest.display().to_string(),
-                    reason: format!("Failed to copy LR file: {e}"),
+                    reason: format!("Failed to write LR file: {e}"),
                 })?;
-            tracing::info!(file = %filename, "extracted LR file to app data");
+            tracing::info!(file = %filename, "extracted embedded LR file");
         }
     }
 
@@ -101,7 +94,6 @@ pub fn is_system_locale_chinese_traditional() -> bool {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
 
-    // GetSystemDefaultLocaleName returns the locale name (e.g. "zh-TW").
     let mut buf = [0u16; 85]; // LOCALE_NAME_MAX_LENGTH = 85
     let len = unsafe {
         windows_sys::Win32::Globalization::GetSystemDefaultLocaleName(

@@ -125,6 +125,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "gamepass_incognito" => {
             config.gamepass_incognito = parse_bool(value)?;
         }
+        "traditional_login" => {
+            config.traditional_login = parse_bool(value)?;
+        }
         "update_channel" => {
             config.update_channel = match value.to_lowercase().replace('_', "-").as_str() {
                 "release" => UpdateChannel::Release,

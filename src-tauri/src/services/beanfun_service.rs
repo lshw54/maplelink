@@ -251,6 +251,12 @@ pub async fn get_game_credentials(
 /// The request itself (with cookies) is what keeps the server-side session
 /// alive — matching the C# reference `BeanfunClient.Ping()`.
 /// Returns `true` if the ping request succeeded (regardless of response body).
+/// Ping the beanfun server to keep the session alive.
+///
+/// Both regions use `echo_token.ashx?webtoken=1`.
+/// The request itself (with cookies) keeps the server-side session alive,
+/// matching the C# reference `BeanfunClient.Ping()`.
+/// Returns `true` if the session is still valid (`ResultCode:1` in response).
 pub async fn ping(client: &Client, region: &Region) -> Result<bool, LoginError> {
     let host = match region {
         Region::HK => "bfweb.hk",
@@ -260,16 +266,13 @@ pub async fn ping(client: &Client, region: &Region) -> Result<bool, LoginError> 
         "https://{host}.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1"
     );
     let body = http_get_text(client, &url).await?;
-    let has_token = body.contains("ResultCode:1");
+    let alive = body.contains("ResultCode:1");
     tracing::debug!(
-        "session ping ({:?}): response_has_token={has_token}, len={}",
+        "session ping ({:?}): alive={alive}, body_len={}",
         region,
         body.len()
     );
-    // Return true as long as the request succeeded — the ping itself keeps
-    // the session alive. Only return false if the server explicitly says
-    // the session is gone (empty body or error page).
-    Ok(!body.is_empty())
+    Ok(alive)
 }
 
 /// Retrieve the user's remaining Beanfun points.
@@ -844,6 +847,9 @@ async fn hk_get_otp(
         account_id: account_id.to_string(),
         otp,
         retrieved_at: chrono::Utc::now(),
+        command_line_template: Some(
+            "hk.login.maplestory.beanfun.com 8484 BeanFun %s %s".to_string(),
+        ),
     })
 }
 
@@ -1525,6 +1531,9 @@ async fn tw_get_otp(
         account_id: account_id.to_string(),
         otp,
         retrieved_at: chrono::Utc::now(),
+        command_line_template: Some(
+            "tw.login.maplestory.beanfun.com 8484 BeanFun %s %s".to_string(),
+        ),
     })
 }
 
