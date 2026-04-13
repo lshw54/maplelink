@@ -38,7 +38,7 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 - OTP: one-click retrieve, auto-paste into MapleStory window
 - Full HK + TW region support
 - Dark / Light / System theme, three languages (EN, 繁中, 简中)
-- Auto-update (release or pre-release channel)
+- Auto-update via GitHub Releases with ghproxy mirror for China mainland users
 - Accelerator-friendly SSL tolerance (UU, etc.)
 - Locale emulation via [Locale Remulator](https://github.com/InWILL/Locale_Remulator)
 
@@ -96,7 +96,7 @@ graph TB
         Beanfun[Beanfun API]
         FS[File System]
         Process[OS Processes]
-        Updater[Update Server]
+        Updater[GitHub Releases]
     end
 
     UI --> Zustand
@@ -179,12 +179,25 @@ src/
 ## Development
 
 ```bash
-npm install
-cargo tauri dev        # dev mode (hot reload)
-cargo tauri build      # production build
+npm install                # install frontend deps
+cargo tauri dev            # dev mode (hot reload)
+cargo tauri build          # production build
 ```
 
-Code standards: `rustfmt` + `clippy` for Rust, ESLint + Prettier for TypeScript, [Conventional Commits](https://www.conventionalcommits.org/) for git.
+### Code Standards
+
+```bash
+# Rust
+cargo fmt --all            # format
+cargo clippy -- -D warnings  # lint
+
+# TypeScript
+npm run lint               # ESLint
+npm run format             # Prettier
+
+# Git commits follow Conventional Commits
+# feat: / fix: / refactor: / chore: ...
+```
 
 ## Contributing
 

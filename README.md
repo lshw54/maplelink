@@ -38,7 +38,7 @@
 - OTP 一鍵取得、自動貼入遊戲視窗
 - 完整支援 HK + TW 地區
 - 深色 / 淺色 / 跟隨系統主題，三語介面（EN、繁中、简中）
-- 自動更新（正式版 / 測試版頻道）
+- 自動更新 — 透過 GitHub Releases 檢查更新，支援 ghproxy 鏡像加速（中國大陸用戶）
 - 相容遊戲加速器（UU 等）的 SSL 容錯
 - 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動進行區域模擬啟動
 
@@ -96,7 +96,7 @@ graph TB
         Beanfun[Beanfun API]
         FS[檔案系統]
         Process[OS 程序]
-        Updater[更新伺服器]
+        Updater[GitHub Releases]
     end
 
     UI --> Zustand
