@@ -11,8 +11,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Detect which files changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src-tauri/**'
+              - 'Cargo.lock'
+            frontend:
+              - 'src/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - '.prettierrc'
+              - 'eslint.config.js'
+
   rust-checks:
     name: Rust (fmt + clippy + test)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +66,8 @@ jobs:
 
   frontend-checks:
     name: Frontend (lint + format + typecheck)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
