@@ -138,6 +138,13 @@ jobs:
           $delimiter >> $env:GITHUB_OUTPUT
           "count=$commitCount" >> $env:GITHUB_OUTPUT
 
+      - name: Create git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.version.outputs.tag_name }}
+          git push origin ${{ steps.version.outputs.tag_name }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
