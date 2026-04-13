@@ -104,6 +104,9 @@ jobs:
           "tag_name=$tagName" >> $env:GITHUB_OUTPUT
           "build_time=$buildTime" >> $env:GITHUB_OUTPUT
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
       - name: Build Tauri app
         run: cargo tauri build
         env:
