@@ -49,15 +49,21 @@ export function Titlebar() {
         className="flex items-center"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        {/* Region toggle */}
-        <button
-          onClick={handleRegionToggle}
-          title={t("shared.titlebar.region_toggle")}
-          className="relative flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
-        >
-          {regionFlag}
-          <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
-        </button>
+        {/* Region: clickable on login, read-only on main/toolbox */}
+        {currentPage === "login" ? (
+          <button
+            onClick={handleRegionToggle}
+            title={t("shared.titlebar.region_toggle")}
+            className="relative flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          >
+            {regionFlag}
+            <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
+          </button>
+        ) : (
+          <span className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-faint">
+            {region}
+          </span>
+        )}
 
         {/* Toolbox */}
         <button
