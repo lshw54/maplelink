@@ -1,17 +1,18 @@
-name: Bug Report
-description: Report a bug or unexpected behavior
+name: "Bug Report / 錯誤回報"
+description: "Report a bug or unexpected behavior / 回報錯誤或異常行為"
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. Please fill in as much detail as possible.
+        Thanks for reporting! Please fill in as much detail as possible.
+        感謝回報！請盡量填寫詳細資訊。
 
   - type: input
     id: version
     attributes:
-      label: MapleLink Version
-      description: Check in Toolbox → About
+      label: "MapleLink Version / 版本"
+      description: "Check in Toolbox → About / 在工具箱 → 關於中查看"
       placeholder: "0.1.0"
     validations:
       required: true
@@ -19,7 +20,7 @@ body:
   - type: dropdown
     id: region
     attributes:
-      label: Region
+      label: "Region / 地區"
       options:
         - HK
         - TW
@@ -29,35 +30,35 @@ body:
   - type: textarea
     id: description
     attributes:
-      label: What happened?
-      placeholder: Describe the bug clearly
+      label: "What happened? / 發生了什麼？"
+      placeholder: "Describe the bug clearly / 清楚描述問題"
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
-      placeholder: What should have happened instead?
+      label: "Expected behavior / 預期行為"
+      placeholder: "What should have happened? / 正常應該是怎樣？"
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
+      label: "Steps to reproduce / 重現步驟"
       placeholder: |
-        1. Open MapleLink
-        2. Login with ...
-        3. Click ...
+        1. Open MapleLink / 開啟 MapleLink
+        2. Login with ... / 用 ... 登入
+        3. Click ... / 按 ...
 
   - type: textarea
     id: logs
     attributes:
-      label: Log output
+      label: "Log output / 日誌"
       description: "Paste from `%LOCALAPPDATA%\\com.maplelink.app\\logs\\maplelink.log`"
       render: text
 
   - type: input
     id: os
     attributes:
-      label: Windows version
+      label: "Windows version / Windows 版本"
       placeholder: "Windows 11 23H2"

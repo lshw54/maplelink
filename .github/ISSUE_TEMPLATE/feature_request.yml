@@ -1,27 +1,27 @@
-name: Feature Request
-description: Suggest a new feature or improvement
+name: "Feature Request / 功能建議"
+description: "Suggest a new feature or improvement / 建議新功能或改進"
 labels: ["enhancement"]
 body:
   - type: textarea
     id: description
     attributes:
-      label: What would you like?
-      placeholder: Describe the feature or improvement
+      label: "What would you like? / 你想要什麼功能？"
+      placeholder: "Describe the feature / 描述你想要的功能"
     validations:
       required: true
 
   - type: textarea
     id: reason
     attributes:
-      label: Why?
-      placeholder: Why is this useful? What problem does it solve?
+      label: "Why? / 為什麼需要？"
+      placeholder: "Why is this useful? What problem does it solve? / 這個功能有什麼用？解決什麼問題？"
 
   - type: dropdown
     id: region
     attributes:
-      label: Related region
+      label: "Related region / 相關地區"
       options:
         - HK
         - TW
-        - Both
-        - N/A
+        - "Both / 兩者"
+        - "N/A / 不適用"
