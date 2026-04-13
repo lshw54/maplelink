@@ -67,8 +67,10 @@ export const commands = {
   setConfig: (key: string, value: string) => invoke("set_config", { key, value }),
 
   // Update
-  checkUpdate: () => invoke<UpdateInfoDto | null>("check_update"),
-  applyUpdate: () => invoke("apply_update"),
+  checkUpdate: () => invoke<UpdateInfoDto | null>("check_update", { manual: true }),
+  applyUpdate: (downloadUrl: string, useProxy?: boolean) =>
+    invoke<string>("apply_update", { downloadUrl, useProxy }),
+  testGithubAccess: () => invoke<boolean>("test_github_access"),
 
   // System
   resizeWindow: (page: string) => invoke("resize_window", { page }),

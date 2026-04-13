@@ -1,7 +1,4 @@
 //! Tauri commands for the auto-update system.
-//!
-//! Thin wrappers that delegate to [`crate::services::update_service`] and
-//! respect the `auto_update` toggle in [`AppConfig`].
 
 use tauri::State;
 
@@ -11,12 +8,7 @@ use crate::models::error::ErrorDto;
 use crate::models::update::UpdateInfo;
 use crate::services::update_service;
 
-/// Check for an available update.
-///
-/// When `manual` is `false` (startup check), the command respects the
-/// `auto_update` config toggle — returning `Ok(None)` immediately if
-/// auto-update is disabled. When `manual` is `true`, the check always
-/// proceeds regardless of the toggle.
+/// Check GitHub Releases for an available update.
 #[tauri::command]
 pub async fn check_update(
     manual: Option<bool>,
@@ -27,51 +19,51 @@ pub async fn check_update(
     if !is_manual {
         let config = state.config.read().await;
         if !update_service::should_check_on_startup(config.auto_update) {
-            tracing::info!("auto-update disabled, skipping startup check");
             return Ok(None);
         }
     }
 
     let version = update_service::current_version();
-
     update_service::check_for_update(&state.http_client, version)
         .await
-        .map_err(|e| {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        })
+        .map_err(|e| ErrorDto::from(AppError::from(e)))
 }
 
-/// Download and apply an available update.
-///
-/// The caller should have previously called `check_update` to obtain the
-/// [`UpdateInfo`]. This command downloads the binary, stages it, and
-/// signals that a restart is needed.
+/// Download and stage the update installer. Returns the installer path.
 #[tauri::command]
 pub async fn apply_update(
     download_url: String,
+    use_proxy: Option<bool>,
     state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
-    let bytes = update_service::download_update(&state.http_client, &download_url)
-        .await
-        .map_err(|e| {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        })?;
+) -> Result<String, ErrorDto> {
+    let url = update_service::get_download_url(&download_url, use_proxy.unwrap_or(false));
 
-    // Stage the update in a temp directory next to the config.
+    let bytes = update_service::download_update(&state.http_client, &url)
+        .await
+        .map_err(|e| ErrorDto::from(AppError::from(e)))?;
+
     let staging_dir = state
         .config_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .join("updates");
 
-    update_service::apply_update(&bytes, &staging_dir)
+    let path = update_service::apply_update(&bytes, &staging_dir)
         .await
-        .map_err(|e| {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        })?;
+        .map_err(|e| ErrorDto::from(AppError::from(e)))?;
 
-    Ok(())
+    // Launch the installer
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let _ = Command::new(&path).spawn();
+    }
+
+    Ok(path.display().to_string())
+}
+
+/// Test if GitHub is directly reachable (for ghproxy detection).
+#[tauri::command]
+pub async fn test_github_access(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
+    Ok(update_service::test_github_connectivity(&state.http_client).await)
 }

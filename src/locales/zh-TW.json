@@ -134,6 +134,13 @@
   "toolbox.about.no_update": "已是最新版本",
   "toolbox.about.update_available": "有可用更新：v{{version}}",
 
+  "update.title": "有可用更新",
+  "update.new_version_available": "新版本已準備好下載",
+  "update.download": "下載並安裝",
+  "update.downloading": "下載中...",
+  "update.skip": "稍後",
+  "update.use_mirror": "使用鏡像加速（建議中國大陸用戶開啟）",
+
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",
   "shared.titlebar.close": "關閉",

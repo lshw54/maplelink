@@ -128,6 +128,13 @@
   "toolbox.about.no_update": "You're up to date",
   "toolbox.about.update_available": "Update available: v{{version}}",
 
+  "update.title": "Update Available",
+  "update.new_version_available": "A new version is ready to download",
+  "update.download": "Download & Install",
+  "update.downloading": "Downloading...",
+  "update.skip": "Later",
+  "update.use_mirror": "Use mirror (recommended for China mainland)",
+
   "shared.titlebar.minimize": "Minimize",
   "shared.titlebar.maximize": "Maximize",
   "shared.titlebar.close": "Close",
