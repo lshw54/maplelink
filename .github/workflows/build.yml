@@ -138,17 +138,13 @@ jobs:
           $delimiter >> $env:GITHUB_OUTPUT
           "count=$commitCount" >> $env:GITHUB_OUTPUT
 
-      - name: Create git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.version.outputs.tag_name }}
-          git push origin ${{ steps.version.outputs.tag_name }}
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
           name: >
             ${{
               github.event.inputs.release_name != ''
@@ -191,11 +187,5 @@ jobs:
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
 
-      - name: Commit version bump
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json
-          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
-          git push
+      # Version bump is baked into the build artifact.
+      # Update Cargo.toml/package.json manually before next release.
