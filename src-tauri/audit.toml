@@ -1,0 +1,8 @@
+# cargo-audit configuration
+# https://rustsec.org/advisories/
+
+[advisories]
+# glib VariantStrIter unsoundness — not applicable:
+# We are Windows-only, glib is only used on Linux GTK backend via tao.
+# Cannot upgrade to 0.20.0 until Tauri/tao updates their dependency.
+ignore = ["RUSTSEC-2024-0418"]

@@ -24,8 +24,11 @@ jobs:
         with:
           filters: |
             rust:
-              - 'src-tauri/**'
-              - 'Cargo.lock'
+              - 'src-tauri/src/**'
+              - 'src-tauri/Cargo.toml'
+              - 'src-tauri/Cargo.lock'
+              - 'src-tauri/build.rs'
+              - 'src-tauri/resources/**'
             frontend:
               - 'src/**'
               - 'package.json'
