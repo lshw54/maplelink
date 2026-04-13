@@ -9,7 +9,8 @@ import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../shared/Modal";
-import type { GameAccountDto } from "../../lib/types";
+import { UpdateDialog } from "../shared/UpdateDialog";
+import type { GameAccountDto, UpdateInfoDto } from "../../lib/types";
 
 export function MainPage() {
   const { t } = useTranslation();
@@ -22,6 +23,7 @@ export function MainPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [pid, setPid] = useState<number | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<UpdateInfoDto | null>(null);
 
   // Poll game process status — clear pid when process exits
   useEffect(() => {
@@ -61,6 +63,13 @@ export function MainPage() {
     commands
       .getAppVersion()
       .then(setAppVersion)
+      .catch(() => {});
+    // Check for updates
+    commands
+      .checkUpdate()
+      .then((info) => {
+        if (info) setPendingUpdate(info);
+      })
       .catch(() => {});
     // Auto-detect game path if not set
     const currentConfig = useConfigStore.getState().config;
@@ -355,6 +364,11 @@ export function MainPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Update dialog */}
+      {pendingUpdate && (
+        <UpdateDialog update={pendingUpdate} onClose={() => setPendingUpdate(null)} />
+      )}
     </div>
   );
 }

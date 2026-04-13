@@ -1,70 +1,113 @@
-//! Auto-update service — checks for updates, downloads, and applies them.
+//! Auto-update service — checks GitHub Releases for updates.
 //!
-//! All network failures are handled gracefully: logged and surfaced as
-//! [`UpdateError`] variants so the application can continue without
-//! interruption.
+//! Supports ghproxy.com mirror for users in mainland China.
 
 use crate::core::error::UpdateError;
 use crate::models::update::UpdateInfo;
 
-/// The update endpoint URL template. `{current_version}` is replaced at
-/// runtime with the running application version.
-const UPDATE_ENDPOINT: &str = "https://releases.maplelink.app/check?version={current_version}";
+/// GitHub API endpoint for latest release.
+const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
 
-/// Check the remote endpoint for an available update.
-///
-/// Returns `Ok(Some(UpdateInfo))` when a newer version exists, `Ok(None)`
-/// when the application is already up-to-date, or an `UpdateError` on
-/// network / parse failures.
+/// ghproxy mirror prefix for accelerated downloads in China.
+const GHPROXY_PREFIX: &str = "https://mirror.ghproxy.com/";
+
+/// Check GitHub Releases for an available update.
 pub async fn check_for_update(
     client: &reqwest::Client,
     current_version: &str,
 ) -> Result<Option<UpdateInfo>, UpdateError> {
-    let url = UPDATE_ENDPOINT.replace("{current_version}", current_version);
-
-    tracing::info!("checking for updates at {url}");
+    tracing::info!("checking for updates (current: v{current_version})");
 
     let response = client
-        .get(&url)
+        .get(GITHUB_API_URL)
+        .header("User-Agent", "MapleLink-Updater")
+        .header("Accept", "application/vnd.github.v3+json")
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .map_err(|e| {
-            tracing::warn!("update check network error: {e}");
-            UpdateError::CheckFailed {
-                reason: format!("network error: {e}"),
-            }
+        .map_err(|e| UpdateError::CheckFailed {
+            reason: format!("network error: {e}"),
         })?;
 
-    if response.status() == reqwest::StatusCode::NO_CONTENT {
-        tracing::info!("no update available (already up-to-date)");
-        return Ok(None);
-    }
-
     if !response.status().is_success() {
-        let status = response.status();
-        tracing::warn!("update check returned HTTP {status}");
         return Err(UpdateError::CheckFailed {
-            reason: format!("HTTP {status}"),
+            reason: format!("HTTP {}", response.status()),
         });
     }
 
-    let info: UpdateInfo = response.json().await.map_err(|e| {
-        tracing::warn!("failed to parse update response: {e}");
-        UpdateError::CheckFailed {
-            reason: format!("invalid response body: {e}"),
-        }
-    })?;
+    let release: serde_json::Value =
+        response
+            .json()
+            .await
+            .map_err(|e| UpdateError::CheckFailed {
+                reason: format!("invalid response: {e}"),
+            })?;
 
-    tracing::info!("update available: v{}", info.version);
-    Ok(Some(info))
+    let tag = release["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v');
+
+    if tag.is_empty() {
+        return Ok(None);
+    }
+
+    // Compare versions
+    if !is_newer(tag, current_version) {
+        tracing::info!("no update available (latest: v{tag})");
+        return Ok(None);
+    }
+
+    // Find the .exe asset (standalone exe, not NSIS installer)
+    let download_url = release["assets"]
+        .as_array()
+        .and_then(|assets| {
+            assets.iter().find_map(|a| {
+                let name = a["name"].as_str().unwrap_or("");
+                if name.to_lowercase().ends_with(".exe") {
+                    a["browser_download_url"].as_str().map(String::from)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_default();
+
+    let changelog = release["body"].as_str().unwrap_or("").to_string();
+    let is_prerelease = release["prerelease"].as_bool().unwrap_or(false);
+
+    tracing::info!("update available: v{tag} (prerelease={is_prerelease})");
+
+    Ok(Some(UpdateInfo {
+        version: tag.to_string(),
+        changelog,
+        download_url,
+        is_prerelease,
+    }))
 }
 
-/// Download the update binary from the given URL.
-///
-/// Returns the raw bytes on success. Corrupt or incomplete downloads are
-/// detected by checking the HTTP status and content length, then discarded
-/// with a logged error.
+/// Get the download URL, optionally proxied through ghproxy for China users.
+pub fn get_download_url(original_url: &str, use_proxy: bool) -> String {
+    if use_proxy && !original_url.is_empty() {
+        format!("{GHPROXY_PREFIX}{original_url}")
+    } else {
+        original_url.to_string()
+    }
+}
+
+/// Test if GitHub API is reachable (for detecting if user needs ghproxy).
+pub async fn test_github_connectivity(client: &reqwest::Client) -> bool {
+    client
+        .head("https://api.github.com")
+        .header("User-Agent", "MapleLink-Updater")
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+/// Download the update binary.
 pub async fn download_update(
     client: &reqwest::Client,
     download_url: &str,
@@ -73,97 +116,71 @@ pub async fn download_update(
 
     let response = client
         .get(download_url)
+        .header("User-Agent", "MapleLink-Updater")
         .timeout(std::time::Duration::from_secs(300))
         .send()
         .await
-        .map_err(|e| {
-            tracing::error!("update download network error: {e}");
-            UpdateError::DownloadFailed {
-                reason: format!("network error: {e}"),
-            }
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("network error: {e}"),
         })?;
 
     if !response.status().is_success() {
-        let status = response.status();
-        tracing::error!("update download returned HTTP {status}");
         return Err(UpdateError::DownloadFailed {
-            reason: format!("HTTP {status}"),
+            reason: format!("HTTP {}", response.status()),
         });
     }
 
-    let expected_len = response.content_length();
-    let bytes = response.bytes().await.map_err(|e| {
-        tracing::error!("failed to read update body: {e}");
-        UpdateError::DownloadFailed {
-            reason: format!("failed to read response body: {e}"),
-        }
-    })?;
-
-    // Verify content length if the server provided one.
-    if let Some(expected) = expected_len {
-        if bytes.len() as u64 != expected {
-            tracing::error!(
-                "update download size mismatch: expected {expected}, got {}",
-                bytes.len()
-            );
-            return Err(UpdateError::CorruptDownload);
-        }
-    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("read error: {e}"),
+        })?;
 
     if bytes.is_empty() {
-        tracing::error!("update download returned empty body");
         return Err(UpdateError::CorruptDownload);
     }
 
-    tracing::info!("update downloaded successfully ({} bytes)", bytes.len());
+    tracing::info!("downloaded {} bytes", bytes.len());
     Ok(bytes.to_vec())
 }
 
-/// Apply a downloaded update.
-///
-/// This is a placeholder that writes the update payload to a staging path
-/// and signals that a restart is needed. The actual installer/replacement
-/// logic depends on the packaging strategy (NSIS, MSI, etc.) and will be
-/// wired in during integration.
+/// Save downloaded update to a temp file and launch the installer.
 pub async fn apply_update(
     update_bytes: &[u8],
     staging_dir: &std::path::Path,
-) -> Result<(), UpdateError> {
-    tracing::info!("applying update ({} bytes)", update_bytes.len());
-
-    tokio::fs::create_dir_all(staging_dir).await.map_err(|e| {
-        tracing::error!("failed to create staging directory: {e}");
-        UpdateError::DownloadFailed {
-            reason: format!("failed to create staging dir: {e}"),
-        }
-    })?;
-
-    let installer_path = staging_dir.join("maplelink_update.exe");
-
-    tokio::fs::write(&installer_path, update_bytes)
+) -> Result<std::path::PathBuf, UpdateError> {
+    tokio::fs::create_dir_all(staging_dir)
         .await
-        .map_err(|e| {
-            tracing::error!("failed to write update installer: {e}");
-            UpdateError::DownloadFailed {
-                reason: format!("failed to write installer: {e}"),
-            }
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("failed to create staging dir: {e}"),
         })?;
 
-    tracing::info!(
-        "update staged at {}; restart required to complete",
-        installer_path.display()
-    );
-    Ok(())
+    let installer_path = staging_dir.join("MapleLink_update.exe");
+    tokio::fs::write(&installer_path, update_bytes)
+        .await
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("failed to write installer: {e}"),
+        })?;
+
+    tracing::info!("update staged at {}", installer_path.display());
+    Ok(installer_path)
 }
 
-/// Determine whether an auto-update check should run based on config.
-///
-/// Pure helper — returns `true` only when `auto_update` is enabled.
+/// Simple semver comparison: returns true if `new` > `current`.
+fn is_newer(new: &str, current: &str) -> bool {
+    let parse = |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse().ok()).collect() };
+    let n = parse(new);
+    let c = parse(current);
+    n > c
+}
+
+/// Determine whether an auto-update check should run.
 pub fn should_check_on_startup(auto_update_enabled: bool) -> bool {
     auto_update_enabled
 }
 
-/// Current application version read from `Cargo.toml` at compile time.
+/// Current application version from Cargo.toml.
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
@@ -173,32 +190,28 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    // Feature: maplelink-rewrite, Property 11: Disabled auto-update skips update check
-    //
-    // For any AppConfig where auto_update is false, the startup sequence
-    // shall not invoke the update check endpoint.
-    proptest! {
-        #[test]
-        fn prop_disabled_auto_update_skips_check(
-            // Generate a random bool that is always false for the disabled case.
-            _dummy in 0u8..10,
-        ) {
-            // When auto_update is disabled, should_check_on_startup must return false.
-            prop_assert!(!should_check_on_startup(false));
-        }
-
-        #[test]
-        fn prop_enabled_auto_update_allows_check(
-            _dummy in 0u8..10,
-        ) {
-            // When auto_update is enabled, should_check_on_startup must return true.
-            prop_assert!(should_check_on_startup(true));
-        }
+    #[test]
+    fn is_newer_works() {
+        assert!(is_newer("0.2.0", "0.1.0"));
+        assert!(is_newer("1.0.0", "0.9.9"));
+        assert!(!is_newer("0.1.0", "0.1.0"));
+        assert!(!is_newer("0.0.9", "0.1.0"));
     }
 
     #[test]
     fn current_version_is_non_empty() {
-        let v = current_version();
-        assert!(!v.is_empty());
+        assert!(!current_version().is_empty());
+    }
+
+    proptest! {
+        #[test]
+        fn prop_disabled_auto_update_skips_check(_dummy in 0u8..10) {
+            prop_assert!(!should_check_on_startup(false));
+        }
+
+        #[test]
+        fn prop_enabled_auto_update_allows_check(_dummy in 0u8..10) {
+            prop_assert!(should_check_on_startup(true));
+        }
     }
 }

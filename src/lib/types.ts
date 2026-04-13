@@ -49,6 +49,7 @@ export interface UpdateInfoDto {
   version: string;
   changelog: string;
   downloadUrl: string;
+  isPrerelease: boolean;
 }
 
 export interface QrCodeData {

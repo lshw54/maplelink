@@ -20,9 +20,9 @@ export function useCheckUpdate() {
 
 /** Apply a downloaded update. */
 export function useApplyUpdate() {
-  return useMutation<undefined, Error>({
-    mutationFn: async () => {
-      await commands.applyUpdate();
+  return useMutation<undefined, Error, { downloadUrl: string; useProxy?: boolean }>({
+    mutationFn: async ({ downloadUrl, useProxy }) => {
+      await commands.applyUpdate(downloadUrl, useProxy);
     },
   });
 }

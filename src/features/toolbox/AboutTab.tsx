@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { UpdateDialog } from "../shared/UpdateDialog";
 import type { UpdateInfoDto } from "../../lib/types";
 
 export function AboutTab() {
@@ -8,6 +9,7 @@ export function AboutTab() {
   const [appVersion, setAppVersion] = useState("0.1.0");
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateInfoDto | null | undefined>(undefined);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
 
   useEffect(() => {
     commands
@@ -22,6 +24,7 @@ export function AboutTab() {
     try {
       const info = await commands.checkUpdate();
       setUpdateResult(info);
+      if (info) setShowUpdateDialog(true);
     } catch {
       setUpdateResult(null);
     } finally {
@@ -31,7 +34,6 @@ export function AboutTab() {
 
   return (
     <div className="flex flex-col items-center gap-4 py-6">
-      {/* App icon */}
       <img src="/app-icon.png" alt="MapleLink" className="h-16 w-16 rounded-[16px] shadow-lg" />
 
       <div className="flex flex-col items-center gap-1">
@@ -45,7 +47,6 @@ export function AboutTab() {
         {t("toolbox.about.description")}
       </p>
 
-      {/* Check for Updates */}
       <button
         onClick={handleCheckUpdate}
         disabled={checking}
@@ -53,7 +54,7 @@ export function AboutTab() {
       >
         {checking ? t("toolbox.about.checking_update") : t("toolbox.about.check_update")}
       </button>
-      {updateResult !== undefined && (
+      {updateResult !== undefined && !showUpdateDialog && (
         <span className={`text-[12px] ${updateResult ? "text-accent" : "text-text-faint"}`}>
           {updateResult
             ? t("toolbox.about.update_available").replace("{{version}}", updateResult.version)
@@ -63,7 +64,7 @@ export function AboutTab() {
 
       <div className="flex flex-col items-center gap-1 text-[12px] text-text-dim">
         <a
-          href="https://github.com/maplelink"
+          href="https://github.com/lshw54/maplelink"
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent hover:underline"
@@ -72,6 +73,10 @@ export function AboutTab() {
         </a>
         <span>{t("toolbox.about.license")}</span>
       </div>
+
+      {showUpdateDialog && updateResult && (
+        <UpdateDialog update={updateResult} onClose={() => setShowUpdateDialog(false)} />
+      )}
     </div>
   );
 }

@@ -157,6 +157,7 @@ pub fn run() {
             commands::auth::gamepass_webview_done,
             commands::update::check_update,
             commands::update::apply_update,
+            commands::update::test_github_access,
         ])
         // -- Setup (startup sequence) ---------------------------------------
         .setup(|app| {

@@ -1,7 +1,29 @@
-name: Tauri Build
+name: Build and Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        default: "prerelease"
+        type: choice
+        options:
+          - prerelease
+          - release
+      version_increment:
+        description: "Version increment type"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      release_name:
+        description: "Release name (leave empty to auto-generate)"
+        required: false
+        default: ""
 
 env:
   CARGO_TERM_COLOR: always
@@ -9,10 +31,15 @@ env:
 
 jobs:
   build:
-    name: Tauri Build
+    name: Build and Release
     runs-on: windows-latest
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -31,15 +58,137 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: cargo tauri build
-        run: cargo install tauri-cli --version "^2" && cargo tauri build
+      - name: Prepare version
+        id: version
+        shell: pwsh
+        run: |
+          # Read current version from Cargo.toml
+          $cargoToml = Get-Content "src-tauri/Cargo.toml" -Raw
+          if ($cargoToml -match 'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
+              $major = [int]$matches[1]
+              $minor = [int]$matches[2]
+              $patch = [int]$matches[3]
+          } else {
+              Write-Error "Could not parse version from Cargo.toml"
+              exit 1
+          }
+
+          $increment = "${{ github.event.inputs.version_increment }}"
+          switch ($increment) {
+              'major' { $major++; $minor=0; $patch=0 }
+              'minor' { $minor++; $patch=0 }
+              'patch' { $patch++ }
+          }
+
+          $version = "$major.$minor.$patch"
+          $tagName = "v$version"
+          $buildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")
+
+          Write-Host "New version: $version"
+
+          # Update Cargo.toml
+          $cargoToml = $cargoToml -replace 'version\s*=\s*"\d+\.\d+\.\d+"', "version = `"$version`""
+          $cargoToml | Set-Content "src-tauri/Cargo.toml" -NoNewline
+
+          # Update tauri.conf.json5
+          $tauriConf = Get-Content "src-tauri/tauri.conf.json5" -Raw
+          $tauriConf = $tauriConf -replace '"version":\s*"\d+\.\d+\.\d+"', "`"version`": `"$version`""
+          $tauriConf | Set-Content "src-tauri/tauri.conf.json5" -NoNewline
+
+          # Update package.json
+          $pkgJson = Get-Content "package.json" -Raw
+          $pkgJson = $pkgJson -replace '"version":\s*"\d+\.\d+\.\d+"', "`"version`": `"$version`""
+          $pkgJson | Set-Content "package.json" -NoNewline
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "build_time=$buildTime" >> $env:GITHUB_OUTPUT
+
+      - name: Build Tauri app
+        run: cargo tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Copy standalone exe
+        shell: pwsh
+        run: |
+          Copy-Item "src-tauri/target/release/maplelink.exe" "MapleLink.exe"
+          $hash = (Get-FileHash "MapleLink.exe" -Algorithm SHA256).Hash
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+          Write-Host "SHA256: $hash"
+          Write-Host "Size: $((Get-Item MapleLink.exe).Length) bytes"
+        id: artifact
+
+      - name: Prepare release notes
+        id: notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $repoUrl = "${{ github.server_url }}/${{ github.repository }}"
+          $lastRelease = gh api repos/${{ github.repository }}/releases --paginate 2>$null | ConvertFrom-Json | Sort-Object created_at -Descending | Select-Object -First 1
+          $range = if ($lastRelease) { "$($lastRelease.tag_name)..HEAD" } else { "-n 30" }
+          $commits = git log $range --pretty=format:"- [%h]($repoUrl/commit/%H) %s" --no-merges 2>$null
+          $commitCount = if ($commits) { ($commits -split "`n").Count } else { 0 }
+          $commitsText = if ($commits) { $commits -join "`n" } else { "Initial release" }
+
+          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
+          "commits<<$delimiter" >> $env:GITHUB_OUTPUT
+          $commitsText >> $env:GITHUB_OUTPUT
+          $delimiter >> $env:GITHUB_OUTPUT
+          "count=$commitCount" >> $env:GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: maplelink-build
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-          retention-days: 7
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: >
+            ${{
+              github.event.inputs.release_name != ''
+                && github.event.inputs.release_name
+                || format('v{0}', steps.version.outputs.version)
+            }}
+          body: |
+            **Version:** v${{ steps.version.outputs.version }}
+            **Type:** ${{ github.event.inputs.release_type == 'release' && 'Release' || 'Pre-Release' }}
+            **Built:** ${{ steps.version.outputs.build_time }} UTC
+
+            ---
+
+            ### Download
+            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — standalone, no installation needed
+
+            ### Changes
+            ${{ steps.notes.outputs.commits }}
+
+            (${{ steps.notes.outputs.count }} commits)
+
+            ### Usage
+            1. Download **MapleLink.exe**
+            2. Place in any folder and run
+            3. First launch will auto-extract locale emulation files
+
+            ${{ github.event.inputs.release_type == 'prerelease' && '> ⚠️ This is a pre-release. Use at your own risk.' || '' }}
+
+            <details>
+            <summary>Details</summary>
+
+            | Item | Value |
+            |------|-------|
+            | SHA256 | `${{ steps.artifact.outputs.sha256 }}` |
+            | Build Time | ${{ steps.version.outputs.build_time }} UTC |
+            | Commit | [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
+
+            </details>
+          files: MapleLink.exe
+          draft: false
+          prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+
+      - name: Commit version bump
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+          git push

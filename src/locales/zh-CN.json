@@ -128,6 +128,13 @@
   "toolbox.about.no_update": "已是最新版本",
   "toolbox.about.update_available": "有可用更新：v{{version}}",
 
+  "update.title": "有可用更新",
+  "update.new_version_available": "新版本已准备好下载",
+  "update.download": "下载并安装",
+  "update.downloading": "下载中...",
+  "update.skip": "稍后",
+  "update.use_mirror": "使用镜像加速（建议中国大陆用户开启）",
+
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",
   "shared.titlebar.close": "关闭",

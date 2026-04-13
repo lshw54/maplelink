@@ -9,6 +9,7 @@ pub struct UpdateInfo {
     pub version: String,
     pub changelog: String,
     pub download_url: String,
+    pub is_prerelease: bool,
 }
 
 /// Current status of an update operation.
