@@ -102,6 +102,9 @@ pub async fn get_game_credentials(
 ) -> Result<GameCredentialsDto, ErrorDto> {
     auth::validate_input("account_id", &account_id).map_err(to_dto)?;
 
+    // Acquire bf_client_lock to prevent concurrent beanfun HTTP operations
+    let _bf_lock = state.bf_client_lock.lock().await;
+
     let session_guard = state.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
@@ -129,6 +132,8 @@ pub async fn get_game_credentials(
 /// Replaces the cached list in [`AppState::game_accounts`].
 #[tauri::command]
 pub async fn refresh_accounts(state: State<'_, AppState>) -> Result<Vec<GameAccountDto>, ErrorDto> {
+    let _bf_lock = state.bf_client_lock.lock().await;
+
     let session_guard = state.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
@@ -139,7 +144,6 @@ pub async fn refresh_accounts(state: State<'_, AppState>) -> Result<Vec<GameAcco
 
     let dtos: Vec<GameAccountDto> = accounts.iter().map(GameAccountDto::from).collect();
 
-    // Release the read lock before acquiring the write lock
     drop(session_guard);
     *state.game_accounts.write().await = accounts;
 
@@ -160,26 +164,20 @@ pub async fn ping_session(state: State<'_, AppState>) -> Result<bool, ErrorDto> 
         }
     };
 
-    match beanfun_service::ping(&state.http_client, &region).await {
-        Ok(alive) => {
-            if !alive {
-                tracing::warn!("session ping returned empty — session may be dead");
-            }
-            // Don't auto-clear session on ping failure — the C# reference
-            // never does this. Let the user's next action (get OTP, etc.)
-            // discover the expired session naturally.
-            Ok(alive)
-        }
-        Err(e) => {
-            // Network error — don't clear session, just log
-            tracing::debug!("session ping network error: {e}");
-            Ok(true)
-        }
+    // Non-blocking: skip this ping if another operation is in progress.
+    // This prevents concurrent beanfun HTTP requests from corrupting the session.
+    if let Ok(_guard) = state.bf_client_lock.try_lock() {
+        beanfun_service::ping(&state.http_client, &region).await;
+    } else {
+        tracing::debug!("ping skipped — bf_client_lock is held by another operation");
     }
+    Ok(true)
 }
 
 #[tauri::command]
 pub async fn get_remain_point(state: State<'_, AppState>) -> Result<i32, ErrorDto> {
+    let _bf_lock = state.bf_client_lock.lock().await;
+
     let region = {
         let session_guard = state.session.read().await;
         let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
@@ -207,6 +205,9 @@ pub async fn auto_paste_otp(
 ) -> Result<bool, ErrorDto> {
     auth::validate_input("account_id", &account_id).map_err(to_dto)?;
 
+    // Acquire bf_client_lock for the HTTP credential retrieval part
+    let _bf_lock = state.bf_client_lock.lock().await;
+
     let session_guard = state.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
@@ -224,11 +225,10 @@ pub async fn auto_paste_otp(
         login_err_to_dto(e)
     })?;
 
-    // Drop the session lock before the blocking auto-paste call
+    // Drop locks before the blocking auto-paste call
     drop(session_guard);
+    drop(_bf_lock);
 
-    // Run the synchronous Win32 auto-paste on a blocking thread so we don't
-    // block the async runtime.
     let otp = creds.otp.clone();
     let aid = creds.account_id.clone();
     let pasted = tokio::task::spawn_blocking(move || {
@@ -257,6 +257,8 @@ pub async fn change_account_display_name(
 ) -> Result<bool, ErrorDto> {
     auth::validate_input("account_id", &account_id).map_err(to_dto)?;
     auth::validate_input("new_name", &new_name).map_err(to_dto)?;
+
+    let _bf_lock = state.bf_client_lock.lock().await;
 
     let session_guard = state.session.read().await;
     let _session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
@@ -287,6 +289,8 @@ pub async fn change_account_display_name(
 /// for HK region (not supported by the platform).
 #[tauri::command]
 pub async fn get_auth_email(state: State<'_, AppState>) -> Result<String, ErrorDto> {
+    let _bf_lock = state.bf_client_lock.lock().await;
+
     let session_guard = state.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 

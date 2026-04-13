@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.beanfun.com; style-src 'self' 'unsafe-inline' https://*.beanfun.com; img-src 'self' https://*.beanfun.com https://*.gamania.com data:; font-src 'self' https://*.beanfun.com; connect-src 'self' https://*.beanfun.com; object-src 'none'; base-uri 'self'; form-action https://*.beanfun.com 'self'; frame-src https://*.beanfun.com https://*.gamania.com"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.beanfun.com; style-src 'self' 'unsafe-inline' https://*.beanfun.com; img-src 'self' https://*.beanfun.com https://*.gamania.com data:; font-src 'self' https://*.beanfun.com; connect-src 'self' ipc: http://ipc.localhost https://*.beanfun.com; object-src 'none'; base-uri 'self'; form-action https://*.beanfun.com 'self'; frame-src https://*.beanfun.com https://*.gamania.com"
     }
   },
   "bundle": {

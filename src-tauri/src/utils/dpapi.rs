@@ -1,7 +1,7 @@
 //! Windows DPAPI wrapper for encrypting/decrypting data tied to the current user.
 //!
 //! Uses `CryptProtectData` / `CryptUnprotectData` from the Windows API,
-//! matching the reference Beanfun client's `ProtectedData.Protect/Unprotect`
+//! matching the original Beanfun client's ProtectedData.Protect/Unprotect
 //! with `DataProtectionScope.CurrentUser`.
 
 use rand::Rng;

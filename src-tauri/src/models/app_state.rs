@@ -30,6 +30,10 @@ pub struct AppState {
     pub saved_accounts: RwLock<Vec<SavedAccount>>,
     /// Path to the `accounts.json` file on disk.
     pub accounts_path: PathBuf,
+    /// Serializes beanfun HTTP operations (ping, OTP, account list, etc.)
+    /// to prevent concurrent requests from corrupting server-side session.
+    /// Prevents concurrent requests from corrupting server-side session state.
+    pub bf_client_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -126,6 +130,7 @@ mod tests {
                     config_path: std::path::PathBuf::from("test.ini"),
                     saved_accounts: RwLock::new(Vec::new()),
                     accounts_path: std::path::PathBuf::from("accounts.json"),
+                    bf_client_lock: tokio::sync::Mutex::new(()),
                 };
 
                 // Pre-condition: session exists

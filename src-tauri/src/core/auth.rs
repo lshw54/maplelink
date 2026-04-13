@@ -41,12 +41,13 @@ pub fn is_session_expired(session: &Session) -> bool {
     Utc::now() >= session.expires_at
 }
 
-/// Validate that a session exists and is not expired.
+/// Validate that a session exists.
 /// Returns the session reference on success.
+///
+/// Does not check expires_at — session validity is managed server-side via ping keep-alive.
 pub fn require_valid_session(session: &Option<Session>) -> Result<&Session, AuthError> {
     match session {
         None => Err(AuthError::NotAuthenticated),
-        Some(s) if is_session_expired(s) => Err(AuthError::SessionExpired),
         Some(s) => Ok(s),
     }
 }
@@ -170,12 +171,11 @@ mod tests {
     }
 
     #[test]
-    fn require_valid_session_expired() {
+    fn require_valid_session_with_old_expiry_still_works() {
+        // Session with past expires_at should still be valid
+        // (we rely on server-side expiration, not local)
         let s = make_session(-10, false);
-        assert!(matches!(
-            require_valid_session(&Some(s)),
-            Err(AuthError::SessionExpired)
-        ));
+        assert!(require_valid_session(&Some(s)).is_ok());
     }
 
     #[test]

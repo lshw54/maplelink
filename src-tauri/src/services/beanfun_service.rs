@@ -1,7 +1,7 @@
 //! HTTP client layer for the Beanfun platform.
 //!
 //! Implements the real HK login flow (regular + TOTP), game account retrieval,
-//! and OTP credential fetching based on the reference C# Beanfun client.
+//! and OTP credential fetching based on the original Beanfun client.
 //! TW region flows are kept as placeholders.
 //!
 //! All network I/O lives here — the rest of the app calls these functions
@@ -16,10 +16,10 @@ use crate::models::game_account::{GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
-/// User-Agent matching the reference C# client.
+/// User-Agent matching the original Beanfun client.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36";
 
-/// Magic constant used in the OTP retrieval request (from C# reference).
+/// Magic constant used in the OTP retrieval request.
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
 
 /// Default service code for MapleStory.
@@ -175,7 +175,7 @@ pub async fn logout(client: &Client, region: &Region) -> Result<(), LoginError> 
 /// Retrieve the list of game accounts for an authenticated session.
 ///
 /// For HK region, authenticates via `auth.aspx`, then parses the account
-/// list HTML page using regex (matching the C# reference).
+/// list HTML page using regex.
 pub async fn get_game_accounts(
     client: &Client,
     session: &Session,
@@ -232,7 +232,7 @@ pub fn parse_tw_account_list_html(html: &str) -> Vec<GameAccount> {
 /// Retrieve one-time game credentials (OTP) for a specific account.
 ///
 /// For HK region, implements the full long-polling + DES decryption flow
-/// from the C# reference `GetOTP`.
+/// matching the original GetOTP flow.
 pub async fn get_game_credentials(
     client: &Client,
     session: &Session,
@@ -245,19 +245,8 @@ pub async fn get_game_credentials(
     }
 }
 /// Ping the beanfun server to keep the session alive.
-/// Ping the beanfun server to keep the session alive.
-///
-/// Both regions use `echo_token.ashx?webtoken=1`.
-/// The request itself (with cookies) is what keeps the server-side session
-/// alive — matching the C# reference `BeanfunClient.Ping()`.
-/// Returns `true` if the ping request succeeded (regardless of response body).
-/// Ping the beanfun server to keep the session alive.
-///
-/// Both regions use `echo_token.ashx?webtoken=1`.
-/// The request itself (with cookies) keeps the server-side session alive,
-/// matching the C# reference `BeanfunClient.Ping()`.
-/// Returns `true` if the session is still valid (`ResultCode:1` in response).
-pub async fn ping(client: &Client, region: &Region) -> Result<bool, LoginError> {
+/// Fire-and-forget: catches all errors, never triggers logout.
+pub async fn ping(client: &Client, region: &Region) {
     let host = match region {
         Region::HK => "bfweb.hk",
         Region::TW => "tw",
@@ -265,21 +254,21 @@ pub async fn ping(client: &Client, region: &Region) -> Result<bool, LoginError> 
     let url = format!(
         "https://{host}.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1"
     );
-    let body = http_get_text(client, &url).await?;
-    let alive = body.contains("ResultCode:1");
-    tracing::debug!(
-        "session ping ({:?}): alive={alive}, body_len={}",
-        region,
-        body.len()
-    );
-    Ok(alive)
+    match http_get_text(client, &url).await {
+        Ok(body) => {
+            tracing::info!("session ping ({:?}): ok, body_len={}", region, body.len());
+        }
+        Err(e) => {
+            tracing::warn!("session ping ({:?}): failed: {e}", region);
+        }
+    }
 }
 
 /// Retrieve the user's remaining Beanfun points.
 ///
 /// GETs the `get_remain_point.ashx` endpoint and parses the JSON-like
 /// response for the `RemainPoint` value. Returns `0` when the field is
-/// absent or unparseable (matching the C# reference behaviour).
+/// absent or unparseable.
 pub async fn get_remain_point(client: &Client, region: &Region) -> Result<i32, LoginError> {
     let host = match region {
         Region::HK => "bfweb.hk",
@@ -644,7 +633,7 @@ async fn hk_get_accounts(
         &list_html[list_html.len().saturating_sub(3000)..]
     );
 
-    // Step 3: Parse accounts with regex matching C# pattern
+    // Step 3: Parse accounts from HTML
     let re = Regex::new(r#"onclick="([^"]*)"><div id="(\w+)" sn="(\d+)" name="([^"]+)""#)
         .map_err(|_| parse_error_str("failed to compile account regex"))?;
 
@@ -672,7 +661,7 @@ async fn hk_get_accounts(
         });
     }
 
-    // Sort by sn (matching C# behavior)
+    // Sort by sn
     accounts.sort_by(|a, b| a.sn.cmp(&b.sn));
 
     tracing::info!("HK: found {} game accounts", accounts.len());
@@ -704,7 +693,7 @@ async fn get_create_time(client: &Client, host: &str, sc: &str, sr: &str, sn: &s
 
 /// Retrieve OTP credentials for a specific game account (HK region).
 ///
-/// Implements the full long-polling + DES decryption flow from the C# reference.
+/// Implements the full long-polling + DES decryption flow.
 async fn hk_get_otp(
     client: &Client,
     session: &Session,
@@ -1952,7 +1941,7 @@ fn parse_error_str(msg: &str) -> LoginError {
     })
 }
 
-/// Basic HTML entity decoding (matching C# `WebUtility.HtmlDecode`).
+/// Basic HTML entity decoding.
 fn html_decode(s: &str) -> String {
     let s = s
         .replace("&amp;", "&")
@@ -1973,7 +1962,7 @@ fn html_decode(s: &str) -> String {
     .to_string()
 }
 
-/// Generate timestamp in format matching C# `GetCurrentTime(2)`:
+/// Generate timestamp in method-2 format:
 /// `{year}{month-1}{ddHHmmssfff}`
 fn get_current_time_method2() -> String {
     let now = chrono::Local::now();
@@ -1983,7 +1972,7 @@ fn get_current_time_method2() -> String {
     format!("{year}{month_zero_based}{rest}")
 }
 
-/// Generate timestamp in format matching C# `GetCurrentTime()` (default):
+/// Generate timestamp in default format:
 /// `yyyyMMddHHmmss.fff`
 fn get_current_time_default() -> String {
     chrono::Local::now().format("%Y%m%d%H%M%S%.3f").to_string()

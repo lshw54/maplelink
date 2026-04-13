@@ -219,7 +219,7 @@ pub fn run() {
                 .cookie_provider(cookie_jar.clone())
                 // Accept invalid SSL certificates for compatibility with game
                 // accelerators (e.g. UU) that proxy beanfun/gamania traffic.
-                // Matches the reference C# client's ServerCertificateValidationCallback.
+                // Matches the original client behavior.
                 .danger_accept_invalid_certs(true)
                 .build()
                 .expect("failed to build HTTP client");
@@ -235,6 +235,7 @@ pub fn run() {
                 config_path,
                 saved_accounts: tokio::sync::RwLock::new(saved_accounts),
                 accounts_path,
+                bf_client_lock: tokio::sync::Mutex::new(()),
             };
 
             app.manage(state);
@@ -272,6 +273,45 @@ pub fn run() {
                 match services::lr_service::ensure_lr_files(&app_handle).await {
                     Ok(path) => tracing::info!("LR files ready at {}", path.display()),
                     Err(e) => tracing::warn!("failed to extract LR files: {e}"),
+                }
+            });
+
+            // 6. Backend ping loop — runs every 60 seconds independently of frontend.
+            //    Frontend setInterval can be throttled by Windows when the app is
+            //    minimized or idle. This tokio loop is not affected by that.
+            //    Matches the original PingWorker behavior.
+            let ping_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait for user to login before starting ping
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    if let Some(state) = ping_app.try_state::<AppState>() {
+                        if state.session.read().await.is_some() {
+                            break;
+                        }
+                    }
+                }
+                tracing::info!("backend ping loop started");
+
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    if let Some(state) = ping_app.try_state::<AppState>() {
+                        let region = {
+                            let session = state.session.read().await;
+                            session.as_ref().map(|s| s.region.clone())
+                        };
+                        if let Some(region) = region {
+                            // Non-blocking: skip if another operation holds the lock
+                            if let Ok(_guard) = state.bf_client_lock.try_lock() {
+                                services::beanfun_service::ping(&state.http_client, &region).await;
+                            }
+                        } else {
+                            // Session cleared (logged out) — stop pinging
+                            tracing::info!("backend ping loop stopped (no session)");
+                            break;
+                        }
+                    }
                 }
             });
 

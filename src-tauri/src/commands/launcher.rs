@@ -62,7 +62,8 @@ pub async fn launch_game(
         fs_err_to_dto(fs_err)
     })?;
 
-    // 4. Get game credentials
+    // 4. Get game credentials (acquire bf_client_lock to prevent concurrent beanfun HTTP)
+    let _bf_lock = state.bf_client_lock.lock().await;
     let credentials = beanfun_service::get_game_credentials(
         &state.http_client,
         session,
@@ -72,15 +73,16 @@ pub async fn launch_game(
     .await
     .map_err(login_err_to_dto)?;
 
-    // Drop session read lock before any further state writes
+    // Drop locks before further state writes
     drop(session_guard);
+    drop(_bf_lock);
 
     // 5. Build launch command
     let launch_cmd =
         game_launcher::build_launch_command(&config, &credentials).map_err(fs_err_to_dto)?;
 
     // 6–7. Launch with LR or directly
-    // Auto mode (matching C# reference): detect system locale, use LR if not zh-TW/zh-HK
+    // Auto mode: detect system locale, use LR if not zh-TW/zh-HK
     let system_is_zhtw = lr_service::is_system_locale_chinese_traditional();
     tracing::info!("system locale is Traditional Chinese: {system_is_zhtw}");
 
@@ -116,7 +118,7 @@ pub async fn launch_game(
             .insert(pid, account_id.clone());
     }
 
-    // 9. Auto-kill Patcher.exe (matching C# checkPatcher_Tick)
+    // 9. Auto-kill Patcher.exe
     // The game may spawn Patcher.exe for auto-update before MapleStory.exe.
     // Kill it so the game launches directly with our OTP credentials.
     let game_dir = launch_cmd.working_dir.clone();
@@ -130,7 +132,7 @@ pub async fn launch_game(
 
 /// Poll for Patcher.exe in the game directory and kill it.
 ///
-/// Matches C# `checkPatcher_Tick`: every 100ms for up to 30 seconds,
+/// Every 100ms for up to 30 seconds,
 /// check if Patcher.exe from the game directory is running and kill it.
 /// This prevents the game's auto-updater from blocking the direct launch.
 async fn kill_patcher_loop(game_dir: &str) {
@@ -189,73 +191,8 @@ async fn kill_patcher_loop(game_dir: &str) {
 
 /// Launch the game via Locale Remulator.
 ///
-/// Extracts LR files to app data, then spawns `LRProc.exe` with the
-/// profile GUID and game path + args.
-/// Matches C# reference: UseShellExecute=true, Verb="runas" (admin),
-/// WorkingDirectory = game directory.
-/// Launch the game via Locale Remulator.
-///
-/// Extracts LR files to app data, then spawns `LRProc.exe` with the
-/// profile GUID and game path + args.
-/// Since maplelink.exe runs as admin (via manifest), LRProc inherits
-/// elevation — no need for ShellExecute/runas.
-/// Launch the game via Locale Remulator.
-///
-/// Launch the game via Locale Remulator.
-///
-/// Extracts LR files to app data, then spawns `LRProc.exe`.
-/// C# reference: `LRProc.exe GUID "gamepath" server port BeanFun account otp`
-/// WorkingDirectory = game directory.
-/// Launch the game via Locale Remulator.
-///
-/// Extracts LR files to app data, then spawns `LRProc.exe`.
-/// C# reference: `LRProc.exe GUID "gamepath" server port BeanFun account otp`
-/// WorkingDirectory = game directory.
-/// Launch the game via Locale Remulator.
-///
-/// Extracts LR files to app data, then spawns `LRProc.exe`.
-/// Uses `powershell Start-Process` to match the confirmed working behavior.
-/// Launch the game via Locale Remulator.
-///
-/// Extracts LR files to app data, then spawns `LRProc.exe` via PowerShell
-/// Start-Process (confirmed working).
-/// Launch the game via Locale Remulator.
-///
-/// When `traditional_login` is true, passes full server/port/account/otp args.
-/// When false, only passes GUID + game path (simpler, more compatible).
-/// Launch the game via Locale Remulator.
-///
-/// `traditional_login=true`: only GUID + game path (user logs in manually in-game).
-/// `traditional_login=false`: GUID + game path + server/port/BeanFun/account/otp
-///   (game auto-connects with credentials).
-/// Launch the game via Locale Remulator.
-///
-/// `traditional_login=true`: only GUID + game path (user logs in manually).
-/// `traditional_login=false` + TW: also passes server/port/account/otp.
-/// Launch the game via Locale Remulator.
-///
-/// Uses ShellExecuteW (matching C# UseShellExecute=true) to avoid
-/// flashing a console window for LRProc.exe.
-/// Launch the game via Locale Remulator.
-///
-/// Uses CreateProcessW with SW_HIDE to prevent console window flash.
-/// Launch the game via Locale Remulator.
-///
-/// Uses ShellExecuteW matching C# `UseShellExecute = true`.
-/// LRProc.exe is GUI subsystem so ShellExecuteW won't open a console.
-/// Launch the game via Locale Remulator.
-///
-/// Matches C# exactly: ShellExecuteW with "runas" verb.
-/// Launch the game via Locale Remulator.
-///
-/// Since maplelink.exe self-elevates to admin on startup, LRProc inherits
-/// admin privileges. Uses CreateProcessW with SW_HIDE to avoid console flash.
-/// Launch the game via Locale Remulator.
-///
-/// Matches C# `startByLR` exactly:
-/// - LR files are in the same directory as maplelink.exe
-/// - ShellExecuteW (no console window for GUI subsystem exe)
-/// - WorkingDirectory = game directory
+/// Uses ShellExecuteW to avoid console window flash.
+/// TW non-traditional mode passes server/port/account/otp args.
 async fn launch_with_lr(
     app: &tauri::AppHandle,
     launch_cmd: &game_launcher::LaunchCommand,
@@ -268,8 +205,7 @@ async fn launch_with_lr(
 
     let use_cmd_args = !traditional_login && matches!(region, crate::models::session::Region::TW);
 
-    // C# builds: commandLine = "\"gamepath\" " + command
-    // Then: Arguments = "GUID " + commandLine
+    // Build LR arguments: GUID + game path (+ optional server/port/account/otp)
     let lr_args = if use_cmd_args {
         format!(
             "{} \"{}\" tw.login.maplestory.beanfun.com 8484 BeanFun {} {}",
@@ -293,7 +229,7 @@ async fn launch_with_lr(
         "launching game via Locale Remulator"
     );
 
-    // C# uses: UseShellExecute = true (no console window)
+    // ShellExecuteW avoids console window flash for GUI subsystem exe.
     // Since maplelink.exe self-elevates, we don't need "runas" verb.
     #[cfg(target_os = "windows")]
     {

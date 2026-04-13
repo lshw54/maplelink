@@ -1,6 +1,6 @@
 //! DES ECB decryption for Beanfun OTP retrieval.
 //!
-//! Mirrors the C# `WCDESComp.DecryStrHex` implementation:
+//! DES ECB decryption matching the original WCDESComp.DecryStrHex:
 //! DES ECB mode, no padding, ASCII key, hex-encoded ciphertext input.
 
 use des::cipher::{BlockDecrypt, KeyInit};

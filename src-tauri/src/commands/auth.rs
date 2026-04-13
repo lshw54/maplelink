@@ -757,7 +757,7 @@ pub async fn open_gamepass_login(
 
 /// Called by the GamePass webview init script when login completes.
 ///
-/// Mirrors the C# reference: uses WebView2 CookieManager to extract ALL
+/// Uses WebView2 CookieManager to extract ALL
 /// cookies (including HttpOnly), injects them into the reqwest cookie jar,
 /// then fetches game accounts via reqwest.
 #[tauri::command]
@@ -807,7 +807,7 @@ pub async fn gamepass_webview_done(
         &real_web_token[..real_web_token.len().min(20)]
     );
 
-    // Step 2: Inject ALL cookies into reqwest jar (same as C# GamePassLogin)
+    // Step 2: Inject ALL cookies into reqwest jar
     let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
     let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
     let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
@@ -872,7 +872,7 @@ pub async fn gamepass_webview_done(
 type CookieTuple = (String, String, String, String);
 
 /// Extract all cookies from a WebView2 window using the native CookieManager API.
-/// This reads HttpOnly cookies too — matching the C# `CookieManager.GetCookiesAsync()`.
+/// This reads HttpOnly cookies too (including secure/httponly flags).
 #[cfg(target_os = "windows")]
 async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Vec<CookieTuple> {
     use std::sync::{Arc, Mutex};

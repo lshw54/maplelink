@@ -4,7 +4,6 @@ import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
-import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
@@ -81,27 +80,44 @@ export function MainPage() {
     }
   }, []);
 
-  // Session keep-alive: ping every 60 seconds (matching C# PingWorker)
-  // If server says session is dead → immediately logout + redirect to login
+  // Session keep-alive: frontend backup ping every 60 seconds.
+  // The main ping loop runs in the Rust backend (not affected by browser throttling).
+  // This frontend ping is a backup + wake-from-sleep detector.
   useEffect(() => {
-    async function doPing() {
-      try {
-        const alive = await commands.pingSession();
-        if (!alive) {
-          useErrorToastStore.getState().addToast({
-            message: t("errors.AUTH_SESSION_EXPIRED"),
-            category: "authentication",
-            critical: true,
-          });
+    let lastPingTime = Date.now();
+
+    async function checkSession() {
+      const now = Date.now();
+      const elapsed = now - lastPingTime;
+      lastPingTime = now;
+
+      // If more than 5 minutes since last tick, computer likely slept.
+      // Verify session is still alive.
+      if (elapsed > 5 * 60 * 1000) {
+        try {
+          await commands.getRemainPoint();
+        } catch {
           useAuthStore.getState().clearSession();
+          return;
         }
-      } catch {
-        // Network error — ignore, don't logout
+      }
+
+      commands.pingSession().catch(() => {});
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        checkSession();
       }
     }
-    const interval = setInterval(doPing, 60_000);
-    return () => clearInterval(interval);
-  }, [t]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const interval = setInterval(checkSession, 60_000);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   const handleSelectAccount = useCallback((account: GameAccountDto) => {
     setSelectedAccountId(account.id);

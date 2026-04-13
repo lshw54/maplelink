@@ -51,9 +51,10 @@ pub async fn spawn_process(
 pub fn is_process_name_running(name: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
+        use std::os::windows::process::CommandExt;
         Command::new("tasklist")
             .args(["/FI", &format!("IMAGENAME eq {name}"), "/NH", "/FO", "CSV"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
             .map(|output| {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -77,8 +78,10 @@ pub fn is_process_name_running(name: &str) -> bool {
 pub fn is_process_running(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
             .map(|output| {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -110,8 +113,10 @@ pub fn is_process_running(pid: u32) -> bool {
 pub async fn terminate_process(pid: u32) -> Result<(), ProcessError> {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         let output = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/F"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
             .map_err(|e| ProcessError::SpawnFailed {
                 path: "taskkill".to_string(),

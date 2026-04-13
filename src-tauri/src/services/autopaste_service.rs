@@ -17,8 +17,8 @@
 /// Calls Win32 APIs (`FindWindowW`, `SetForegroundWindow`, `PostMessageW`,
 /// etc.) which are inherently unsafe but wrapped here behind a safe interface.
 #[cfg(target_os = "windows")]
-pub fn auto_paste_credentials(account_id: &str, otp: &str, is_hk: bool) -> bool {
-    win32::do_auto_paste(account_id, otp, is_hk)
+pub fn auto_paste_credentials(account_id: &str, otp: &str, _is_hk: bool) -> bool {
+    win32::do_auto_paste(account_id, otp)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -143,109 +143,83 @@ mod win32 {
     }
 
     /// Main auto-paste implementation.
-    pub fn do_auto_paste(account_id: &str, otp: &str, is_hk: bool) -> bool {
-        // Wait for the MapleStory window to appear (up to 30 seconds).
-        // The game may take time to load, especially after patching.
-        let hwnd = {
-            let mut found = None;
-            for attempt in 0..60 {
-                if let Some(h) = find_maple_window() {
-                    found = Some(h);
-                    break;
-                }
-                if attempt % 10 == 0 && attempt > 0 {
-                    tracing::debug!("waiting for MapleStory window... ({attempt}/60)");
-                }
-                sleep_ms(500);
-            }
-            match found {
-                Some(h) => h,
-                None => {
-                    tracing::info!("MapleStory window not found after 30s, skipping auto-paste");
-                    return false;
-                }
+    /// Auto-paste credentials into MapleStory window (HK + TW 統一版)
+    pub fn do_auto_paste(account_id: &str, otp: &str) -> bool {
+        let hwnd = match find_maple_window() {
+            Some(h) => h,
+            None => {
+                tracing::warn!("MapleStory window not found, skipping auto-paste");
+                return false;
             }
         };
 
-        // Give the window a moment to fully initialize
-        sleep_ms(500);
+        sleep_ms(100); // 給遊戲窗口完全載入
 
-        // Bring the game window to the foreground reliably
-        // Windows restricts SetForegroundWindow — use AttachThreadInput trick
+        // 可靠帶到最前面
         unsafe {
             let fg_hwnd = GetForegroundWindow();
             let fg_thread = GetWindowThreadProcessId(fg_hwnd, std::ptr::null_mut());
             let our_thread = GetCurrentThreadId();
 
             if fg_thread != our_thread {
-                AttachThreadInput(our_thread, fg_thread, 1); // attach
+                AttachThreadInput(our_thread, fg_thread, 1);
             }
 
             ShowWindow(hwnd, SW_RESTORE);
             SetForegroundWindow(hwnd);
 
             if fg_thread != our_thread {
-                AttachThreadInput(our_thread, fg_thread, 0); // detach
+                AttachThreadInput(our_thread, fg_thread, 0);
             }
         }
         sleep_ms(200);
 
-        // For HK MapleStory: press ESC to close any dialog, then click the
-        // account text box — matching C# exactly: SetCursorPos + PostMessage
-        if is_hk {
-            send_key(hwnd, VK_ESCAPE);
-            sleep_ms(100);
+        // 按 ESC + 點擊帳號欄
+        send_key(hwnd, VK_ESCAPE);
+        sleep_ms(180);
 
-            let mut rect = RECT {
-                left: 0,
-                top: 0,
-                right: 0,
-                bottom: 0,
-            };
-            let got_rect = unsafe { GetClientRect(hwnd, &mut rect) };
-            if got_rect != 0 {
-                let w = rect.right - rect.left;
-                let h = rect.bottom - rect.top;
-                let text_box_x = w / 2;
-                let text_box_y = (h as f64 * 0.4) as i32;
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if unsafe { GetClientRect(hwnd, &mut rect) } != 0 {
+            let w = rect.right - rect.left;
+            let h = rect.bottom - rect.top;
 
-                // Save old cursor position
-                let mut old_point = POINT { x: 0, y: 0 };
-                unsafe { GetCursorPos(&mut old_point) };
+            let click_x = w / 2;
+            let click_y = (h as f64 * 0.40) as i32;
 
-                // Convert client coords to screen coords
-                let mut screen_point = POINT { x: 0, y: 0 };
-                unsafe { ClientToScreen(hwnd, &mut screen_point) };
+            let mut old_point = POINT { x: 0, y: 0 };
+            unsafe { GetCursorPos(&mut old_point) };
 
-                // Move cursor to the account text box and click
-                unsafe { SetCursorPos(screen_point.x + text_box_x, screen_point.y + text_box_y) };
-                let pos = ((text_box_y as LPARAM) << 16) | (text_box_x as LPARAM & 0xFFFF);
-                unsafe { PostMessageW(hwnd, WM_LBUTTONDOWN, 1, pos) };
-                sleep_ms(200);
+            let mut screen_point = POINT { x: 0, y: 0 };
+            unsafe { ClientToScreen(hwnd, &mut screen_point) };
 
-                // Restore cursor
-                unsafe { SetCursorPos(old_point.x, old_point.y) };
-            }
+            unsafe { SetCursorPos(screen_point.x + click_x, screen_point.y + click_y) };
+            let pos = ((click_y as LPARAM) << 16) | (click_x as LPARAM & 0xFFFF);
+            unsafe { PostMessageW(hwnd, WM_LBUTTONDOWN, 1, pos) };
+            sleep_ms(280);
+
+            unsafe { SetCursorPos(old_point.x, old_point.y) };
         }
 
-        // Clear account field (END + 64× BACKSPACE) and type account ID
-        clear_field(hwnd, 64);
+        // ==================== 通用步驟 (HK + TW 都一樣) ====================
+        clear_field(hwnd, 64); // 清空帳號欄
         type_string(hwnd, account_id);
-        sleep_ms(50);
+        sleep_ms(100);
 
-        // TAB to password field
-        send_key(hwnd, VK_TAB);
-        sleep_ms(50);
+        send_key(hwnd, VK_TAB); // 切換到密碼欄
+        sleep_ms(100);
 
-        // Clear password field (END + 20× BACKSPACE) and type OTP
-        clear_field(hwnd, 20);
+        clear_field(hwnd, 20); // 清空密碼欄
         type_string(hwnd, otp);
-        sleep_ms(50);
+        sleep_ms(100);
 
-        // Press ENTER to submit
-        send_key(hwnd, VK_RETURN);
+        send_key(hwnd, VK_RETURN); // 按登入
 
-        tracing::info!("auto-paste completed for account {account_id}");
+        tracing::info!("auto-paste completed for account {}", account_id);
         true
     }
 }
