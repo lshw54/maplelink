@@ -174,6 +174,15 @@ export function MainPage() {
   async function handleConfirmRelaunch() {
     setShowRelaunchConfirm(false);
     if (pendingLaunchId) {
+      // Kill the running game first, then relaunch
+      try {
+        await commands.killGame();
+        setPid(null);
+        // Brief pause to let processes fully terminate
+        await new Promise((r) => setTimeout(r, 500));
+      } catch {
+        /* proceed with launch anyway */
+      }
       await handleLaunch(
         pendingLaunchId,
         latestOtpRef.current?.accountId === pendingLaunchId ? latestOtpRef.current.otp : undefined,

@@ -121,9 +121,8 @@ pub async fn launch_game(
         .map_err(proc_err_to_dto)?
     };
 
-    // 8. Record PID in active processes.
-    // For LR launches, `pid` is LRProc.exe which exits quickly after injecting
-    // the DLL. A background task will replace it with the real MapleStory PID.
+    // 8. Record initial PID in active processes.
+    // For LR launches, `pid` is LRProc.exe which exits quickly.
     let account_id_for_track = account_id.clone();
     if pid > 0 {
         state
@@ -133,40 +132,95 @@ pub async fn launch_game(
             .insert(pid, account_id.clone());
     }
 
-    // Background: if launched via LR, wait for LRProc to exit then find the
-    // real MapleStory.exe PID and update active_processes.
-    if use_lr && pid > 0 {
+    // Background monitor: continuously track the real MapleStory.exe PID.
+    // Anti-cheat (e.g. NGS/HackShield) may restart the game process multiple
+    // times during startup, so we keep polling until the game truly exits.
+    {
         let app_handle = app.clone();
-        let lr_pid = pid;
+        let lr_pid = if use_lr { pid } else { 0 };
         let acct = account_id_for_track.clone();
         tauri::async_runtime::spawn(async move {
             use tauri::Manager;
             let state = app_handle.state::<AppState>();
 
-            // Wait for LRProc.exe to exit (poll up to 10s)
-            for _ in 0..100 {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                if !process_service::is_process_running(lr_pid) {
-                    break;
+            // If launched via LR, wait for LRProc.exe to exit first (up to 10s)
+            if lr_pid > 0 {
+                for _ in 0..100 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    if !process_service::is_process_running(lr_pid) {
+                        break;
+                    }
                 }
+                state.active_processes.write().await.remove(&lr_pid);
             }
-            // Remove stale LRProc PID
-            state.active_processes.write().await.remove(&lr_pid);
 
-            // Poll for MapleStory.exe PID (up to 15s)
-            for _ in 0..150 {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                if let Some(game_pid) = find_process_pid_by_name("MapleStory.exe") {
-                    state
-                        .active_processes
-                        .write()
-                        .await
-                        .insert(game_pid, acct.clone());
-                    tracing::info!(game_pid, lr_pid, "replaced LRProc PID with MapleStory PID");
-                    return;
+            // Continuously track MapleStory.exe PID.
+            // Poll every 2s for up to 10 minutes. Anti-cheat may restart the
+            // process several times, so we keep updating the tracked PID.
+            let mut current_pid: Option<u32> = None;
+            let mut consecutive_missing = 0u32;
+
+            for _ in 0..300 {
+                tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+                let found_pid = find_process_pid_by_name("MapleStory.exe");
+
+                match (found_pid, current_pid) {
+                    (Some(new_pid), Some(old_pid)) if new_pid != old_pid => {
+                        // PID changed (anti-cheat restarted the process)
+                        state.active_processes.write().await.remove(&old_pid);
+                        state
+                            .active_processes
+                            .write()
+                            .await
+                            .insert(new_pid, acct.clone());
+                        tracing::info!(
+                            old_pid,
+                            new_pid,
+                            "MapleStory PID changed (anti-cheat restart)"
+                        );
+                        current_pid = Some(new_pid);
+                        consecutive_missing = 0;
+                    }
+                    (Some(new_pid), None) => {
+                        // First time finding MapleStory
+                        state
+                            .active_processes
+                            .write()
+                            .await
+                            .insert(new_pid, acct.clone());
+                        tracing::info!(pid = new_pid, "MapleStory.exe found");
+                        current_pid = Some(new_pid);
+                        consecutive_missing = 0;
+                    }
+                    (Some(_), Some(_)) => {
+                        // Same PID, still running
+                        consecutive_missing = 0;
+                    }
+                    (None, Some(old_pid)) => {
+                        // Process disappeared — might be anti-cheat restarting it.
+                        // Wait a few cycles before declaring it dead.
+                        consecutive_missing += 1;
+                        if consecutive_missing >= 5 {
+                            // 10 seconds of no MapleStory — it's really gone
+                            state.active_processes.write().await.remove(&old_pid);
+                            tracing::info!(pid = old_pid, "MapleStory.exe exited");
+                            return;
+                        }
+                    }
+                    (None, None) => {
+                        // Not found yet — keep waiting (anti-cheat startup)
+                        consecutive_missing += 1;
+                        if consecutive_missing >= 30 {
+                            // 60 seconds and never found — give up
+                            tracing::warn!("MapleStory.exe never appeared after launch");
+                            return;
+                        }
+                    }
                 }
             }
-            tracing::warn!("could not find MapleStory.exe PID after LR launch");
+            // 10 minutes — stop monitoring
+            tracing::info!("game monitor timed out after 10 minutes");
         });
     }
 
@@ -531,6 +585,41 @@ pub async fn get_process_status(pid: u32, state: State<'_, AppState>) -> Result<
     }
 
     Ok(running)
+}
+/// Kill all running MapleStory processes and clear tracked PIDs.
+///
+/// Used for the "relaunch" flow — kill the old game before starting a new one.
+#[tauri::command]
+pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
+    // Kill all tracked PIDs
+    let pids: Vec<u32> = state
+        .active_processes
+        .read()
+        .await
+        .keys()
+        .copied()
+        .collect();
+    for pid in &pids {
+        if *pid > 0 && process_service::is_process_running(*pid) {
+            let _ = process_service::terminate_process(*pid).await;
+            tracing::info!(pid, "killed tracked game process");
+        }
+    }
+
+    // Also kill any MapleStory.exe not in our tracked list
+    #[cfg(target_os = "windows")]
+    {
+        while let Some(pid) = find_process_pid_by_name("MapleStory.exe") {
+            let _ = process_service::terminate_process(pid).await;
+            tracing::info!(pid, "killed MapleStory.exe");
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    }
+
+    // Clear all tracked processes
+    state.active_processes.write().await.clear();
+    tracing::info!("all game processes killed and tracking cleared");
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

@@ -62,6 +62,7 @@ export const commands = {
     invoke<number>("launch_game", { accountId, otp: otp ?? null }),
   isGameRunning: () => invoke<boolean>("is_game_running"),
   getProcessStatus: (pid: number) => invoke<boolean>("get_process_status", { pid }),
+  killGame: () => invoke("kill_game"),
 
   // Config
   getConfig: () => invoke<AppConfigDto>("get_config"),

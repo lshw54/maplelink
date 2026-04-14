@@ -138,6 +138,7 @@ pub fn run() {
             commands::launcher::launch_game,
             commands::launcher::is_game_running,
             commands::launcher::get_process_status,
+            commands::launcher::kill_game,
             commands::system::log_frontend_error,
             commands::system::resize_window,
             commands::system::open_file_dialog,
