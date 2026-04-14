@@ -50,7 +50,7 @@ impl Default for AppConfig {
             language: Language::ZhTW,
             auto_update: true,
             update_channel: UpdateChannel::Release,
-            skip_play_confirm: false,
+            skip_play_confirm: true,
             auto_start: false,
             window_x: None,
             window_y: None,
