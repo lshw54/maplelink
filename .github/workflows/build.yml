@@ -201,3 +201,12 @@ jobs:
           files: MapleLink.exe
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+
+      - name: Commit version bump
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+          git push
