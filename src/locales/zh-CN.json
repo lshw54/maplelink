@@ -134,6 +134,8 @@
   "update.downloading": "下载中...",
   "update.skip": "稍后",
   "update.use_mirror": "使用镜像加速（建议中国大陆用户开启）",
+  "update.restart": "立即重启",
+  "update.restart_required": "更新已安装，重启后生效。",
 
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",

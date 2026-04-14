@@ -9,6 +9,7 @@ use crate::models::update::UpdateInfo;
 use crate::services::update_service;
 
 /// Check GitHub Releases for an available update.
+/// Respects the update_channel config (release vs pre-release).
 #[tauri::command]
 pub async fn check_update(
     manual: Option<bool>,
@@ -16,15 +17,17 @@ pub async fn check_update(
 ) -> Result<Option<UpdateInfo>, ErrorDto> {
     let is_manual = manual.unwrap_or(false);
 
-    if !is_manual {
-        let config = state.config.read().await;
-        if !update_service::should_check_on_startup(config.auto_update) {
-            return Ok(None);
-        }
+    let config = state.config.read().await;
+    if !is_manual && !update_service::should_check_on_startup(config.auto_update) {
+        return Ok(None);
     }
 
+    let include_prerelease =
+        config.update_channel == crate::models::config::UpdateChannel::PreRelease;
+    drop(config);
+
     let version = update_service::current_version();
-    update_service::check_for_update(&state.http_client, version)
+    update_service::check_for_update(&state.http_client, version, include_prerelease)
         .await
         .map_err(|e| ErrorDto::from(AppError::from(e)))
 }
@@ -51,13 +54,6 @@ pub async fn apply_update(
     let path = update_service::apply_update(&bytes, &staging_dir)
         .await
         .map_err(|e| ErrorDto::from(AppError::from(e)))?;
-
-    // Launch the installer
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        let _ = Command::new(&path).spawn();
-    }
 
     Ok(path.display().to_string())
 }

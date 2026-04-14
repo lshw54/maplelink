@@ -140,6 +140,8 @@
   "update.downloading": "下載中...",
   "update.skip": "稍後",
   "update.use_mirror": "使用鏡像加速（建議中國大陸用戶開啟）",
+  "update.restart": "立即重啟",
+  "update.restart_required": "更新已安裝，重啟後生效。",
 
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",

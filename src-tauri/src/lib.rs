@@ -215,6 +215,7 @@ pub fn run() {
 
             // 4. Initialise AppState with loaded config.
             let auto_update_enabled = config.auto_update;
+            let update_channel = config.update_channel.clone();
             let cookie_jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
             let http_client = reqwest::Client::builder()
                 .cookie_provider(cookie_jar.clone())
@@ -245,16 +246,27 @@ pub fn run() {
             //    Respects the auto_update toggle — skips if disabled.
             //    Failures are logged and swallowed so the app always starts.
             if update_service::should_check_on_startup(auto_update_enabled) {
+                let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let version = update_service::current_version();
-                    match update_service::check_for_update(&update_client, version).await {
+                    let include_prerelease =
+                        update_channel == models::config::UpdateChannel::PreRelease;
+                    match update_service::check_for_update(
+                        &update_client,
+                        version,
+                        include_prerelease,
+                    )
+                    .await
+                    {
                         Ok(Some(info)) => {
                             tracing::info!(
                                 "update available: v{} — user will be notified",
                                 info.version
                             );
-                            // The frontend will pick this up via the
-                            // `check_update` command on its own schedule.
+                            // Emit event so frontend can show update dialog
+                            if let Some(window) = app_handle_for_update.get_webview_window("main") {
+                                let _ = window.emit("update-available", &info);
+                            }
                         }
                         Ok(None) => {
                             tracing::info!("no update available, app is up-to-date");

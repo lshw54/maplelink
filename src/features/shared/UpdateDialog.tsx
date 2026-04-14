@@ -15,8 +15,8 @@ export function UpdateDialog({ update, onClose }: Props) {
   const [needsProxy, setNeedsProxy] = useState(false);
   const [useProxy, setUseProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
-  // Test GitHub connectivity on mount
   useEffect(() => {
     commands
       .testGithubAccess()
@@ -34,7 +34,8 @@ export function UpdateDialog({ update, onClose }: Props) {
     setError(null);
     try {
       await commands.applyUpdate(update.downloadUrl, useProxy);
-      // Installer launched — app will close
+      setDone(true);
+      setDownloading(false);
     } catch (e) {
       setError(
         typeof e === "object" && e !== null && "message" in e
@@ -45,10 +46,14 @@ export function UpdateDialog({ update, onClose }: Props) {
     }
   }
 
+  async function handleRestart() {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().close();
+  }
+
   return (
-    <Modal isOpen onClose={onClose} title={t("update.title")}>
+    <Modal isOpen onClose={done ? handleRestart : onClose} title={t("update.title")}>
       <div className="flex flex-col gap-4">
-        {/* Version badge */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-lg font-bold text-white shadow-lg">
             ↑
@@ -62,12 +67,13 @@ export function UpdateDialog({ update, onClose }: Props) {
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-text-dim">{t("update.new_version_available")}</div>
+            <div className="text-[11px] text-text-dim">
+              {done ? t("update.restart_required") : t("update.new_version_available")}
+            </div>
           </div>
         </div>
 
-        {/* Changelog */}
-        {update.changelog && (
+        {!done && update.changelog && (
           <div className="max-h-[160px] overflow-y-auto rounded-lg bg-[var(--surface)] p-3 text-[11px] leading-relaxed text-text-dim">
             {update.changelog.split("\n").map((line, i) => (
               <div key={i}>{line || "\u00A0"}</div>
@@ -75,8 +81,7 @@ export function UpdateDialog({ update, onClose }: Props) {
           </div>
         )}
 
-        {/* Proxy toggle (shown only when GitHub is slow/blocked) */}
-        {needsProxy && (
+        {!done && needsProxy && (
           <label className="flex items-center gap-2 text-[11px] text-text-dim">
             <input
               type="checkbox"
@@ -90,23 +95,33 @@ export function UpdateDialog({ update, onClose }: Props) {
 
         {error && <div className="text-[11px] text-[var(--danger)]">{error}</div>}
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={downloading}
-            className="rounded-lg px-4 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-          >
-            {t("update.skip")}
-          </button>
-          <button
-            onClick={handleDownload}
-            disabled={downloading || !update.downloadUrl}
-            className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
-          >
-            {downloading ? t("update.downloading") : t("update.download")}
-          </button>
-        </div>
+        {done ? (
+          <div className="flex justify-end">
+            <button
+              onClick={handleRestart}
+              className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+            >
+              {t("update.restart")}
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              disabled={downloading}
+              className="rounded-lg px-4 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("update.skip")}
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={downloading || !update.downloadUrl}
+              className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+            >
+              {downloading ? t("update.downloading") : t("update.download")}
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
   );

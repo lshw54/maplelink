@@ -40,7 +40,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -59,11 +58,11 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Prepare version + update files
+      - name: Prepare version
         id: version
         shell: pwsh
         run: |
-          # Read current version
+          # Read current version from Cargo.toml
           $cargoToml = Get-Content "src-tauri/Cargo.toml" -Raw
           if ($cargoToml -match 'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
               $major = [int]$matches[1]
@@ -74,6 +73,20 @@ jobs:
               exit 1
           }
 
+          # Check latest tag for actual version
+          git fetch --tags 2>$null
+          $tags = git tag -l "v*" --sort=-v:refname
+          $tagsArray = @($tags)
+          if ($tagsArray.Count -gt 0 -and $tagsArray[0]) {
+              $latestTag = $tagsArray[0]
+              if ($latestTag -match "^v(\d+)\.(\d+)\.(\d+)") {
+                  $major = [int]$matches[1]
+                  $minor = [int]$matches[2]
+                  $patch = [int]$matches[3]
+              }
+          }
+
+          # Increment version
           $increment = "${{ github.event.inputs.version_increment }}"
           switch ($increment) {
               'major' { $major++; $minor=0; $patch=0 }
@@ -85,19 +98,18 @@ jobs:
           $tagName = "v$version"
           $buildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")
 
-          Write-Host "New version: $version"
-          Write-Host "Tag: $tagName"
+          Write-Host "New version: $version (tag: $tagName)"
 
-          # Update Cargo.toml
+          # Inject version into Cargo.toml (build-time only, not committed)
           $cargoToml = $cargoToml -replace 'version\s*=\s*"\d+\.\d+\.\d+"', "version = `"$version`""
           $cargoToml | Set-Content "src-tauri/Cargo.toml" -NoNewline
 
-          # Update tauri.conf.json5
+          # Inject into tauri.conf.json5
           $tauriConf = Get-Content "src-tauri/tauri.conf.json5" -Raw
           $tauriConf = $tauriConf -replace '"version":\s*"\d+\.\d+\.\d+"', "`"version`": `"$version`""
           $tauriConf | Set-Content "src-tauri/tauri.conf.json5" -NoNewline
 
-          # Update package.json
+          # Inject into package.json
           $pkgJson = Get-Content "package.json" -Raw
           $pkgJson = $pkgJson -replace '"version":\s*"\d+\.\d+\.\d+"', "`"version`": `"$version`""
           $pkgJson | Set-Content "package.json" -NoNewline
@@ -111,22 +123,16 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
-      - name: Copy standalone exe
+      - name: Prepare artifact
+        id: artifact
         shell: pwsh
         run: |
           Copy-Item "src-tauri/target/release/maplelink.exe" "MapleLink.exe"
           $hash = (Get-FileHash "MapleLink.exe" -Algorithm SHA256).Hash
+          $size = (Get-Item "MapleLink.exe").Length
           "sha256=$hash" >> $env:GITHUB_OUTPUT
-        id: artifact
-
-      - name: Create git tag and push
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ steps.version.outputs.tag_name }} -m "Release ${{ steps.version.outputs.tag_name }}"
-          git push origin ${{ steps.version.outputs.tag_name }}
-          Write-Host "Tag ${{ steps.version.outputs.tag_name }} pushed successfully"
+          Write-Host "SHA256: $hash"
+          Write-Host "Size: $size bytes"
 
       - name: Prepare release notes
         id: notes
@@ -147,12 +153,13 @@ jobs:
           $delimiter >> $env:GITHUB_OUTPUT
           "count=$commitCount" >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
           name: >
             ${{
               github.event.inputs.release_name != ''
@@ -167,7 +174,7 @@ jobs:
             ---
 
             ### Download
-            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)**
+            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — standalone, no installation needed
 
             ### Changes
             ${{ steps.notes.outputs.commits }}
@@ -177,6 +184,7 @@ jobs:
             ### Usage
             1. Download **MapleLink.exe**
             2. Place in any folder and run
+            3. First launch will auto-extract locale emulation files
 
             ${{ github.event.inputs.release_type == 'prerelease' && '> ⚠️ This is a pre-release. Use at your own risk.' || '' }}
 

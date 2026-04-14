@@ -134,6 +134,8 @@
   "update.downloading": "Downloading...",
   "update.skip": "Later",
   "update.use_mirror": "Use mirror (recommended for China mainland)",
+  "update.restart": "Restart Now",
+  "update.restart_required": "Update installed. Restart to apply.",
 
   "shared.titlebar.minimize": "Minimize",
   "shared.titlebar.maximize": "Maximize",
