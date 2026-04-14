@@ -75,11 +75,16 @@ export function App() {
     });
 
     // Frontend check as backup (backend event may fire before listener is ready)
-    commands.checkUpdate().then((info) => {
-      if (info) setPendingUpdate(info);
-    }).catch(() => {});
+    commands
+      .checkUpdate()
+      .then((info) => {
+        if (info) setPendingUpdate(info);
+      })
+      .catch(() => {});
 
-    return () => { unlisten.then((f) => f()); };
+    return () => {
+      unlisten.then((f) => f());
+    };
   }, []);
 
   return (

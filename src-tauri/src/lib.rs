@@ -221,7 +221,6 @@ pub fn run() {
                 .cookie_provider(cookie_jar.clone())
                 // Accept invalid SSL certificates for compatibility with game
                 // accelerators (e.g. UU) that proxy beanfun/gamania traffic.
-                // Matches the original client behavior.
                 .danger_accept_invalid_certs(true)
                 .build()
                 .expect("failed to build HTTP client");

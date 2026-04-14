@@ -355,7 +355,6 @@ export function MainPage() {
           </div>
         </div>
       </Modal>
-
     </div>
   );
 }
