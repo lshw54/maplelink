@@ -72,8 +72,8 @@
   "settings.font_size.extra_large": "特大",
   "settings.gamepass_incognito": "GamePass 無痕模式",
   "settings.gamepass_incognito_desc": "不保存 GamePass 瀏覽器的登入狀態",
-  "settings.skip_play_confirm": "跳過啟動確認",
-  "settings.skip_play_confirm_desc": "遊戲已在執行時直接重啟，不再詢問",
+  "settings.skip_play_confirm": "跳過 Play 視窗",
+  "settings.skip_play_confirm_desc": "自動關閉遊戲的 Play 按鈕視窗，並跳過重啟確認",
   "settings.traditional_login": "傳統模式登入",
   "settings.traditional_login_desc": "啟動遊戲時不傳送伺服器連線參數。關閉此選項會將伺服器/連接埠/帳號/OTP 直接傳給遊戲。",
 

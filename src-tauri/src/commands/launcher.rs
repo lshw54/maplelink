@@ -225,12 +225,19 @@ pub async fn launch_game(
     }
 
     // 9. Auto-kill Patcher.exe
-    // The game may spawn Patcher.exe for auto-update before MapleStory.exe.
-    // Kill it so the game launches directly with our OTP credentials.
     let game_dir = launch_cmd.working_dir.clone();
     tauri::async_runtime::spawn(async move {
         kill_patcher_loop(&game_dir).await;
     });
+
+    // 10. Auto-close the game's "Play" startup window (StartUpDlgClass).
+    // MapleStory shows a launcher window with a Play button before the actual
+    // game starts. When skipPlayConfirm is enabled, we auto-close it.
+    if config.skip_play_confirm {
+        tauri::async_runtime::spawn(async move {
+            skip_play_window_loop().await;
+        });
+    }
 
     tracing::info!(pid, account_id = %account_id, use_lr, "game launched");
     Ok(pid)
@@ -430,6 +437,51 @@ fn find_process_pid_by_name(name: &str) -> Option<u32> {
 #[cfg(not(target_os = "windows"))]
 fn find_process_pid_by_name(_name: &str) -> Option<u32> {
     None
+}
+
+/// Auto-close MapleStory's "Play" startup window (StartUpDlgClass).
+///
+/// The game shows a launcher window with a Play button before the actual
+/// game client starts. This polls every 100ms for up to 60 seconds and
+/// sends WM_CLOSE to dismiss it automatically.
+/// Matches the original C# Beanfun `checkPlayPage_Tick` / `skipPlayWnd`.
+async fn skip_play_window_loop() {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+
+        const WM_CLOSE: u32 = 0x0010;
+
+        fn to_wide(s: &str) -> Vec<u16> {
+            OsStr::new(s)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        }
+
+        let class_name = to_wide("StartUpDlgClass");
+        let window_title = to_wide("MapleStory");
+
+        // Poll for up to 60 seconds (600 × 100ms)
+        for _ in 0..600 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            let hwnd = unsafe { FindWindowW(class_name.as_ptr(), window_title.as_ptr()) };
+            if !hwnd.is_null() {
+                unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) };
+                tracing::info!("auto-closed MapleStory StartUpDlg (Play window)");
+                return;
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // no-op
+    }
 }
 
 /// Launch the game via Locale Remulator.
