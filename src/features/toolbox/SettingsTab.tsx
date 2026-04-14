@@ -174,6 +174,20 @@ export function SettingsTab() {
           }}
         />
       </SettingRow>
+
+      {/* Skip play confirmation */}
+      <SettingRow label={t("settings.skip_play_confirm")}>
+        <Toggle
+          checked={config?.skipPlayConfirm ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "skip_play_confirm",
+              value: String(!config.skipPlayConfirm),
+            });
+          }}
+        />
+      </SettingRow>
     </div>
   );
 }

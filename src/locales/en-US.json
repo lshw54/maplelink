@@ -72,6 +72,8 @@
   "settings.font_size.extra_large": "XL",
   "settings.gamepass_incognito": "GamePass Incognito Mode",
   "settings.gamepass_incognito_desc": "Don't save login session in GamePass browser",
+  "settings.skip_play_confirm": "Skip Play Confirmation",
+  "settings.skip_play_confirm_desc": "Launch game directly without asking when game is already running",
   "settings.traditional_login": "Traditional Login Mode",
   "settings.traditional_login_desc": "Launch the game without passing server connection args. Disable this to pass server/port/account/OTP directly to the game.",
 

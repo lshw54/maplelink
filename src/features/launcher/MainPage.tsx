@@ -163,9 +163,22 @@ export function MainPage() {
     try {
       const running = await commands.isGameRunning();
       if (running) {
-        setPendingLaunchId(accountId);
-        setShowRelaunchConfirm(true);
-        return;
+        const skipConfirm = useConfigStore.getState().config?.skipPlayConfirm ?? false;
+        if (skipConfirm) {
+          // Skip confirmation — kill and relaunch immediately
+          try {
+            await commands.killGame();
+            setPid(null);
+            setGameRunning(false);
+            await new Promise((r) => setTimeout(r, 500));
+          } catch {
+            /* proceed anyway */
+          }
+        } else {
+          setPendingLaunchId(accountId);
+          setShowRelaunchConfirm(true);
+          return;
+        }
       }
     } catch {
       /* ignore, proceed with launch */
