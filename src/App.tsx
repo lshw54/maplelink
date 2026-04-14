@@ -51,7 +51,7 @@ function useThemeEffect() {
 }
 
 function useInitialConfigSync() {
-  const { data: config } = useConfig();
+  const { data: config, isLoading } = useConfig();
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
 
@@ -60,32 +60,55 @@ function useInitialConfigSync() {
     setTheme(config.theme);
     setLanguage(config.language);
   }, [config, setTheme, setLanguage]);
+
+  return isLoading;
+}
+
+function SplashScreen() {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center bg-[var(--bg)]">
+      <img src="/app-icon.png" alt="" className="mb-4 h-16 w-16 animate-pulse rounded-[16px]" />
+      <div className="text-[12px] tracking-[2px] text-text-dim">MAPLELINK</div>
+    </div>
+  );
 }
 
 export function App() {
   useThemeEffect();
-  useInitialConfigSync();
+  const configLoading = useInitialConfigSync();
+  const [ready, setReady] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateInfoDto | null>(null);
 
-  // Listen for update-available event from backend startup check
-  // Also do a frontend check after mount (in case backend event was missed)
+  // Wait for config to load before showing UI
   useEffect(() => {
+    if (!configLoading) setReady(true);
+  }, [configLoading]);
+
+  // Check for updates after app is ready
+  useEffect(() => {
+    if (!ready) return;
+
     const unlisten = listen<UpdateInfoDto>("update-available", (event) => {
       setPendingUpdate(event.payload);
     });
 
-    // Frontend check as backup (backend event may fire before listener is ready)
-    commands
-      .checkUpdate()
-      .then((info) => {
-        if (info) setPendingUpdate(info);
-      })
-      .catch(() => {});
+    // Small delay to ensure UI is rendered before showing update dialog
+    const timer = setTimeout(() => {
+      commands
+        .checkUpdate()
+        .then((info) => {
+          if (info) setPendingUpdate(info);
+        })
+        .catch(() => {});
+    }, 1500);
 
     return () => {
+      clearTimeout(timer);
       unlisten.then((f) => f());
     };
-  }, []);
+  }, [ready]);
+
+  if (!ready) return <SplashScreen />;
 
   return (
     <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">

@@ -179,6 +179,15 @@ pub fn run() {
             }
 
             tracing::info!("Starting MapleLink v{}", env!("CARGO_PKG_VERSION"));
+
+            // Clean up old exe from self-replace update
+            if let Ok(exe) = std::env::current_exe() {
+                let old = exe.with_extension("exe.old");
+                if old.exists() {
+                    let _ = std::fs::remove_file(&old);
+                    tracing::info!("cleaned up old exe: {}", old.display());
+                }
+            }
             tracing::info!("log directory: {}", log_dir.display());
 
             // 2. Load config from disk (create default if missing).

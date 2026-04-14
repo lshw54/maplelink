@@ -6,7 +6,7 @@ import type { UpdateInfoDto } from "../../lib/types";
 
 export function AboutTab() {
   const { t } = useTranslation();
-  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [appVersion, setAppVersion] = useState("...");
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateInfoDto | null | undefined>(undefined);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);

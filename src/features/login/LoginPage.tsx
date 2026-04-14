@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
+import { commands } from "../../lib/tauri";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
@@ -10,7 +11,6 @@ import { NormalLoginForm } from "./NormalLoginForm";
 import { QrLoginForm } from "./QrLoginForm";
 import { TotpForm } from "./TotpForm";
 import { VerifyForm } from "./VerifyForm";
-import { commands } from "../../lib/tauri";
 import type { SessionDto } from "../../lib/types";
 
 type LoginView = "normal" | "qr" | "totp" | "verify" | "gamepass";
@@ -23,6 +23,14 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<LoginView>("normal");
   const [advanceCheckUrl, setAdvanceCheckUrl] = useState<string | undefined>();
+  const [appVersion, setAppVersion] = useState("...");
+
+  useEffect(() => {
+    commands
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   // Navigate to main page when authenticated
   useEffect(() => {
@@ -156,7 +164,7 @@ export function LoginPage() {
 
       <StatusBar />
       <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
-        MapleLink v0.1.0 · Tauri 2
+        MapleLink v{appVersion}
       </div>
     </div>
   );
