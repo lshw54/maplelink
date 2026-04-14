@@ -9,6 +9,7 @@ use crate::core::error::{AppError, AuthError, FsError, ProcessError};
 use crate::core::game_launcher;
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
+use crate::models::game_account::GameCredentials;
 use crate::services::{beanfun_service, lr_service, process_service};
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,7 @@ use crate::services::{beanfun_service, lr_service, process_service};
 pub async fn launch_game(
     app: tauri::AppHandle,
     account_id: String,
+    otp: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<u32, ErrorDto> {
     // 1. Validate input
@@ -62,20 +64,30 @@ pub async fn launch_game(
         fs_err_to_dto(fs_err)
     })?;
 
-    // 4. Get game credentials (acquire bf_client_lock to prevent concurrent beanfun HTTP)
-    let _bf_lock = state.bf_client_lock.lock().await;
-    let credentials = beanfun_service::get_game_credentials(
-        &state.http_client,
-        session,
-        &account_id,
-        &state.cookie_jar,
-    )
-    .await
-    .map_err(login_err_to_dto)?;
-
-    // Drop locks before further state writes
-    drop(session_guard);
-    drop(_bf_lock);
+    // 4. Get game credentials — skip HTTP if OTP was provided by the frontend.
+    let credentials = if let Some(otp_value) = otp {
+        tracing::info!("using pre-fetched OTP, skipping credential HTTP request");
+        drop(session_guard);
+        GameCredentials {
+            account_id: account_id.clone(),
+            otp: otp_value,
+            retrieved_at: chrono::Utc::now(),
+            command_line_template: None,
+        }
+    } else {
+        let _bf_lock = state.bf_client_lock.lock().await;
+        let creds = beanfun_service::get_game_credentials(
+            &state.http_client,
+            session,
+            &account_id,
+            &state.cookie_jar,
+        )
+        .await
+        .map_err(login_err_to_dto)?;
+        drop(session_guard);
+        drop(_bf_lock);
+        creds
+    };
 
     // 5. Build launch command
     let launch_cmd =

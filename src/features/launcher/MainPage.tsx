@@ -22,6 +22,8 @@ export function MainPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [pid, setPid] = useState<number | null>(null);
+  // Latest OTP fetched by OtpPanel — used to skip HTTP round-trip on launch.
+  const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
 
   // Poll game process status — clear pid when process exits
   useEffect(() => {
@@ -123,11 +125,11 @@ export function MainPage() {
     setSelectedAccountId(account.id);
   }, []);
 
-  const handleLaunch = useCallback(async (accountId: string) => {
+  const handleLaunch = useCallback(async (accountId: string, otp?: string) => {
     setSelectedAccountId(accountId);
     setLaunching(true);
     try {
-      const processId = await commands.launchGame(accountId);
+      const processId = await commands.launchGame(accountId, otp);
       if (processId > 0) setPid(processId);
     } finally {
       setLaunching(false);
@@ -163,13 +165,19 @@ export function MainPage() {
       /* ignore, proceed with launch */
     }
 
-    await handleLaunch(accountId);
+    await handleLaunch(
+      accountId,
+      latestOtpRef.current?.accountId === accountId ? latestOtpRef.current.otp : undefined,
+    );
   }
 
   async function handleConfirmRelaunch() {
     setShowRelaunchConfirm(false);
     if (pendingLaunchId) {
-      await handleLaunch(pendingLaunchId);
+      await handleLaunch(
+        pendingLaunchId,
+        latestOtpRef.current?.accountId === pendingLaunchId ? latestOtpRef.current.otp : undefined,
+      );
       setPendingLaunchId(null);
     }
   }
@@ -300,7 +308,12 @@ export function MainPage() {
         </div>
 
         {/* OTP Panel */}
-        <OtpPanel selectedAccountId={selectedAccountId} />
+        <OtpPanel
+          selectedAccountId={selectedAccountId}
+          onOtpFetched={(accountId: string, otp: string) => {
+            latestOtpRef.current = { accountId, otp };
+          }}
+        />
       </div>
 
       {/* Relaunch confirmation modal */}

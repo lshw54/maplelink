@@ -58,7 +58,8 @@ export const commands = {
   getAuthEmail: () => invoke<string>("get_auth_email"),
 
   // Launcher
-  launchGame: (accountId: string) => invoke<number>("launch_game", { accountId }),
+  launchGame: (accountId: string, otp?: string) =>
+    invoke<number>("launch_game", { accountId, otp: otp ?? null }),
   isGameRunning: () => invoke<boolean>("is_game_running"),
   getProcessStatus: (pid: number) => invoke<boolean>("get_process_status", { pid }),
 

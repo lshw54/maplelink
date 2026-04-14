@@ -6,9 +6,10 @@ import type { GameCredentialsDto } from "../../lib/types";
 
 interface OtpPanelProps {
   selectedAccountId: string | null;
+  onOtpFetched?: (accountId: string, otp: string) => void;
 }
 
-export function OtpPanel({ selectedAccountId }: OtpPanelProps) {
+export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   const { t } = useTranslation();
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
@@ -28,6 +29,7 @@ export function OtpPanel({ selectedAccountId }: OtpPanelProps) {
         credentialsMutation.mutate(selectedAccountId, {
           onSuccess: async (data) => {
             setCredentials(data);
+            onOtpFetched?.(selectedAccountId, data.otp);
             setCopied(false);
             if (!pasted) {
               // Window not found — copy to clipboard as fallback
@@ -42,6 +44,7 @@ export function OtpPanel({ selectedAccountId }: OtpPanelProps) {
         credentialsMutation.mutate(selectedAccountId, {
           onSuccess: (data) => {
             setCredentials(data);
+            onOtpFetched?.(selectedAccountId, data.otp);
             setCopied(false);
           },
         });
@@ -53,6 +56,7 @@ export function OtpPanel({ selectedAccountId }: OtpPanelProps) {
       credentialsMutation.mutate(selectedAccountId, {
         onSuccess: (data) => {
           setCredentials(data);
+          onOtpFetched?.(selectedAccountId, data.otp);
           setCopied(false);
         },
       });
