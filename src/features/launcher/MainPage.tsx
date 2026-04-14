@@ -25,21 +25,27 @@ export function MainPage() {
   // Latest OTP fetched by OtpPanel — used to skip HTTP round-trip on launch.
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
 
-  // Poll game process status — clear pid when process exits
+  // Poll game running status — uses backend's active_processes + process name check.
+  // The backend monitor continuously tracks the real MapleStory.exe PID even
+  // when anti-cheat restarts the process, so isGameRunning is the reliable source.
+  const [gameRunning, setGameRunning] = useState(false);
   useEffect(() => {
-    if (pid === null) return;
+    // Start polling once we've launched (pid set), keep going until game exits
+    if (pid === null && !gameRunning) return;
     const interval = setInterval(async () => {
       try {
-        const alive = await commands.getProcessStatus(pid);
-        if (!alive) {
+        const running = await commands.isGameRunning();
+        setGameRunning(running);
+        if (!running) {
           setPid(null);
         }
       } catch {
+        setGameRunning(false);
         setPid(null);
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [pid]);
+  }, [pid, gameRunning]);
   const [remainPoint, setRemainPoint] = useState<number>(0);
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -223,9 +229,10 @@ export function MainPage() {
             {launching ? "..." : t("launcher.play")}
           </button>
 
-          {pid !== null && (
+          {(gameRunning || pid !== null) && (
             <span className="text-[12px] text-accent">
-              {t("launcher.running")} (PID: {pid})
+              {t("launcher.running")}
+              {pid !== null ? ` (PID: ${pid})` : ""}
             </span>
           )}
 
