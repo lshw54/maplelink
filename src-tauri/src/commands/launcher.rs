@@ -109,13 +109,53 @@ pub async fn launch_game(
         .map_err(proc_err_to_dto)?
     };
 
-    // 8. Record PID in active processes (skip PID 0 from PowerShell launch)
+    // 8. Record PID in active processes.
+    // For LR launches, `pid` is LRProc.exe which exits quickly after injecting
+    // the DLL. A background task will replace it with the real MapleStory PID.
+    let account_id_for_track = account_id.clone();
     if pid > 0 {
         state
             .active_processes
             .write()
             .await
             .insert(pid, account_id.clone());
+    }
+
+    // Background: if launched via LR, wait for LRProc to exit then find the
+    // real MapleStory.exe PID and update active_processes.
+    if use_lr && pid > 0 {
+        let app_handle = app.clone();
+        let lr_pid = pid;
+        let acct = account_id_for_track.clone();
+        tauri::async_runtime::spawn(async move {
+            use tauri::Manager;
+            let state = app_handle.state::<AppState>();
+
+            // Wait for LRProc.exe to exit (poll up to 10s)
+            for _ in 0..100 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                if !process_service::is_process_running(lr_pid) {
+                    break;
+                }
+            }
+            // Remove stale LRProc PID
+            state.active_processes.write().await.remove(&lr_pid);
+
+            // Poll for MapleStory.exe PID (up to 15s)
+            for _ in 0..150 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                if let Some(game_pid) = find_process_pid_by_name("MapleStory.exe") {
+                    state
+                        .active_processes
+                        .write()
+                        .await
+                        .insert(game_pid, acct.clone());
+                    tracing::info!(game_pid, lr_pid, "replaced LRProc PID with MapleStory PID");
+                    return;
+                }
+            }
+            tracing::warn!("could not find MapleStory.exe PID after LR launch");
+        });
     }
 
     // 9. Auto-kill Patcher.exe
@@ -259,6 +299,71 @@ fn find_and_kill_patcher(expected_path_lower: &str) -> bool {
     }
 
     false
+}
+
+/// Find a running process by executable name and return its PID.
+///
+/// Uses Toolhelp32 snapshot to enumerate processes in-process (no console popups).
+/// Returns the first matching PID, or `None` if not found.
+#[cfg(target_os = "windows")]
+fn find_process_pid_by_name(name: &str) -> Option<u32> {
+    use std::ffi::OsString;
+    use std::mem;
+    use std::os::windows::ffi::OsStringExt;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let name_lower = name.to_lowercase();
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        let mut entry: PROCESSENTRY32W = mem::zeroed();
+        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if Process32FirstW(snapshot, &mut entry) == 0 {
+            CloseHandle(snapshot);
+            return None;
+        }
+
+        loop {
+            let exe_name = OsString::from_wide(
+                &entry.szExeFile[..entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len())],
+            )
+            .to_string_lossy()
+            .to_lowercase();
+
+            if exe_name == name_lower {
+                let pid = entry.th32ProcessID;
+                CloseHandle(snapshot);
+                return Some(pid);
+            }
+
+            if Process32NextW(snapshot, &mut entry) == 0 {
+                break;
+            }
+        }
+
+        CloseHandle(snapshot);
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn find_process_pid_by_name(_name: &str) -> Option<u32> {
+    None
 }
 
 /// Launch the game via Locale Remulator.
