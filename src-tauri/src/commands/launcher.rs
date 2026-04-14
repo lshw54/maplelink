@@ -301,44 +301,71 @@ async fn launch_with_lr(
         "launching game via Locale Remulator"
     );
 
-    // ShellExecuteW avoids console window flash for GUI subsystem exe.
-    // Since maplelink.exe self-elevates, we don't need "runas" verb.
+    // Use CreateProcessW to get the child PID (ShellExecuteW doesn't return it).
+    // Since maplelink.exe already runs elevated, the child inherits the token.
+    // CREATE_BREAKAWAY_FROM_JOB (0x01000000) + CREATE_NEW_PROCESS_GROUP (0x00000200)
+    // ensure the game survives if MapleLink exits.
     #[cfg(target_os = "windows")]
     {
         use std::ffi::OsStr;
+        use std::mem;
         use std::os::windows::ffi::OsStrExt;
 
-        fn to_wide(s: &str) -> Vec<u16> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
+        };
+
+        fn to_wide_null(s: &str) -> Vec<u16> {
             OsStr::new(s)
                 .encode_wide()
                 .chain(std::iter::once(0))
                 .collect()
         }
 
-        let file = to_wide(&lr_path);
-        let params = to_wide(&lr_args);
-        let dir = to_wide(&launch_cmd.working_dir);
+        let application = to_wide_null(&lr_path);
+        // CreateProcessW wants a mutable command line buffer
+        let mut cmd_line = to_wide_null(&format!("\"{}\" {}", lr_path, lr_args));
+        let working_dir = to_wide_null(&launch_cmd.working_dir);
 
-        let result = unsafe {
-            windows_sys::Win32::UI::Shell::ShellExecuteW(
-                std::ptr::null_mut(),
-                std::ptr::null(), // default verb (open)
-                file.as_ptr(),
-                params.as_ptr(),
-                dir.as_ptr(),
-                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        let mut si: STARTUPINFOW = unsafe { mem::zeroed() };
+        si.cb = mem::size_of::<STARTUPINFOW>() as u32;
+
+        let mut pi: PROCESS_INFORMATION = unsafe { mem::zeroed() };
+
+        let success = unsafe {
+            CreateProcessW(
+                application.as_ptr(),
+                cmd_line.as_mut_ptr(),
+                std::ptr::null(),     // lpProcessAttributes
+                std::ptr::null(),     // lpThreadAttributes
+                0,                    // bInheritHandles = FALSE
+                0x01000200,           // CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP
+                std::ptr::null(),     // lpEnvironment (inherit)
+                working_dir.as_ptr(), // lpCurrentDirectory
+                &si,
+                &mut pi,
             )
         };
 
-        let result_int = result as usize;
-        if result_int <= 32 {
+        if success == 0 {
+            let err = std::io::Error::last_os_error();
             return Err(ProcessError::SpawnFailed {
                 path: lr_path,
-                reason: format!("ShellExecuteW failed with code {result_int}"),
+                reason: format!("CreateProcessW failed: {err}"),
             });
         }
 
-        Ok(0)
+        let pid = pi.dwProcessId;
+
+        // Close handles — we only need the PID, not the handles.
+        unsafe {
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+
+        tracing::info!(pid, "LRProc.exe started via CreateProcessW");
+        Ok(pid)
     }
 
     #[cfg(not(target_os = "windows"))]
