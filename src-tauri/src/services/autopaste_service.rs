@@ -120,20 +120,20 @@ mod win32 {
     }
 
     /// Clear a text field by pressing END then BACKSPACE `count` times.
+    /// Matches original C# — no sleep between keystrokes (PostMessage is async).
     fn clear_field(hwnd: HWND, backspace_count: u32) {
         send_key(hwnd, VK_END);
-        sleep_ms(10);
         for _ in 0..backspace_count {
             send_key(hwnd, VK_BACK);
         }
-        sleep_ms(10);
     }
 
     /// Type a string character by character via `WM_CHAR`.
+    /// Matches original C# `PostString` — no per-character delay since
+    /// `PostMessageW` is non-blocking and the messages queue up correctly.
     fn type_string(hwnd: HWND, text: &str) {
         for ch in text.chars() {
             send_char(hwnd, ch);
-            sleep_ms(5);
         }
     }
 
@@ -144,6 +144,13 @@ mod win32 {
 
     /// Main auto-paste implementation.
     /// Auto-paste credentials into MapleStory window (HK + TW 統一版)
+    ///
+    /// Timing matches the original C# Beanfun implementation:
+    /// - SetForegroundWindow → 100ms
+    /// - ESC → 100ms
+    /// - Click account field → 200ms
+    /// - All PostMessage calls (keys, chars) are fire-and-forget with no
+    ///   per-character delay, since PostMessage queues messages asynchronously.
     pub fn do_auto_paste(account_id: &str, otp: &str) -> bool {
         let hwnd = match find_maple_window() {
             Some(h) => h,
@@ -153,9 +160,7 @@ mod win32 {
             }
         };
 
-        sleep_ms(100); // 給遊戲窗口完全載入
-
-        // 可靠帶到最前面
+        // 可靠帶到最前面 (matches original: SetForegroundWindow + 100ms)
         unsafe {
             let fg_hwnd = GetForegroundWindow();
             let fg_thread = GetWindowThreadProcessId(fg_hwnd, std::ptr::null_mut());
@@ -172,11 +177,11 @@ mod win32 {
                 AttachThreadInput(our_thread, fg_thread, 0);
             }
         }
-        sleep_ms(200);
+        sleep_ms(100);
 
-        // 按 ESC + 點擊帳號欄
+        // 按 ESC 關閉提示框 + 點擊帳號欄 (matches original T9 flow)
         send_key(hwnd, VK_ESCAPE);
-        sleep_ms(180);
+        sleep_ms(100);
 
         let mut rect = RECT {
             left: 0,
@@ -200,23 +205,20 @@ mod win32 {
             unsafe { SetCursorPos(screen_point.x + click_x, screen_point.y + click_y) };
             let pos = ((click_y as LPARAM) << 16) | (click_x as LPARAM & 0xFFFF);
             unsafe { PostMessageW(hwnd, WM_LBUTTONDOWN, 1, pos) };
-            sleep_ms(280);
+            sleep_ms(200);
 
             unsafe { SetCursorPos(old_point.x, old_point.y) };
         }
 
         // ==================== 通用步驟 (HK + TW 都一樣) ====================
+        // Original C# fires all PostMessage calls with no inter-step delays.
+        // PostMessage is async — messages queue in the target window's message
+        // loop and are processed in order, so no sleeps needed.
         clear_field(hwnd, 64); // 清空帳號欄
-        type_string(hwnd, account_id);
-        sleep_ms(100);
-
+        type_string(hwnd, account_id); // 輸入帳號
         send_key(hwnd, VK_TAB); // 切換到密碼欄
-        sleep_ms(100);
-
         clear_field(hwnd, 20); // 清空密碼欄
-        type_string(hwnd, otp);
-        sleep_ms(100);
-
+        type_string(hwnd, otp); // 輸入密碼
         send_key(hwnd, VK_RETURN); // 按登入
 
         tracing::info!("auto-paste completed for account {}", account_id);

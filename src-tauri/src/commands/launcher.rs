@@ -135,50 +135,32 @@ pub async fn launch_game(
 /// Every 100ms for up to 30 seconds,
 /// check if Patcher.exe from the game directory is running and kill it.
 /// This prevents the game's auto-updater from blocking the direct launch.
+/// Polls for `Patcher.exe` in the game directory and kills it when found.
+///
+/// Uses native Windows Toolhelp32 APIs to enumerate processes in-process,
+/// avoiding the `wmic.exe` console window popup that the previous
+/// implementation caused (wmic spawns a visible console every 100ms).
 async fn kill_patcher_loop(game_dir: &str) {
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
-
         let patcher_path = std::path::Path::new(game_dir)
             .join("Patcher.exe")
             .to_string_lossy()
             .to_lowercase();
 
+        let patcher_path_clone = patcher_path.clone();
+
         // Poll for up to 30 seconds (300 × 100ms)
         for _ in 0..300 {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let output = match Command::new("wmic")
-                .args([
-                    "process",
-                    "where",
-                    "name='Patcher.exe'",
-                    "get",
-                    "ProcessId,ExecutablePath",
-                    "/format:csv",
-                ])
-                .output()
-            {
-                Ok(o) => o,
-                Err(_) => continue,
-            };
+            let path_for_check = patcher_path_clone.clone();
+            let found = tokio::task::spawn_blocking(move || find_and_kill_patcher(&path_for_check))
+                .await
+                .unwrap_or(false);
 
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let lower = line.to_lowercase();
-                if lower.contains(&patcher_path) {
-                    // Extract PID from CSV: Node,ExecutablePath,ProcessId
-                    if let Some(pid_str) = line.split(',').next_back() {
-                        if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                            let _ = Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/F"])
-                                .output();
-                            tracing::info!("killed Patcher.exe (PID {pid})");
-                            return; // Done — patcher killed
-                        }
-                    }
-                }
+            if found {
+                return;
             }
         }
     }
@@ -187,6 +169,96 @@ async fn kill_patcher_loop(game_dir: &str) {
     {
         let _ = game_dir;
     }
+}
+
+/// Find Patcher.exe by enumerating processes via Toolhelp32 snapshot and kill
+/// it if its executable path matches the expected game directory.
+///
+/// Returns `true` if the patcher was found and killed.
+#[cfg(target_os = "windows")]
+fn find_and_kill_patcher(expected_path_lower: &str) -> bool {
+    use std::ffi::OsString;
+    use std::mem;
+    use std::os::windows::ffi::OsStringExt;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return false;
+        }
+
+        let mut entry: PROCESSENTRY32W = mem::zeroed();
+        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if Process32FirstW(snapshot, &mut entry) == 0 {
+            CloseHandle(snapshot);
+            return false;
+        }
+
+        loop {
+            // Check if this process is Patcher.exe by its szExeFile field
+            let exe_name = OsString::from_wide(
+                &entry.szExeFile[..entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len())],
+            )
+            .to_string_lossy()
+            .to_lowercase();
+
+            if exe_name == "patcher.exe" {
+                let pid = entry.th32ProcessID;
+
+                // Open the process to query its full path
+                let proc_handle = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                    0, // bInheritHandle = FALSE
+                    pid,
+                );
+
+                if !proc_handle.is_null() {
+                    let mut buf = [0u16; 1024];
+                    let mut size = buf.len() as u32;
+
+                    if QueryFullProcessImageNameW(proc_handle, 0, buf.as_mut_ptr(), &mut size) != 0
+                    {
+                        let full_path = OsString::from_wide(&buf[..size as usize])
+                            .to_string_lossy()
+                            .to_lowercase();
+
+                        if full_path == *expected_path_lower {
+                            TerminateProcess(proc_handle, 1);
+                            CloseHandle(proc_handle);
+                            CloseHandle(snapshot);
+                            tracing::info!("killed Patcher.exe (PID {pid})");
+                            return true;
+                        }
+                    }
+
+                    CloseHandle(proc_handle);
+                }
+            }
+
+            if Process32NextW(snapshot, &mut entry) == 0 {
+                break;
+            }
+        }
+
+        CloseHandle(snapshot);
+    }
+
+    false
 }
 
 /// Launch the game via Locale Remulator.
