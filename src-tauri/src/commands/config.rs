@@ -128,6 +128,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "traditional_login" => {
             config.traditional_login = parse_bool(value)?;
         }
+        "auto_kill_patcher" => {
+            config.auto_kill_patcher = parse_bool(value)?;
+        }
         "update_channel" => {
             config.update_channel = match value.to_lowercase().replace('_', "-").as_str() {
                 "release" => UpdateChannel::Release,

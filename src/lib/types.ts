@@ -36,6 +36,7 @@ export interface AppConfigDto {
   updateChannel: "release" | "pre-release";
   fontSize: "small" | "medium" | "large" | "extra-large";
   traditionalLogin: boolean;
+  autoKillPatcher: boolean;
 }
 
 export interface ErrorDto {
@@ -55,6 +56,7 @@ export interface UpdateInfoDto {
 export interface QrCodeData {
   sessionKey: string;
   qrImageUrl: string;
+  verificationToken: string;
 }
 
 export interface QrPollResult {

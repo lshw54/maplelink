@@ -54,8 +54,14 @@ pub async fn login(
 
     let region = state.config.read().await.region.clone();
 
-    let login_result =
-        beanfun_service::login(&state.http_client, &account, &password, &region).await;
+    let login_result = beanfun_service::login(
+        &state.http_client,
+        &account,
+        &password,
+        &region,
+        &state.cookie_jar,
+    )
+    .await;
 
     // Handle TOTP required: store partial session and return specific error
     let session = match login_result {
@@ -118,15 +124,21 @@ pub async fn qr_login_start(state: State<'_, AppState>) -> Result<QrCodeData, Er
 #[tauri::command]
 pub async fn qr_login_poll(
     session_key: String,
+    verification_token: String,
     state: State<'_, AppState>,
 ) -> Result<QrPollResult, ErrorDto> {
     auth::validate_input("session_key", &session_key).map_err(to_dto)?;
 
     let region = state.config.read().await.region.clone();
 
-    let result = beanfun_service::qr_login_poll(&state.http_client, &session_key, &region)
-        .await
-        .map_err(login_err_to_dto)?;
+    let result = beanfun_service::qr_login_poll(
+        &state.http_client,
+        &session_key,
+        &verification_token,
+        &region,
+    )
+    .await
+    .map_err(login_err_to_dto)?;
 
     // If confirmed, complete the login and store the session
     if result.status == beanfun_service::QrPollStatus::Confirmed {

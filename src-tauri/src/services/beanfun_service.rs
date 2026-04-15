@@ -34,6 +34,9 @@ const DEFAULT_SERVICE_REGION: &str = "T9";
 pub struct QrCodeData {
     pub session_key: String,
     pub qr_image_url: String,
+    /// Cached `__RequestVerificationToken` from the login page.
+    /// Used for subsequent `CheckLoginStatus` POST requests.
+    pub verification_token: String,
 }
 
 /// Polling result for an in-progress QR-code login.
@@ -69,10 +72,11 @@ pub async fn login(
     account: &str,
     password: &str,
     region: &Region,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
 ) -> Result<Session, LoginError> {
     match region {
         Region::HK => hk_login(client, account, password).await,
-        Region::TW => tw_login(client, account, password).await,
+        Region::TW => tw_login(client, account, password, cookie_jar).await,
     }
 }
 
@@ -92,10 +96,11 @@ pub async fn qr_login_start(client: &Client, region: &Region) -> Result<QrCodeDa
 pub async fn qr_login_poll(
     client: &Client,
     session_key: &str,
+    verification_token: &str,
     region: &Region,
 ) -> Result<QrPollResult, LoginError> {
     match region {
-        Region::TW => tw_qr_poll(client, session_key).await,
+        Region::TW => tw_qr_poll(client, session_key, verification_token).await,
         Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
             reason: "QR login poll is only available for TW region".into(),
         })),
@@ -953,8 +958,8 @@ async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
     let final_url = resp.url().to_string();
     tracing::debug!("TW session key redirect URL: {final_url}");
 
-    // Extract pSKey or sKey from the final URL
-    let re = Regex::new(r"[sp][Ss]?[Kk]ey=([^&]+)")
+    // Extract pSKey or SessionKey from the final URL
+    let re = Regex::new(r"[pP]?[sS][Kk]ey=([^&]+)")
         .map_err(|_| parse_error_str("failed to compile skey regex"))?;
 
     re.captures(&final_url)
@@ -969,7 +974,12 @@ async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
 }
 
 /// Full TW regular login flow using the new JSON API.
-async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Session, LoginError> {
+async fn tw_login(
+    client: &Client,
+    account: &str,
+    password: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<Session, LoginError> {
     let skey = tw_get_session_key(client).await?;
     tracing::debug!("TW session key: {}", &skey[..skey.len().min(20)]);
 
@@ -978,14 +988,7 @@ async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Sess
 
     // Step 1: Get index page and __RequestVerificationToken
     let index_html = http_get_text(client, &index_url).await?;
-    let form_token = {
-        let re = Regex::new(r#"name="__RequestVerificationToken"[^>]+value="([^"]+)""#)
-            .map_err(|_| parse_error_str("failed to compile token regex"))?;
-        re.captures(&index_html)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
-            .ok_or_else(|| parse_error_str("no __RequestVerificationToken found"))?
-    };
+    let form_token = extract_request_verification_token(&index_html)?;
     tracing::debug!("TW form token obtained");
 
     // Step 2: CheckAccountType
@@ -1003,6 +1006,7 @@ async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Sess
         .header("X-Requested-With", "XMLHttpRequest")
         .header("RequestVerificationToken", &form_token)
         .header("Referer", &index_url)
+        .header("Origin", api_base)
         .json(&check_body)
         .send()
         .await
@@ -1031,6 +1035,7 @@ async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Sess
         .header("X-Requested-With", "XMLHttpRequest")
         .header("RequestVerificationToken", &form_token)
         .header("Referer", &index_url)
+        .header("Origin", api_base)
         .json(&login_body)
         .send()
         .await
@@ -1058,7 +1063,7 @@ async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Sess
                 }));
             }
             // Success — complete via SendLogin flow
-            let web_token = tw_send_login_flow(client, &skey).await?;
+            let web_token = tw_send_login_flow(client, &skey, cookie_jar).await?;
             Ok(Session {
                 token: web_token,
                 refresh_token: None,
@@ -1094,15 +1099,24 @@ async fn tw_login(client: &Client, account: &str, password: &str) -> Result<Sess
 /// TW SendLogin flow: GET SendLogin page → parse form → POST return.aspx → extract bfWebToken.
 ///
 /// This is the shared completion step used by both regular login and QR login.
-async fn tw_send_login_flow(client: &Client, skey: &str) -> Result<String, LoginError> {
+async fn tw_send_login_flow(
+    client: &Client,
+    skey: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<String, LoginError> {
     let api_base = "https://login.beanfun.com";
+    let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
 
-    // GET SendLogin page
+    // Step 4a: GET SendLogin page
     let send_login_url = format!("{api_base}/Login/SendLogin");
     let send_login_html = client
         .get(&send_login_url)
         .header("User-Agent", USER_AGENT)
-        .header("Referer", &format!("{api_base}/Login/Index?pSKey={skey}"))
+        .header("Referer", &index_url)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
         .send()
         .await
         .map_err(|e| map_reqwest_error(&send_login_url, e))?
@@ -1116,7 +1130,7 @@ async fn tw_send_login_flow(client: &Client, skey: &str) -> Result<String, Login
         &send_login_html[..send_login_html.len().min(500)]
     );
 
-    // Parse hidden form fields
+    // Parse hidden form fields (exclude type="submit" inputs)
     let input_re = Regex::new(r#"<input[^>]+>"#)
         .map_err(|_| parse_error_str("failed to compile input regex"))?;
     let name_re = Regex::new(r#"name\s*=\s*['"]([^'"]+)['"]"#)
@@ -1146,37 +1160,110 @@ async fn tw_send_login_flow(client: &Client, skey: &str) -> Result<String, Login
 
     tracing::debug!("TW SendLogin form fields: {}", form_fields.len());
 
-    // POST to return.aspx (no redirect — we need to read Set-Cookie)
+    // Step 4b: POST to return.aspx WITHOUT following redirects.
+    // The C# code sets redirect=false and reads bfWebToken from Set-Cookie.
+    // We build a temporary no-redirect client and manually forward cookies.
     let return_url = "https://tw.beanfun.com/beanfun_block/bflogin/return.aspx";
-    let resp = client
+
+    // Encode form body
+    let form_body: String = form_fields
+        .iter()
+        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    // Collect cookies from the shared cookie jar
+    let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
+    let login_url_parsed: url::Url = "https://login.beanfun.com/".parse().unwrap();
+
+    let mut cookie_header = String::new();
+    if let Some(cookies) = cookie_jar.cookies(&tw_url) {
+        if let Ok(s) = cookies.to_str() {
+            cookie_header = s.to_string();
+        }
+    }
+    if let Some(cookies) = cookie_jar.cookies(&login_url_parsed) {
+        if let Ok(s) = cookies.to_str() {
+            if !cookie_header.is_empty() {
+                cookie_header.push_str("; ");
+            }
+            cookie_header.push_str(s);
+        }
+    }
+
+    let no_redirect_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| parse_error_str(&format!("failed to build no-redirect client: {e}")))?;
+
+    let mut req = no_redirect_client
         .post(return_url)
         .header("User-Agent", USER_AGENT)
         .header("Referer", &format!("{api_base}/"))
-        .form(&form_fields)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(form_body);
+
+    if !cookie_header.is_empty() {
+        req = req.header("Cookie", &cookie_header);
+    }
+
+    let resp = req
         .send()
         .await
         .map_err(|e| map_reqwest_error(return_url, e))?;
 
-    let _body = resp.text().await.unwrap_or_default();
-
-    // Verify login via echo_token
-    let token_url =
-        "https://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1";
-    let token_resp = http_get_text(client, token_url).await?;
-
-    tracing::trace!(
-        "TW echo_token: {}",
-        &token_resp[..token_resp.len().min(200)]
-    );
-
-    if !token_resp.contains("ResultCode:1") {
-        return Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: "TW login verification failed".into(),
-        }));
+    // Extract bfWebToken from Set-Cookie header (no redirect, so we see it directly)
+    let mut web_token = String::new();
+    for value in resp.headers().get_all("set-cookie") {
+        if let Ok(s) = value.to_str() {
+            if let Some(token) = s
+                .split(';')
+                .next()
+                .and_then(|part| part.trim().strip_prefix("bfWebToken="))
+            {
+                web_token = token.to_string();
+                tracing::info!(
+                    "extracted bfWebToken from Set-Cookie: len={}",
+                    web_token.len()
+                );
+                break;
+            }
+        }
     }
 
-    // Read bfWebToken from cookie jar (reqwest stores it automatically)
-    Ok("cookie_auth".to_string())
+    // Also store the Set-Cookie values back into the shared cookie jar
+    // so subsequent requests (get_game_accounts, etc.) have the token.
+    for value in resp.headers().get_all("set-cookie") {
+        if let Ok(s) = value.to_str() {
+            cookie_jar.add_cookie_str(s, &tw_url);
+        }
+    }
+
+    let _body = resp.text().await.unwrap_or_default();
+
+    if web_token.is_empty() {
+        // Fallback: try echo_token to verify login succeeded
+        let token_url =
+            "https://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1";
+        let token_resp = http_get_text(client, token_url).await?;
+
+        tracing::trace!(
+            "TW echo_token: {}",
+            &token_resp[..token_resp.len().min(200)]
+        );
+
+        if !token_resp.contains("ResultCode:1") {
+            return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                reason: "TW login verification failed (no bfWebToken)".into(),
+            }));
+        }
+
+        // Login succeeded via cookie jar, use placeholder
+        web_token = "cookie_auth".to_string();
+    }
+
+    Ok(web_token)
 }
 
 /// Start TW QR code login flow.
@@ -1185,8 +1272,15 @@ async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
     let api_base = "https://login.beanfun.com";
     let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
 
-    // Load index page first (sets cookies)
-    let _ = http_get_text(client, &index_url).await?;
+    // Load index page first (sets cookies) and extract __RequestVerificationToken
+    let index_html = http_get_text(client, &index_url).await?;
+
+    // Extract __RequestVerificationToken from the login page HTML.
+    // The token is in: <input name="__RequestVerificationToken" ... value="TOKEN" />
+    let verification_token = extract_request_verification_token(&index_html).unwrap_or_else(|e| {
+        tracing::warn!("failed to extract __RequestVerificationToken: {e}, using empty");
+        String::new()
+    });
 
     // Get QR code data via InitLogin
     let init_url = format!("{api_base}/Login/InitLogin?pSKey={skey}");
@@ -1219,20 +1313,29 @@ async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
 
     let qr_image_url = format!("data:image/png;base64,{qr_image}");
 
-    tracing::info!("TW QR code obtained, skey={}", &skey[..skey.len().min(20)]);
+    tracing::info!(
+        "TW QR code obtained, skey={}, has_token={}",
+        &skey[..skey.len().min(20)],
+        !verification_token.is_empty()
+    );
 
     Ok(QrCodeData {
         session_key: skey,
         qr_image_url,
+        verification_token,
     })
 }
 
 /// Poll TW QR code login status.
-async fn tw_qr_poll(client: &Client, session_key: &str) -> Result<QrPollResult, LoginError> {
-    let url = format!("https://login.beanfun.com/QRLogin/CheckLoginStatus?pSKey={session_key}");
+async fn tw_qr_poll(
+    client: &Client,
+    session_key: &str,
+    verification_token: &str,
+) -> Result<QrPollResult, LoginError> {
+    let url = "https://login.beanfun.com/QRLogin/CheckLoginStatus";
 
     let resp = client
-        .get(&url)
+        .post(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/json, text/plain, */*")
         .header(
@@ -1240,13 +1343,30 @@ async fn tw_qr_poll(client: &Client, session_key: &str) -> Result<QrPollResult, 
             &format!("https://login.beanfun.com/Login/Index?pSKey={session_key}"),
         )
         .header("Origin", "https://login.beanfun.com")
+        .header("RequestVerificationToken", verification_token)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Content-Length", "0")
+        .body("")
         .send()
         .await
-        .map_err(|e| map_reqwest_error(&url, e))?;
+        .map_err(|e| map_reqwest_error(url, e))?;
 
+    let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    let json: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|_| parse_error_str("failed to parse QR poll response"))?;
+
+    tracing::debug!(
+        "QR poll response: status={}, len={}, body={}",
+        status,
+        text.len(),
+        &text[..text.len().min(300)]
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+        LoginError::Network(NetworkError::HttpError {
+            status: status.as_u16(),
+            url: "failed to parse QR poll response".to_string(),
+        })
+    })?;
 
     let result_msg = json["ResultMessage"].as_str().unwrap_or("");
 
@@ -1277,7 +1397,7 @@ async fn tw_qr_poll(client: &Client, session_key: &str) -> Result<QrPollResult, 
 async fn tw_qr_complete(
     client: &Client,
     session_key: &str,
-    _cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
 ) -> Result<Session, LoginError> {
     let api_base = "https://login.beanfun.com";
 
@@ -1296,7 +1416,7 @@ async fn tw_qr_complete(
         .map_err(|e| map_reqwest_error(&qr_login_url, e))?;
 
     // Complete via SendLogin flow
-    let web_token = tw_send_login_flow(client, session_key).await?;
+    let web_token = tw_send_login_flow(client, session_key, cookie_jar).await?;
 
     Ok(Session {
         token: web_token,
@@ -1892,6 +2012,40 @@ fn extract_html_field(html: &str, field_name: &str) -> Result<String, LoginError
             })
         })
 }
+/// Extract `__RequestVerificationToken` from an HTML page.
+///
+/// Looks for `<input name="__RequestVerificationToken" ... value="TOKEN" />`
+/// using a name-based regex (the field may not have an `id` attribute).
+/// Extract `__RequestVerificationToken` from an HTML page.
+///
+/// Looks for `<input ... __RequestVerificationToken ... value="TOKEN" ... />`
+/// The regex does NOT assume `name` appears before `value` in the HTML attributes,
+/// since attribute order is not guaranteed.
+fn extract_request_verification_token(html: &str) -> Result<String, LoginError> {
+    // Step 1: Find the <input> tag that contains __RequestVerificationToken
+    let tag_re = Regex::new(r#"<input[^>]+__RequestVerificationToken[^>]*>"#)
+        .map_err(|_| parse_error_str("failed to compile __RequestVerificationToken tag regex"))?;
+
+    let tag = tag_re.find(html).map(|m| m.as_str()).ok_or_else(|| {
+        LoginError::Auth(AuthError::InvalidCredentials {
+            reason: "missing __RequestVerificationToken in login page".into(),
+        })
+    })?;
+
+    // Step 2: Extract value="..." from that tag (order-independent)
+    let val_re = Regex::new(r#"value="([^"]+)""#)
+        .map_err(|_| parse_error_str("failed to compile value regex"))?;
+
+    val_re
+        .captures(tag)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| {
+            LoginError::Auth(AuthError::InvalidCredentials {
+                reason: "missing value in __RequestVerificationToken input".into(),
+            })
+        })
+}
 
 /// Validate that a URL uses HTTPS.
 fn assert_https(url: &str) -> Result<(), LoginError> {
@@ -2063,5 +2217,29 @@ mod tests {
                 "config output must not contain credential keyword '{keyword}': {output}"
             );
         }
+    }
+
+    #[test]
+    fn extract_request_verification_token_parses_correctly() {
+        // name before value
+        let html =
+            r#"<input name="__RequestVerificationToken" type="hidden" value="CfDJ8ABC123XYZ" />"#;
+        let result = extract_request_verification_token(html).unwrap();
+        assert_eq!(result, "CfDJ8ABC123XYZ");
+    }
+
+    #[test]
+    fn extract_request_verification_token_value_before_name() {
+        // value before name — attribute order should not matter
+        let html =
+            r#"<input type="hidden" value="TokenXYZ789" name="__RequestVerificationToken" />"#;
+        let result = extract_request_verification_token(html).unwrap();
+        assert_eq!(result, "TokenXYZ789");
+    }
+
+    #[test]
+    fn extract_request_verification_token_missing_returns_error() {
+        let html = "<html><body>no token here</body></html>";
+        assert!(extract_request_verification_token(html).is_err());
     }
 }

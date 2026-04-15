@@ -16,6 +16,11 @@ const GHPROXY_PREFIX: &str = "https://mirror.ghproxy.com/";
 ///
 /// When `include_prerelease` is true, checks all releases (including pre-release).
 /// When false, only checks the latest stable release.
+/// Check GitHub Releases for an available update.
+///
+/// When `include_prerelease` is true, checks all releases (including pre-release)
+/// and picks the newest version across both stable and pre-release.
+/// When false, only checks the latest stable release.
 pub async fn check_for_update(
     client: &reqwest::Client,
     current_version: &str,
@@ -25,14 +30,95 @@ pub async fn check_for_update(
         "checking for updates (current: v{current_version}, include_prerelease={include_prerelease})"
     );
 
-    // /releases/latest only returns stable releases (404 if none exist).
-    // /releases returns all releases including pre-releases.
-    let url = if include_prerelease {
-        "https://api.github.com/repos/lshw54/maplelink/releases?per_page=5"
-    } else {
-        GITHUB_API_URL
-    };
+    if include_prerelease {
+        // Fetch recent releases (includes both stable and pre-release).
+        // Pick the newest version across all of them.
+        let url = "https://api.github.com/repos/lshw54/maplelink/releases?per_page=10";
 
+        let response = github_get(client, url).await?;
+        let response = match response {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let body: serde_json::Value =
+            response
+                .json()
+                .await
+                .map_err(|e| UpdateError::CheckFailed {
+                    reason: format!("invalid response: {e}"),
+                })?;
+
+        let releases = body.as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        if releases.is_empty() {
+            return Ok(None);
+        }
+
+        // Find the newest release that is newer than current_version
+        let mut best: Option<(&serde_json::Value, Vec<u32>)> = None;
+        for release in releases {
+            let tag = release["tag_name"]
+                .as_str()
+                .unwrap_or("")
+                .trim_start_matches('v');
+            if tag.is_empty() {
+                continue;
+            }
+            let parsed = parse_version(tag);
+            if parsed.is_empty() || !is_newer(tag, current_version) {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(_, bv)| parsed > *bv) {
+                best = Some((release, parsed));
+            }
+        }
+
+        match best {
+            Some((release, _)) => extract_update_info(release),
+            None => {
+                tracing::info!("no update available (checked all releases)");
+                Ok(None)
+            }
+        }
+    } else {
+        // Stable only: /releases/latest returns the latest non-prerelease.
+        let response = github_get(client, GITHUB_API_URL).await?;
+        let response = match response {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let release: serde_json::Value =
+            response
+                .json()
+                .await
+                .map_err(|e| UpdateError::CheckFailed {
+                    reason: format!("invalid response: {e}"),
+                })?;
+
+        if release.is_null() {
+            return Ok(None);
+        }
+
+        let tag = release["tag_name"]
+            .as_str()
+            .unwrap_or("")
+            .trim_start_matches('v');
+
+        if tag.is_empty() || !is_newer(tag, current_version) {
+            tracing::info!("no update available (latest: v{tag})");
+            return Ok(None);
+        }
+
+        extract_update_info(&release)
+    }
+}
+
+/// Send a GET request to the GitHub API, handling 404 and 403 gracefully.
+async fn github_get(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Option<reqwest::Response>, UpdateError> {
     let response = client
         .get(url)
         .header("User-Agent", "MapleLink-Updater")
@@ -50,7 +136,6 @@ pub async fn check_for_update(
     }
 
     if response.status() == reqwest::StatusCode::FORBIDDEN {
-        // GitHub API rate limit (60 req/hr unauthenticated)
         tracing::info!("GitHub API rate limited (403), skipping update check");
         return Ok(None);
     }
@@ -61,40 +146,15 @@ pub async fn check_for_update(
         });
     }
 
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| UpdateError::CheckFailed {
-            reason: format!("invalid response: {e}"),
-        })?;
+    Ok(Some(response))
+}
 
-    // For /releases (array), pick the first one. For /releases/latest (object), use directly.
-    let release = if body.is_array() {
-        body.as_array()
-            .and_then(|arr| arr.first())
-            .cloned()
-            .unwrap_or(serde_json::Value::Null)
-    } else {
-        body
-    };
-
-    if release.is_null() {
-        return Ok(None);
-    }
-
+/// Extract `UpdateInfo` from a GitHub release JSON object.
+fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>, UpdateError> {
     let tag = release["tag_name"]
         .as_str()
         .unwrap_or("")
         .trim_start_matches('v');
-
-    if tag.is_empty() {
-        return Ok(None);
-    }
-
-    if !is_newer(tag, current_version) {
-        tracing::info!("no update available (latest: v{tag})");
-        return Ok(None);
-    }
 
     let download_url = release["assets"]
         .as_array()
@@ -121,6 +181,11 @@ pub async fn check_for_update(
         download_url,
         is_prerelease,
     }))
+}
+
+/// Parse a version string into a vector of numeric parts.
+fn parse_version(s: &str) -> Vec<u32> {
+    s.split('.').filter_map(|p| p.parse().ok()).collect()
 }
 
 /// Get the download URL, optionally proxied through ghproxy for China users.

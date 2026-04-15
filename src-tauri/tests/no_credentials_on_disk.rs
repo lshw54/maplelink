@@ -110,6 +110,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 gamepass_incognito,
                 font_size,
                 traditional_login: true,
+                auto_kill_patcher: true,
             }
         },
     )

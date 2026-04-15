@@ -76,6 +76,8 @@
   "settings.skip_play_confirm_desc": "自動關閉遊戲的 Play 按鈕視窗，並跳過重啟確認",
   "settings.traditional_login": "傳統模式登入",
   "settings.traditional_login_desc": "啟動遊戲時不傳送伺服器連線參數。關閉此選項會將伺服器/連接埠/帳號/OTP 直接傳給遊戲。",
+  "settings.auto_kill_patcher": "阻止遊戲自動更新",
+  "settings.auto_kill_patcher_desc": "啟動遊戲時自動關閉 Patcher.exe，防止遊戲強制更新。",
 
   "toolbox.title": "工具箱",
   "toolbox.tabs.tools": "工具",

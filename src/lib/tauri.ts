@@ -17,7 +17,8 @@ export const commands = {
   // Auth
   login: (account: string, password: string) => invoke<SessionDto>("login", { account, password }),
   qrLoginStart: () => invoke<QrCodeData>("qr_login_start"),
-  qrLoginPoll: (sessionKey: string) => invoke<QrPollResult>("qr_login_poll", { sessionKey }),
+  qrLoginPoll: (sessionKey: string, verificationToken: string) =>
+    invoke<QrPollResult>("qr_login_poll", { sessionKey, verificationToken }),
   totpVerify: (code: string) => invoke<SessionDto>("totp_verify", { code }),
   getAdvanceCheck: (url?: string) =>
     invoke<AdvanceCheckState>("get_advance_check", { url: url ?? null }),

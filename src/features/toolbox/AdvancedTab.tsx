@@ -9,6 +9,52 @@ export function AdvancedTab() {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* GamePass incognito mode */}
+      <SettingRow label={t("settings.gamepass_incognito")}>
+        <Toggle
+          checked={config?.gamepassIncognito ?? true}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "gamepass_incognito",
+              value: String(!config.gamepassIncognito),
+            });
+          }}
+        />
+      </SettingRow>
+
+      {/* Skip play confirmation */}
+      <SettingRow label={t("settings.skip_play_confirm")}>
+        <Toggle
+          checked={config?.skipPlayConfirm ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "skip_play_confirm",
+              value: String(!config.skipPlayConfirm),
+            });
+          }}
+        />
+      </SettingRow>
+
+      {/* Auto-kill Patcher.exe */}
+      <SettingRow label={t("settings.auto_kill_patcher")}>
+        <Toggle
+          checked={config?.autoKillPatcher ?? true}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "auto_kill_patcher",
+              value: String(!config.autoKillPatcher),
+            });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.auto_kill_patcher_desc")}
+      </p>
+
+      {/* Traditional login mode */}
       <SettingRow label={t("settings.traditional_login")}>
         <Toggle
           checked={config?.traditionalLogin ?? false}

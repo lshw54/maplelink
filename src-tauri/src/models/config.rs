@@ -31,6 +31,9 @@ pub struct AppConfig {
     /// When false, also passes server/port/account/otp args.
     #[serde(default = "default_true")]
     pub traditional_login: bool,
+    /// Auto-kill Patcher.exe when launching the game (default: true).
+    #[serde(default = "default_true")]
+    pub auto_kill_patcher: bool,
 }
 
 fn default_true() -> bool {
@@ -61,6 +64,7 @@ impl Default for AppConfig {
             gamepass_incognito: true,
             font_size: FontSize::Medium,
             traditional_login: true,
+            auto_kill_patcher: true,
         }
     }
 }

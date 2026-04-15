@@ -224,11 +224,13 @@ pub async fn launch_game(
         });
     }
 
-    // 9. Auto-kill Patcher.exe
-    let game_dir = launch_cmd.working_dir.clone();
-    tauri::async_runtime::spawn(async move {
-        kill_patcher_loop(&game_dir).await;
-    });
+    // 9. Auto-kill Patcher.exe (respects config toggle)
+    if config.auto_kill_patcher {
+        let game_dir = launch_cmd.working_dir.clone();
+        tauri::async_runtime::spawn(async move {
+            kill_patcher_loop(&game_dir).await;
+        });
+    }
 
     // 10. Auto-close the game's "Play" startup window (StartUpDlgClass).
     // MapleStory shows a launcher window with a Play button before the actual
@@ -534,7 +536,7 @@ async fn launch_with_lr(
         use std::mem;
         use std::os::windows::ffi::OsStrExt;
 
-        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
         use windows_sys::Win32::System::Threading::{
             CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
         };
@@ -556,7 +558,10 @@ async fn launch_with_lr(
 
         let mut pi: PROCESS_INFORMATION = unsafe { mem::zeroed() };
 
-        let success = unsafe {
+        // Try with CREATE_BREAKAWAY_FROM_JOB first. If the current job object
+        // doesn't allow breakaway, this fails with ERROR_ACCESS_DENIED (5).
+        // Fall back to CREATE_NEW_PROCESS_GROUP only.
+        let mut success = unsafe {
             CreateProcessW(
                 application.as_ptr(),
                 cmd_line.as_mut_ptr(),
@@ -570,6 +575,33 @@ async fn launch_with_lr(
                 &mut pi,
             )
         };
+
+        if success == 0 {
+            let err_code = unsafe { GetLastError() };
+            if err_code == 5 {
+                // ACCESS_DENIED — retry without CREATE_BREAKAWAY_FROM_JOB
+                tracing::warn!("CreateProcessW with BREAKAWAY_FROM_JOB denied, retrying without");
+                cmd_line = to_wide_null(&format!("\"{}\" {}", lr_path, lr_args));
+                si = unsafe { mem::zeroed() };
+                si.cb = mem::size_of::<STARTUPINFOW>() as u32;
+                pi = unsafe { mem::zeroed() };
+
+                success = unsafe {
+                    CreateProcessW(
+                        application.as_ptr(),
+                        cmd_line.as_mut_ptr(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        0,
+                        0x00000200, // CREATE_NEW_PROCESS_GROUP only
+                        std::ptr::null(),
+                        working_dir.as_ptr(),
+                        &si,
+                        &mut pi,
+                    )
+                };
+            }
+        }
 
         if success == 0 {
             let err = std::io::Error::last_os_error();

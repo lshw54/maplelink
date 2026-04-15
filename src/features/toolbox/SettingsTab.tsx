@@ -160,34 +160,6 @@ export function SettingsTab() {
           ))}
         </div>
       </SettingRow>
-
-      {/* GamePass incognito mode */}
-      <SettingRow label={t("settings.gamepass_incognito")}>
-        <Toggle
-          checked={config?.gamepassIncognito ?? true}
-          onChange={() => {
-            if (!config) return;
-            setConfig.mutate({
-              key: "gamepass_incognito",
-              value: String(!config.gamepassIncognito),
-            });
-          }}
-        />
-      </SettingRow>
-
-      {/* Skip play confirmation */}
-      <SettingRow label={t("settings.skip_play_confirm")}>
-        <Toggle
-          checked={config?.skipPlayConfirm ?? false}
-          onChange={() => {
-            if (!config) return;
-            setConfig.mutate({
-              key: "skip_play_confirm",
-              value: String(!config.skipPlayConfirm),
-            });
-          }}
-        />
-      </SettingRow>
     </div>
   );
 }

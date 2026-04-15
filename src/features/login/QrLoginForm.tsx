@@ -38,7 +38,10 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       // Start polling
       intervalRef.current = setInterval(async () => {
         try {
-          const result: QrPollResult = await commands.qrLoginPoll(data.sessionKey);
+          const result: QrPollResult = await commands.qrLoginPoll(
+            data.sessionKey,
+            data.verificationToken,
+          );
           if (result.status === "confirmed") {
             stopPolling();
             setStatus("confirmed");

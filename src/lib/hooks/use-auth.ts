@@ -86,8 +86,9 @@ export function useQrLoginPoll() {
   const { setSession } = useAuthStore.getState();
   const queryClient = useQueryClient();
 
-  return useMutation<QrPollResult, Error, string>({
-    mutationFn: (sessionKey: string) => commands.qrLoginPoll(sessionKey),
+  return useMutation<QrPollResult, Error, { sessionKey: string; verificationToken: string }>({
+    mutationFn: ({ sessionKey, verificationToken }) =>
+      commands.qrLoginPoll(sessionKey, verificationToken),
     onSuccess: async (result: QrPollResult) => {
       if (result.status === "confirmed" && result.session) {
         setSession(result.session);
