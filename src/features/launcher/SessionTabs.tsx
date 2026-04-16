@@ -101,9 +101,11 @@ export function SessionTabs() {
       const arr = Array.from(store.sessions.entries());
       const fromIdx = arr.findIndex(([sid]) => sid === srcId);
       if (fromIdx >= 0 && targetIdx >= 0 && fromIdx !== targetIdx) {
-        const [moved] = arr.splice(fromIdx, 1);
-        arr.splice(targetIdx, 0, moved);
-        useAuthStore.setState({ sessions: new Map(arr) });
+        const moved = arr.splice(fromIdx, 1)[0];
+        if (moved) {
+          arr.splice(targetIdx, 0, moved);
+          useAuthStore.setState({ sessions: new Map(arr) });
+        }
       }
     };
 

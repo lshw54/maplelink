@@ -43,7 +43,7 @@
 - 自動更新 — 透過 GitHub Releases 檢查更新，自動偵測 GitHub 連線並 fallback 至鏡像加速（ghproxy.vip / ghproxy.net / ghfast.top）
 - 下載進度條 — 顯示速度、百分比、下載方式，支援背景下載與稍後重啟
 - 阻止遊戲自動更新 — 可選擇自動關閉 Patcher.exe
-- 相容遊戲加速器（UU 等）— 輸出檔名為 Beanfun.exe，SSL 容錯
+- 相容遊戲加速器（UU 等）的 SSL 容錯
 - 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動進行區域模擬啟動
 
 ## 使用方式
