@@ -7,6 +7,7 @@ import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
+import { SessionTabs } from "./SessionTabs";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../shared/Modal";
 import type { GameAccountDto } from "../../lib/types";
@@ -14,6 +15,7 @@ import type { GameAccountDto } from "../../lib/types";
 export function MainPage() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
+  const activeSessionId = useAuthStore((s) => s.activeSessionId);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -21,31 +23,30 @@ export function MainPage() {
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
-  const [pid, setPid] = useState<number | null>(null);
+  const gamePid = useUiStore((s) => s.gamePid);
+  const gameRunning = useUiStore((s) => s.gameRunning);
+  const setGamePid = useUiStore((s) => s.setGamePid);
+  const setGameRunning = useUiStore((s) => s.setGameRunning);
   // Latest OTP fetched by OtpPanel — used to skip HTTP round-trip on launch.
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
 
-  // Poll game running status — uses backend's active_processes + process name check.
-  // The backend monitor continuously tracks the real MapleStory.exe PID even
-  // when anti-cheat restarts the process, so isGameRunning is the reliable source.
-  const [gameRunning, setGameRunning] = useState(false);
+  // Poll game running status and update PID from backend's active_processes.
   useEffect(() => {
-    // Start polling once we've launched (pid set), keep going until game exits
-    if (pid === null && !gameRunning) return;
+    if (gamePid === null && !gameRunning) return;
     const interval = setInterval(async () => {
       try {
         const running = await commands.isGameRunning();
         setGameRunning(running);
-        if (!running) {
-          setPid(null);
+        if (running) {
+          const realPid = await commands.getGamePid();
+          if (realPid > 0) setGamePid(realPid);
         }
       } catch {
         setGameRunning(false);
-        setPid(null);
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [pid, gameRunning]);
+  }, [gamePid, gameRunning, setGamePid, setGameRunning]);
   const [remainPoint, setRemainPoint] = useState<number>(0);
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -63,7 +64,7 @@ export function MainPage() {
   // Fetch remain points on mount + auto-detect game path if empty
   useEffect(() => {
     commands
-      .getRemainPoint()
+      .getRemainPoint(activeSessionId ?? "")
       .then(setRemainPoint)
       .catch(() => {});
     commands
@@ -86,7 +87,7 @@ export function MainPage() {
         })
         .catch(() => {});
     }
-  }, []);
+  }, [activeSessionId]);
 
   // Session keep-alive: frontend backup ping every 60 seconds.
   // The main ping loop runs in the Rust backend (not affected by browser throttling).
@@ -103,14 +104,14 @@ export function MainPage() {
       // Verify session is still alive.
       if (elapsed > 5 * 60 * 1000) {
         try {
-          await commands.getRemainPoint();
+          await commands.getRemainPoint(useAuthStore.getState().activeSessionId ?? "");
         } catch {
           useAuthStore.getState().clearSession();
           return;
         }
       }
 
-      commands.pingSession().catch(() => {});
+      commands.pingSession(useAuthStore.getState().activeSessionId ?? "").catch(() => {});
     }
 
     function onVisibilityChange() {
@@ -125,28 +126,72 @@ export function MainPage() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [activeSessionId]);
 
   const handleSelectAccount = useCallback((account: GameAccountDto) => {
     setSelectedAccountId(account.id);
   }, []);
 
-  const handleLaunch = useCallback(async (accountId: string, otp?: string) => {
-    setSelectedAccountId(accountId);
-    setLaunching(true);
-    try {
-      const processId = await commands.launchGame(accountId, otp);
-      if (processId > 0) setPid(processId);
-    } finally {
-      setLaunching(false);
-    }
-  }, []);
+  const handleLaunch = useCallback(
+    async (accountId: string, otp?: string) => {
+      setSelectedAccountId(accountId);
+      setLaunching(true);
+      try {
+        const processId = await commands.launchGame(activeSessionId ?? "", accountId, otp);
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } finally {
+        setLaunching(false);
+      }
+    },
+    [activeSessionId, setGamePid, setGameRunning],
+  );
 
   async function handlePlayClick() {
+    const config = useConfigStore.getState().config;
+    const traditionalLogin = config?.traditionalLogin ?? true;
+
+    // In traditional login mode, launch directly without fetching OTP
+    if (traditionalLogin) {
+      // Check if game is already running
+      try {
+        const running = await commands.isGameRunning();
+        if (running) {
+          setPendingLaunchId("__direct__");
+          setShowRelaunchConfirm(true);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      setLaunching(true);
+      try {
+        const processId = await commands.launchGameDirect();
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } catch (err) {
+        // Show error via toast
+        const msg =
+          typeof err === "object" && err !== null && "message" in err
+            ? String((err as Record<string, unknown>).message)
+            : String(err);
+        console.error("launch failed:", msg); // eslint-disable-line no-console
+      } finally {
+        setLaunching(false);
+      }
+      return;
+    }
+
+    // Non-traditional: need account + OTP
     let accountId = selectedAccountId;
     if (!accountId) {
       try {
-        const accounts = await commands.getGameAccounts();
+        const accounts = await commands.getGameAccounts(activeSessionId ?? "");
         if (accounts.length > 0) {
           const first = accounts[0];
           if (!first) return;
@@ -179,158 +224,175 @@ export function MainPage() {
 
   async function handleConfirmRelaunch() {
     setShowRelaunchConfirm(false);
-    if (pendingLaunchId) {
-      // Kill the running game first, then relaunch
+    // Kill the running game first, then relaunch
+    try {
+      await commands.killGame();
+      setGamePid(null);
+      setGameRunning(false);
+      await new Promise((r) => setTimeout(r, 500));
+    } catch {
+      /* proceed with launch anyway */
+    }
+
+    if (pendingLaunchId === "__direct__") {
+      setLaunching(true);
       try {
-        await commands.killGame();
-        setPid(null);
-        // Brief pause to let processes fully terminate
-        await new Promise((r) => setTimeout(r, 500));
-      } catch {
-        /* proceed with launch anyway */
+        const processId = await commands.launchGameDirect();
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } finally {
+        setLaunching(false);
       }
+    } else if (pendingLaunchId) {
       await handleLaunch(
         pendingLaunchId,
         latestOtpRef.current?.accountId === pendingLaunchId ? latestOtpRef.current.otp : undefined,
       );
-      setPendingLaunchId(null);
     }
+    setPendingLaunchId(null);
   }
 
   return (
-    <div className="flex h-full">
-      {/* Left: Focus Side (40%) */}
-      <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6">
-        {/* Ghost icon bg */}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
-          <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
+    <div className="flex h-full flex-col">
+      <SessionTabs />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left: Focus Side (40%) */}
+        <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6">
+          {/* Ghost icon bg */}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
+            <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
+          </div>
+
+          <div className="relative z-10 flex flex-col items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[14px] border border-border bg-[var(--surface-hover)]">
+              <img
+                src="/MapleStory.ico"
+                alt="Game"
+                className="h-10 w-10 object-contain"
+                draggable={false}
+              />
+            </div>
+            <div className="text-center text-base font-extrabold tracking-[0.5px] text-[var(--text)]">
+              {t("launcher.game_info")}
+            </div>
+            <div className="text-[12px] tracking-[1px] text-text-dim">Gamania · MMORPG</div>
+
+            {/* Circular PLAY button */}
+            <button
+              onClick={handlePlayClick}
+              disabled={launching}
+              className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold uppercase tracking-[3px] text-white shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(232,162,58,0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
+            >
+              {launching ? "..." : t("launcher.play")}
+            </button>
+
+            {(gameRunning || gamePid !== null) && (
+              <span className="text-[12px] text-accent">
+                {t("launcher.running")}
+                {gamePid !== null ? ` (PID: ${gamePid})` : ""}
+              </span>
+            )}
+
+            {/* Nav links */}
+            <div className="mt-2 flex gap-2.5">
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                disabled={logout.isPending}
+                className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[12px] font-semibold uppercase tracking-[1px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
+              >
+                {t("launcher.logout")}
+              </button>
+            </div>
+          </div>
+
+          {/* Bottom status */}
+          <div className="absolute bottom-0 left-0 right-0">
+            <StatusBar />
+            <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
+              MapleLink v{appVersion}
+            </div>
+          </div>
         </div>
 
-        <div className="relative z-10 flex flex-col items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[14px] border border-border bg-[var(--surface-hover)]">
-            <img
-              src="/MapleStory.ico"
-              alt="Game"
-              className="h-10 w-10 object-contain"
-              draggable={false}
+        {/* Right: Account Side (60%) */}
+        <div className="flex flex-1 flex-col border-l border-border">
+          {/* Top bar */}
+          <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
+            <div className="flex shrink-0 items-center gap-1.5 text-[12px] text-text-dim">
+              <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white">
+                {session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
+              </div>
+              <span className="max-w-[160px] truncate">{session?.accountName ?? ""}</span>
+            </div>
+            <div className="flex-1" />
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <span
+                  ref={beansRef}
+                  onClick={() => setBeansMenuOpen(!beansMenuOpen)}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] transition-all hover:bg-[rgba(232,162,58,0.14)]"
+                >
+                  <span className="font-semibold text-accent">
+                    {t("launcher.beans")}: <b>{remainPoint}</b>
+                  </span>
+                  {remainPoint > 0 && (
+                    <>
+                      <span className="text-text-faint">·</span>
+                      <span className="text-text-dim">
+                        {t("launcher.game_points")}: <b>{Math.floor(remainPoint / 2.5)}</b>
+                      </span>
+                    </>
+                  )}
+                </span>
+                {beansMenuOpen && (
+                  <BeansPopupMenu
+                    t={t}
+                    region={region}
+                    onRefresh={async () => {
+                      const pts = await commands.getRemainPoint(activeSessionId ?? "");
+                      setRemainPoint(pts);
+                      setBeansMenuOpen(false);
+                    }}
+                    onClose={() => setBeansMenuOpen(false)}
+                    sessionId={activeSessionId ?? ""}
+                  />
+                )}
+              </div>
+              <span
+                onClick={() => commands.openMemberPopup(activeSessionId ?? "").catch(() => {})}
+                className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
+              >
+                {t("launcher.member_center")}
+              </span>
+              <span
+                onClick={() => commands.openCustomerService().catch(() => {})}
+                className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
+              >
+                {t("launcher.support")}
+              </span>
+            </div>
+          </div>
+
+          {/* Account grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <AccountGrid
+              selectedAccountId={selectedAccountId}
+              onSelectAccount={handleSelectAccount}
             />
           </div>
-          <div className="text-center text-base font-extrabold tracking-[0.5px] text-[var(--text)]">
-            {t("launcher.game_info")}
-          </div>
-          <div className="text-[12px] tracking-[1px] text-text-dim">Gamania · MMORPG</div>
 
-          {/* Circular PLAY button */}
-          <button
-            onClick={handlePlayClick}
-            disabled={launching}
-            className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold uppercase tracking-[3px] text-white shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(232,162,58,0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
-          >
-            {launching ? "..." : t("launcher.play")}
-          </button>
-
-          {(gameRunning || pid !== null) && (
-            <span className="text-[12px] text-accent">
-              {t("launcher.running")}
-              {pid !== null ? ` (PID: ${pid})` : ""}
-            </span>
-          )}
-
-          {/* Nav links */}
-          <div className="mt-2 flex gap-2.5">
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              disabled={logout.isPending}
-              className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[12px] font-semibold uppercase tracking-[1px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
-            >
-              {t("launcher.logout")}
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom status */}
-        <div className="absolute bottom-0 left-0 right-0">
-          <StatusBar />
-          <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
-            MapleLink v{appVersion}
-          </div>
-        </div>
-      </div>
-
-      {/* Right: Account Side (60%) */}
-      <div className="flex flex-1 flex-col border-l border-border">
-        {/* Top bar */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
-          <div className="flex shrink-0 items-center gap-1.5 text-[12px] text-text-dim">
-            <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white">
-              {session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
-            </div>
-            <span className="max-w-[160px] truncate">{session?.accountName ?? ""}</span>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-1.5">
-            <div className="relative">
-              <span
-                ref={beansRef}
-                onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] transition-all hover:bg-[rgba(232,162,58,0.14)]"
-              >
-                <span className="font-semibold text-accent">
-                  {t("launcher.beans")}: <b>{remainPoint}</b>
-                </span>
-                {remainPoint > 0 && (
-                  <>
-                    <span className="text-text-faint">·</span>
-                    <span className="text-text-dim">
-                      {t("launcher.game_points")}: <b>{Math.floor(remainPoint / 2.5)}</b>
-                    </span>
-                  </>
-                )}
-              </span>
-              {beansMenuOpen && (
-                <BeansPopupMenu
-                  t={t}
-                  region={region}
-                  onRefresh={async () => {
-                    const pts = await commands.getRemainPoint();
-                    setRemainPoint(pts);
-                    setBeansMenuOpen(false);
-                  }}
-                  onClose={() => setBeansMenuOpen(false)}
-                />
-              )}
-            </div>
-            <span
-              onClick={() => commands.openMemberPopup().catch(() => {})}
-              className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
-            >
-              {t("launcher.member_center")}
-            </span>
-            <span
-              onClick={() => commands.openCustomerService().catch(() => {})}
-              className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
-            >
-              {t("launcher.support")}
-            </span>
-          </div>
-        </div>
-
-        {/* Account grid */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <AccountGrid
+          {/* OTP Panel */}
+          <OtpPanel
             selectedAccountId={selectedAccountId}
-            onSelectAccount={handleSelectAccount}
+            onOtpFetched={(accountId: string, otp: string) => {
+              latestOtpRef.current = { accountId, otp };
+            }}
           />
         </div>
-
-        {/* OTP Panel */}
-        <OtpPanel
-          selectedAccountId={selectedAccountId}
-          onOtpFetched={(accountId: string, otp: string) => {
-            latestOtpRef.current = { accountId, otp };
-          }}
-        />
       </div>
+      {/* close inner flex */}
 
       {/* Relaunch confirmation modal */}
       <Modal
@@ -393,11 +455,13 @@ function BeansPopupMenu({
   region,
   onRefresh,
   onClose,
+  sessionId,
 }: {
   t: (key: string) => string;
   region: string;
   onRefresh: () => void;
   onClose: () => void;
+  sessionId: string;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -418,7 +482,7 @@ function BeansPopupMenu({
 
   async function handleTopup() {
     try {
-      await commands.openGashPopup();
+      await commands.openGashPopup(sessionId);
     } catch {
       /* ignore */
     }

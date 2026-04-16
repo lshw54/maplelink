@@ -60,7 +60,8 @@ export function VerifyForm({
     setError(null);
     setWebVerifyUrl(null);
     try {
-      const state = await commands.getAdvanceCheck(advanceCheckUrl);
+      const sid = useAuthStore.getState().pendingCredentials?.sessionId ?? "";
+      const state = await commands.getAdvanceCheck(sid, advanceCheckUrl);
       setCheckState(state);
       setCaptchaImage(state.captchaImageBase64);
     } catch (err) {
@@ -79,7 +80,8 @@ export function VerifyForm({
   async function handleRefreshCaptcha() {
     if (!checkState) return;
     try {
-      const newImage = await commands.refreshAdvanceCheckCaptcha(checkState.samplecaptcha);
+      const sid = useAuthStore.getState().pendingCredentials?.sessionId ?? "";
+      const newImage = await commands.refreshAdvanceCheckCaptcha(sid, checkState.samplecaptcha);
       setCaptchaImage(newImage);
       setCaptchaCode("");
     } catch {
@@ -92,7 +94,8 @@ export function VerifyForm({
     setSubmitting(true);
     setError(null);
     try {
-      const success = await commands.submitAdvanceCheck({
+      const sid = useAuthStore.getState().pendingCredentials?.sessionId ?? "";
+      const success = await commands.submitAdvanceCheck(sid, {
         viewstate: checkState.viewstate,
         viewstateGenerator: checkState.viewstateGenerator,
         eventValidation: checkState.eventValidation,

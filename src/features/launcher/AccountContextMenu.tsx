@@ -3,6 +3,7 @@ import { useTranslation } from "../../lib/i18n";
 import { open } from "@tauri-apps/plugin-shell";
 import { commands } from "../../lib/tauri";
 import { useRefreshAccounts } from "../../lib/hooks/use-accounts";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { Modal } from "../shared/Modal";
 import type { GameAccountDto } from "../../lib/types";
 
@@ -278,7 +279,10 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   async function handleCopyCredentials() {
     if (!account) return;
     try {
-      const creds = await commands.getGameCredentials(account.id);
+      const creds = await commands.getGameCredentials(
+        useAuthStore.getState().activeSessionId ?? "",
+        account.id,
+      );
       await navigator.clipboard.writeText(`${creds.accountId}\n${creds.otp}`);
     } catch {
       /* ignore */
@@ -296,7 +300,11 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
       return;
     }
     try {
-      const success = await commands.changeAccountDisplayName(account.id, newName);
+      const success = await commands.changeAccountDisplayName(
+        useAuthStore.getState().activeSessionId ?? "",
+        account.id,
+        newName,
+      );
       if (success) {
         refreshAccounts();
         closeModal();
@@ -313,7 +321,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   }
 
   function handleMemberCenter() {
-    commands.openMemberPopup().catch(() => {});
+    commands.openMemberPopup(useAuthStore.getState().activeSessionId ?? "").catch(() => {});
     onClose();
   }
 
@@ -329,7 +337,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
 
   async function handleCheckEmail() {
     try {
-      const email = await commands.getAuthEmail();
+      const email = await commands.getAuthEmail(useAuthStore.getState().activeSessionId ?? "");
       setModalView({ kind: "email", email: email || null });
     } catch {
       setModalView({ kind: "email", email: null });

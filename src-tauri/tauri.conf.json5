@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "MAPLELINK",
-        "width": 340,
-        "height": 520,
+        "width": 350,
+        "height": 580,
         "decorations": false,
         "transparent": false,
         "resizable": false,

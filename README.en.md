@@ -35,10 +35,14 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 
 - Login: account/password, TOTP, QR Code, GamePass, Advance Check verification
 - Multi-account management with per-region password saving
+- Multi-session support — log into multiple accounts simultaneously in one window (cross-region)
 - OTP: one-click retrieve, auto-paste into MapleStory window
+- Direct game launch — start the game from the login page without logging in
 - Full HK + TW region support
 - Dark / Light / System theme, three languages (EN, 繁中, 简中)
-- Auto-update via GitHub Releases with ghproxy mirror for China mainland users
+- Auto-update via GitHub Releases with automatic proxy detection and fallback (ghproxy.vip / ghproxy.net / ghfast.top)
+- Download progress bar — speed, percentage, method display with background download and restart-later option
+- Block game auto-update — optionally kill Patcher.exe on launch
 - Accelerator-friendly SSL tolerance (UU, etc.)
 - Locale emulation via [Locale Remulator](https://github.com/InWILL/Locale_Remulator)
 
@@ -146,15 +150,15 @@ sequenceDiagram
 ```
 src-tauri/src/
 ├── commands/
-│   ├── auth.rs                # login, logout, QR, TOTP, GamePass, session refresh
+│   ├── auth.rs                # login, logout, QR, TOTP, GamePass, session management
 │   ├── account.rs             # game accounts, OTP retrieval, refresh
-│   ├── launcher.rs            # launch game, process status
+│   ├── launcher.rs            # launch game, direct launch, process status
 │   ├── config.rs              # config read/write/reset
-│   ├── update.rs              # update check/apply
+│   ├── update.rs              # update check, streaming download, restart
 │   └── system.rs              # file dialog, version, logging, popup windows
 ├── core/                      # Pure business logic (auth, config parser, DLL injector, error)
-├── services/                  # Side effects (HTTP, file I/O, process management, updates)
-├── models/                    # DTOs and domain structs
+├── services/                  # Side effects (HTTP, file I/O, process management, updates, proxy detection)
+├── models/                    # DTOs and domain structs (incl. SessionState for multi-session)
 └── utils/                     # Helpers (SHA-256, etc.)
 
 src/

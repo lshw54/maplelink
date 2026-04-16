@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
+import { useUpdateStore } from "./lib/stores/update-store";
 import { useConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
@@ -83,6 +84,22 @@ export function App() {
   useEffect(() => {
     if (!configLoading) setReady(true);
   }, [configLoading]);
+
+  // Global listener for download progress events (works even when UpdateDialog is closed)
+  useEffect(() => {
+    const unlisten = listen<{ downloaded: number; total: number; speed: number }>(
+      "update-download-progress",
+      (event) => {
+        const store = useUpdateStore.getState();
+        if (store.status === "downloading") {
+          store.updateProgress(event.payload.downloaded, event.payload.total, event.payload.speed);
+        }
+      },
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   // Check for updates after app is ready
   useEffect(() => {

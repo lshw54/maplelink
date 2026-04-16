@@ -35,10 +35,14 @@
 
 - 登入方式：帳號密碼、TOTP、QR Code、GamePass、進階驗證
 - 多帳號管理，依地區記住密碼
+- 多 Session 同時登入 — 同一視窗內可同時登入多個帳號（支援跨地區）
 - OTP 一鍵取得、自動貼入遊戲視窗
+- 免登入啟動遊戲 — 登入頁面直接啟動，無需先登入帳號
 - 完整支援 HK + TW 地區
 - 深色 / 淺色 / 跟隨系統主題，三語介面（EN、繁中、简中）
-- 自動更新 — 透過 GitHub Releases 檢查更新，支援 ghproxy 鏡像加速（中國大陸用戶）
+- 自動更新 — 透過 GitHub Releases 檢查更新，自動偵測 GitHub 連線並 fallback 至鏡像加速（ghproxy.vip / ghproxy.net / ghfast.top）
+- 下載進度條 — 顯示速度、百分比、下載方式，支援背景下載與稍後重啟
+- 阻止遊戲自動更新 — 可選擇自動關閉 Patcher.exe
 - 相容遊戲加速器（UU 等）的 SSL 容錯
 - 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動進行區域模擬啟動
 
@@ -146,15 +150,15 @@ sequenceDiagram
 ```
 src-tauri/src/
 ├── commands/
-│   ├── auth.rs                # 登入、登出、QR、TOTP、GamePass、session 刷新
+│   ├── auth.rs                # 登入、登出、QR、TOTP、GamePass、session 管理
 │   ├── account.rs             # 遊戲帳號、OTP 取得、帳號刷新
-│   ├── launcher.rs            # 啟動遊戲、程序狀態
+│   ├── launcher.rs            # 啟動遊戲、免登入啟動、程序狀態
 │   ├── config.rs              # 設定讀寫、重設
-│   ├── update.rs              # 更新檢查、套用
+│   ├── update.rs              # 更新檢查、串流下載、重啟
 │   └── system.rs              # 檔案對話框、版本、日誌、彈出視窗
 ├── core/                      # 純業務邏輯（auth、config parser、DLL injector、error）
-├── services/                  # 副作用封裝（HTTP、檔案 I/O、程序管理、更新）
-├── models/                    # DTO 與領域結構
+├── services/                  # 副作用封裝（HTTP、檔案 I/O、程序管理、更新、代理偵測）
+├── models/                    # DTO 與領域結構（含 SessionState 多 session 支援）
 └── utils/                     # 工具函式（SHA-256 等）
 
 src/
