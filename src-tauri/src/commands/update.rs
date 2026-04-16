@@ -33,15 +33,17 @@ pub async fn check_update(
 }
 
 /// Download and stage the update installer. Returns the installer path.
+/// Emits `update-download-progress` events during download.
 #[tauri::command]
 pub async fn apply_update(
+    app: tauri::AppHandle,
     download_url: String,
     use_proxy: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<String, ErrorDto> {
     let url = update_service::get_download_url(&download_url, use_proxy.unwrap_or(false));
 
-    let bytes = update_service::download_update(&state.http_client, &url)
+    let bytes = update_service::download_update_with_progress(&state.http_client, &url, &app)
         .await
         .map_err(|e| ErrorDto::from(AppError::from(e)))?;
 
@@ -62,4 +64,28 @@ pub async fn apply_update(
 #[tauri::command]
 pub async fn test_github_access(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
     Ok(update_service::test_github_connectivity(&state.http_client).await)
+}
+
+/// Restart the application by spawning a new instance and exiting.
+#[tauri::command]
+pub async fn restart_app() -> Result<(), ErrorDto> {
+    let exe = std::env::current_exe().map_err(|e| ErrorDto {
+        code: "UPD_RESTART_FAILED".to_string(),
+        message: format!("failed to get exe path: {e}"),
+        category: crate::models::error::ErrorCategory::Update,
+        details: None,
+    })?;
+
+    // Spawn a new instance of ourselves
+    std::process::Command::new(&exe)
+        .spawn()
+        .map_err(|e| ErrorDto {
+            code: "UPD_RESTART_FAILED".to_string(),
+            message: format!("failed to spawn new instance: {e}"),
+            category: crate::models::error::ErrorCategory::Update,
+            details: None,
+        })?;
+
+    // Exit current process
+    std::process::exit(0);
 }

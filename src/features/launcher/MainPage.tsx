@@ -21,31 +21,30 @@ export function MainPage() {
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
-  const [pid, setPid] = useState<number | null>(null);
+  const gamePid = useUiStore((s) => s.gamePid);
+  const gameRunning = useUiStore((s) => s.gameRunning);
+  const setGamePid = useUiStore((s) => s.setGamePid);
+  const setGameRunning = useUiStore((s) => s.setGameRunning);
   // Latest OTP fetched by OtpPanel — used to skip HTTP round-trip on launch.
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
 
-  // Poll game running status — uses backend's active_processes + process name check.
-  // The backend monitor continuously tracks the real MapleStory.exe PID even
-  // when anti-cheat restarts the process, so isGameRunning is the reliable source.
-  const [gameRunning, setGameRunning] = useState(false);
+  // Poll game running status and update PID from backend's active_processes.
   useEffect(() => {
-    // Start polling once we've launched (pid set), keep going until game exits
-    if (pid === null && !gameRunning) return;
+    if (gamePid === null && !gameRunning) return;
     const interval = setInterval(async () => {
       try {
         const running = await commands.isGameRunning();
         setGameRunning(running);
-        if (!running) {
-          setPid(null);
+        if (running) {
+          const realPid = await commands.getGamePid();
+          if (realPid > 0) setGamePid(realPid);
         }
       } catch {
         setGameRunning(false);
-        setPid(null);
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [pid, gameRunning]);
+  }, [gamePid, gameRunning, setGamePid, setGameRunning]);
   const [remainPoint, setRemainPoint] = useState<number>(0);
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -131,18 +130,62 @@ export function MainPage() {
     setSelectedAccountId(account.id);
   }, []);
 
-  const handleLaunch = useCallback(async (accountId: string, otp?: string) => {
-    setSelectedAccountId(accountId);
-    setLaunching(true);
-    try {
-      const processId = await commands.launchGame(accountId, otp);
-      if (processId > 0) setPid(processId);
-    } finally {
-      setLaunching(false);
-    }
-  }, []);
+  const handleLaunch = useCallback(
+    async (accountId: string, otp?: string) => {
+      setSelectedAccountId(accountId);
+      setLaunching(true);
+      try {
+        const processId = await commands.launchGame(accountId, otp);
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } finally {
+        setLaunching(false);
+      }
+    },
+    [setGamePid, setGameRunning],
+  );
 
   async function handlePlayClick() {
+    const config = useConfigStore.getState().config;
+    const traditionalLogin = config?.traditionalLogin ?? true;
+
+    // In traditional login mode, launch directly without fetching OTP
+    if (traditionalLogin) {
+      // Check if game is already running
+      try {
+        const running = await commands.isGameRunning();
+        if (running) {
+          setPendingLaunchId("__direct__");
+          setShowRelaunchConfirm(true);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      setLaunching(true);
+      try {
+        const processId = await commands.launchGameDirect();
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } catch (err) {
+        // Show error via toast
+        const msg =
+          typeof err === "object" && err !== null && "message" in err
+            ? String((err as Record<string, unknown>).message)
+            : String(err);
+        console.error("launch failed:", msg); // eslint-disable-line no-console
+      } finally {
+        setLaunching(false);
+      }
+      return;
+    }
+
+    // Non-traditional: need account + OTP
     let accountId = selectedAccountId;
     if (!accountId) {
       try {
@@ -179,22 +222,34 @@ export function MainPage() {
 
   async function handleConfirmRelaunch() {
     setShowRelaunchConfirm(false);
-    if (pendingLaunchId) {
-      // Kill the running game first, then relaunch
+    // Kill the running game first, then relaunch
+    try {
+      await commands.killGame();
+      setGamePid(null);
+      setGameRunning(false);
+      await new Promise((r) => setTimeout(r, 500));
+    } catch {
+      /* proceed with launch anyway */
+    }
+
+    if (pendingLaunchId === "__direct__") {
+      setLaunching(true);
       try {
-        await commands.killGame();
-        setPid(null);
-        // Brief pause to let processes fully terminate
-        await new Promise((r) => setTimeout(r, 500));
-      } catch {
-        /* proceed with launch anyway */
+        const processId = await commands.launchGameDirect();
+        if (processId > 0) {
+          setGamePid(processId);
+          setGameRunning(true);
+        }
+      } finally {
+        setLaunching(false);
       }
+    } else if (pendingLaunchId) {
       await handleLaunch(
         pendingLaunchId,
         latestOtpRef.current?.accountId === pendingLaunchId ? latestOtpRef.current.otp : undefined,
       );
-      setPendingLaunchId(null);
     }
+    setPendingLaunchId(null);
   }
 
   return (
@@ -229,10 +284,10 @@ export function MainPage() {
             {launching ? "..." : t("launcher.play")}
           </button>
 
-          {(gameRunning || pid !== null) && (
+          {(gameRunning || gamePid !== null) && (
             <span className="text-[12px] text-accent">
               {t("launcher.running")}
-              {pid !== null ? ` (PID: ${pid})` : ""}
+              {gamePid !== null ? ` (PID: ${gamePid})` : ""}
             </span>
           )}
 

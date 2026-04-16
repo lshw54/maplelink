@@ -7,6 +7,7 @@ import { commands } from "../../lib/tauri";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
+import { Modal } from "../shared/Modal";
 import { NormalLoginForm } from "./NormalLoginForm";
 import { QrLoginForm } from "./QrLoginForm";
 import { TotpForm } from "./TotpForm";
@@ -24,6 +25,7 @@ export function LoginPage() {
   const [view, setView] = useState<LoginView>("normal");
   const [advanceCheckUrl, setAdvanceCheckUrl] = useState<string | undefined>();
   const [appVersion, setAppVersion] = useState("...");
+  const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
 
   useEffect(() => {
     commands
@@ -163,9 +165,119 @@ export function LoginPage() {
       </div>
 
       <StatusBar />
-      <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
-        MapleLink v{appVersion}
+      <div className="shrink-0 pb-2 text-center">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const running = await commands.isGameRunning();
+              if (running) {
+                setShowRelaunchConfirm(true);
+                return;
+              }
+            } catch {
+              /* ignore, proceed */
+            }
+            await doDirectLaunch();
+          }}
+          className="mb-1.5 rounded-md px-3 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+        >
+          ▶ {t("login.launch_game_direct")}
+        </button>
+        <GameRunningIndicator />
+        <div className="font-mono text-[12px] text-text-faint">MapleLink v{appVersion}</div>
       </div>
+
+      <Modal
+        isOpen={showRelaunchConfirm}
+        onClose={() => setShowRelaunchConfirm(false)}
+        title={t("launcher.relaunch_title")}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-text-dim">{t("launcher.relaunch_message")}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowRelaunchConfirm(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={async () => {
+                setShowRelaunchConfirm(false);
+                try {
+                  await commands.killGame();
+                  useUiStore.getState().setGamePid(null);
+                  useUiStore.getState().setGameRunning(false);
+                  await new Promise((r) => setTimeout(r, 500));
+                } catch {
+                  /* proceed anyway */
+                }
+                await doDirectLaunch();
+              }}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("launcher.relaunch_confirm")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+async function doDirectLaunch() {
+  const { setGamePid, setGameRunning } = useUiStore.getState();
+  try {
+    const processId = await commands.launchGameDirect();
+    if (processId > 0) {
+      setGamePid(processId);
+      setGameRunning(true);
+    }
+  } catch (err) {
+    const msg =
+      typeof err === "object" && err !== null && "message" in err
+        ? String((err as Record<string, unknown>).message)
+        : String(err);
+    useErrorToastStore.getState().addToast({
+      message: msg,
+      category: "process",
+      critical: false,
+    });
+  }
+}
+
+/** Small indicator that polls game running state and shows PID. */
+function GameRunningIndicator() {
+  const { t } = useTranslation();
+  const gamePid = useUiStore((s) => s.gamePid);
+  const gameRunning = useUiStore((s) => s.gameRunning);
+  const setGamePid = useUiStore((s) => s.setGamePid);
+  const setGameRunning = useUiStore((s) => s.setGameRunning);
+
+  useEffect(() => {
+    if (gamePid === null && !gameRunning) return;
+    const interval = setInterval(async () => {
+      try {
+        const running = await commands.isGameRunning();
+        setGameRunning(running);
+        if (running) {
+          const realPid = await commands.getGamePid();
+          if (realPid > 0) setGamePid(realPid);
+        }
+      } catch {
+        setGameRunning(false);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [gamePid, gameRunning, setGamePid, setGameRunning]);
+
+  if (!gameRunning && gamePid === null) return null;
+
+  return (
+    <div className="mb-1 text-[11px] text-accent">
+      {t("launcher.running")}
+      {gamePid !== null ? ` (PID: ${gamePid})` : ""}
     </div>
   );
 }

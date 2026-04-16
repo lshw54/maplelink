@@ -245,6 +245,165 @@ pub async fn launch_game(
     Ok(pid)
 }
 
+/// Launch the game directly without requiring a login session.
+///
+/// Validates the game path, then launches with LR or directly based on
+/// system locale. No OTP or credentials are passed — the game starts
+/// at its own login screen.
+#[tauri::command]
+pub async fn launch_game_direct(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<u32, ErrorDto> {
+    let config = state.config.read().await.clone();
+
+    game_launcher::validate_game_path(&config.game_path).map_err(fs_err_to_dto)?;
+
+    tokio::fs::metadata(&config.game_path).await.map_err(|e| {
+        let fs_err = match e.kind() {
+            std::io::ErrorKind::NotFound => FsError::NotFound {
+                path: config.game_path.clone(),
+            },
+            std::io::ErrorKind::PermissionDenied => FsError::PermissionDenied {
+                path: config.game_path.clone(),
+            },
+            _ => FsError::Io {
+                path: config.game_path.clone(),
+                reason: e.to_string(),
+            },
+        };
+        fs_err_to_dto(fs_err)
+    })?;
+
+    // Build a minimal launch command with no OTP
+    let dummy_creds = GameCredentials {
+        account_id: String::new(),
+        otp: String::new(),
+        retrieved_at: chrono::Utc::now(),
+        command_line_template: None,
+    };
+    let launch_cmd =
+        game_launcher::build_launch_command(&config, &dummy_creds).map_err(fs_err_to_dto)?;
+
+    let system_is_zhtw = lr_service::is_system_locale_chinese_traditional();
+    let use_lr = !system_is_zhtw;
+
+    let pid = if use_lr {
+        launch_with_lr(
+            &app,
+            &launch_cmd,
+            true, // force traditional (no credential args)
+            &config.region,
+            &dummy_creds,
+        )
+        .await
+        .map_err(proc_err_to_dto)?
+    } else {
+        process_service::spawn_process(&launch_cmd.executable, &launch_cmd.working_dir, &[])
+            .await
+            .map_err(proc_err_to_dto)?
+    };
+
+    // Register initial PID
+    if pid > 0 {
+        state
+            .active_processes
+            .write()
+            .await
+            .insert(pid, "__direct__".to_string());
+    }
+
+    // Background monitor: track the real MapleStory.exe PID
+    {
+        let app_handle = app.clone();
+        let lr_pid = if use_lr { pid } else { 0 };
+        tauri::async_runtime::spawn(async move {
+            use tauri::Manager;
+            let state = app_handle.state::<AppState>();
+
+            // Wait for LRProc.exe to exit
+            if lr_pid > 0 {
+                for _ in 0..100 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    if !process_service::is_process_running(lr_pid) {
+                        break;
+                    }
+                }
+                state.active_processes.write().await.remove(&lr_pid);
+            }
+
+            // Track MapleStory.exe PID
+            let mut current_pid: Option<u32> = None;
+            let mut consecutive_missing = 0u32;
+
+            for _ in 0..300 {
+                tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+                let found_pid = find_process_pid_by_name("MapleStory.exe");
+
+                match (found_pid, current_pid) {
+                    (Some(new_pid), Some(old_pid)) if new_pid != old_pid => {
+                        state.active_processes.write().await.remove(&old_pid);
+                        state
+                            .active_processes
+                            .write()
+                            .await
+                            .insert(new_pid, "__direct__".to_string());
+                        tracing::info!(old_pid, new_pid, "MapleStory PID changed");
+                        current_pid = Some(new_pid);
+                        consecutive_missing = 0;
+                    }
+                    (Some(new_pid), None) => {
+                        state
+                            .active_processes
+                            .write()
+                            .await
+                            .insert(new_pid, "__direct__".to_string());
+                        tracing::info!(pid = new_pid, "MapleStory.exe found (direct launch)");
+                        current_pid = Some(new_pid);
+                        consecutive_missing = 0;
+                    }
+                    (Some(_), Some(_)) => {
+                        consecutive_missing = 0;
+                    }
+                    (None, Some(old_pid)) => {
+                        consecutive_missing += 1;
+                        if consecutive_missing >= 5 {
+                            state.active_processes.write().await.remove(&old_pid);
+                            tracing::info!(pid = old_pid, "MapleStory.exe exited (direct launch)");
+                            return;
+                        }
+                    }
+                    (None, None) => {
+                        consecutive_missing += 1;
+                        if consecutive_missing >= 30 {
+                            tracing::warn!("MapleStory.exe never appeared (direct launch)");
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Auto-kill patcher
+    if config.auto_kill_patcher {
+        let game_dir = launch_cmd.working_dir.clone();
+        tauri::async_runtime::spawn(async move {
+            kill_patcher_loop(&game_dir).await;
+        });
+    }
+
+    if config.skip_play_confirm {
+        tauri::async_runtime::spawn(async move {
+            skip_play_window_loop().await;
+        });
+    }
+
+    tracing::info!(pid, use_lr, "game launched directly (no login)");
+    Ok(pid)
+}
+
 /// Poll for Patcher.exe in the game directory and kill it.
 ///
 /// Every 100ms for up to 30 seconds,
@@ -648,6 +807,18 @@ pub async fn is_game_running(state: State<'_, AppState>) -> Result<bool, ErrorDt
 
     // Check if MapleStory.exe process exists (covers LR-launched games where PID=0)
     Ok(process_service::is_process_name_running("MapleStory.exe"))
+}
+
+/// Return the PID of the currently tracked MapleStory process, or 0 if none.
+#[tauri::command]
+pub async fn get_game_pid(state: State<'_, AppState>) -> Result<u32, ErrorDto> {
+    let active = state.active_processes.read().await;
+    for &pid in active.keys() {
+        if pid > 0 && process_service::is_process_running(pid) {
+            return Ok(pid);
+        }
+    }
+    Ok(0)
 }
 
 /// Check whether a tracked game process is still running (Req 4.5).

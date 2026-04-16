@@ -61,7 +61,9 @@ export const commands = {
   // Launcher
   launchGame: (accountId: string, otp?: string) =>
     invoke<number>("launch_game", { accountId, otp: otp ?? null }),
+  launchGameDirect: () => invoke<number>("launch_game_direct"),
   isGameRunning: () => invoke<boolean>("is_game_running"),
+  getGamePid: () => invoke<number>("get_game_pid"),
   getProcessStatus: (pid: number) => invoke<boolean>("get_process_status", { pid }),
   killGame: () => invoke("kill_game"),
 
@@ -74,6 +76,7 @@ export const commands = {
   applyUpdate: (downloadUrl: string, useProxy?: boolean) =>
     invoke<string>("apply_update", { downloadUrl, useProxy }),
   testGithubAccess: () => invoke<boolean>("test_github_access"),
+  restartApp: () => invoke("restart_app"),
 
   // System
   resizeWindow: (page: string) => invoke("resize_window", { page }),

@@ -11,12 +11,16 @@ export interface UiState {
   theme: ThemeMode;
   language: Language;
   sidebarOpen: boolean;
+  gamePid: number | null;
+  gameRunning: boolean;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
   setLanguage: (language: Language) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  setGamePid: (pid: number | null) => void;
+  setGameRunning: (running: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -25,6 +29,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   theme: "dark",
   language: "zh-TW",
   sidebarOpen: false,
+  gamePid: null,
+  gameRunning: false,
   setPage: (page) => {
     const current = get().currentPage;
     const prev = current !== "toolbox" ? current : get().previousPage;
@@ -44,4 +50,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLanguage: (language) => set({ language }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  setGamePid: (pid) => set({ gamePid: pid }),
+  setGameRunning: (running) => {
+    set({ gameRunning: running });
+    if (!running) set({ gamePid: null });
+  },
 }));

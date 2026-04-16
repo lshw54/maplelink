@@ -136,7 +136,9 @@ pub fn run() {
             commands::account::change_account_display_name,
             commands::account::get_auth_email,
             commands::launcher::launch_game,
+            commands::launcher::launch_game_direct,
             commands::launcher::is_game_running,
+            commands::launcher::get_game_pid,
             commands::launcher::get_process_status,
             commands::launcher::kill_game,
             commands::system::log_frontend_error,
@@ -159,6 +161,7 @@ pub fn run() {
             commands::update::check_update,
             commands::update::apply_update,
             commands::update::test_github_access,
+            commands::update::restart_app,
         ])
         // -- Setup (startup sequence) ---------------------------------------
         .setup(|app| {

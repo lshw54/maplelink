@@ -14,7 +14,8 @@ thiserror = "2"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { version = "0.12", features = ["json", "cookies", "stream"] }
+futures-util = "0.3"
 cookie_store = "0.21"
 cookie = "0.18"
 sha2 = "0.10"
