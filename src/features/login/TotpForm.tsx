@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, type KeyboardEvent, type ClipboardEvent } from "react";
 import { useTotpVerify } from "../../lib/hooks/use-auth";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 
 interface TotpFormProps {
@@ -59,13 +60,19 @@ export function TotpForm({ onBack }: TotpFormProps) {
   function handleSubmit() {
     const code = digits.join("");
     if (code.length < 6) return;
-    totp.mutate(code, {
-      onError: () => {
-        // Reset digits on error so user can re-enter
-        setDigits(["", "", "", "", "", ""]);
-        inputRefs.current[0]?.focus();
+    // Get sessionId from pending credentials (stored during login that triggered TOTP)
+    const pending = useAuthStore.getState().pendingCredentials;
+    const sessionId = pending?.sessionId ?? "";
+    totp.mutate(
+      { sessionId, code },
+      {
+        onError: () => {
+          // Reset digits on error so user can re-enter
+          setDigits(["", "", "", "", "", ""]);
+          inputRefs.current[0]?.focus();
+        },
       },
-    });
+    );
   }
 
   return (

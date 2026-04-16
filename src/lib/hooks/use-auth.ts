@@ -2,12 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useUiStore } from "../stores/ui-store";
-import type { SessionDto, QrCodeData, QrPollResult } from "../types";
+import type { SessionDto, QrPollResult } from "../types";
 
-/** Login with account + password. Updates auth store on success. */
+/** Login with account + password. Creates a new session, then authenticates. */
 export function useLogin() {
   const queryClient = useQueryClient();
-  const { setSession, setGameAccounts, setPendingCredentials } = useAuthStore.getState();
 
   return useMutation({
     mutationFn: async ({
@@ -19,41 +18,48 @@ export function useLogin() {
       password: string;
       rememberPassword: boolean;
     }) => {
-      // Store credentials before login attempt — if TOTP is required,
-      // they'll be saved after verification succeeds.
-      setPendingCredentials({ account, password, rememberPassword });
+      // Create a new session first
+      const sessionId = await commands.createSession();
+
+      useAuthStore.getState().setPendingCredentials({
+        account,
+        password,
+        rememberPassword,
+        sessionId,
+      });
 
       try {
-        const session = await commands.login(account, password);
-        // Save credentials after successful login (account always saved,
-        // password only if rememberPassword is true).
+        const session = await commands.login(sessionId, account, password);
         try {
           await commands.saveLoginCredentials(account, password, rememberPassword);
         } catch {
           /* credential save failure is non-critical */
         }
-        // Clear pending since we saved successfully
-        setPendingCredentials(null);
+        useAuthStore.getState().setPendingCredentials(null);
         return session;
       } catch (err: unknown) {
-        // Tauri returns ErrorDto as a plain object or string.
-        // Check if it indicates TOTP required.
         const errStr = typeof err === "object" && err !== null ? JSON.stringify(err) : String(err);
         if (errStr.includes("TOTP") || errStr.includes("totp") || errStr.includes("Totp")) {
-          const totpError = new Error("TOTP_REQUIRED");
+          const totpError = new Error("TOTP_REQUIRED") as Error & { sessionId: string };
           totpError.name = "TotpRequired";
+          totpError.sessionId = sessionId;
           throw totpError;
         }
         if (errStr.includes("ADVANCE_CHECK") || errStr.includes("advance_check")) {
           const errObj =
             typeof err === "object" && err !== null ? (err as Record<string, unknown>) : null;
           const url = errObj?.message ? String(errObj.message) : undefined;
-          const advError = new Error("ADVANCE_CHECK") as Error & { advanceUrl?: string };
+          const advError = new Error("ADVANCE_CHECK") as Error & {
+            advanceUrl?: string;
+            sessionId: string;
+          };
           advError.name = "AdvanceCheck";
           advError.advanceUrl = url || undefined;
+          advError.sessionId = sessionId;
           throw advError;
         }
-        setPendingCredentials(null);
+        // Login failed — clean up the session
+        useAuthStore.getState().setPendingCredentials(null);
         throw new Error(
           typeof err === "object" && err !== null && "message" in err
             ? String((err as Record<string, unknown>).message)
@@ -62,38 +68,37 @@ export function useLogin() {
       }
     },
     onSuccess: async (session: SessionDto) => {
-      setSession(session);
+      useAuthStore.getState().addSession(session);
       try {
-        const accounts = await commands.getGameAccounts();
-        setGameAccounts(accounts);
+        const accounts = await commands.getGameAccounts(session.sessionId);
+        useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       } catch {
         /* accounts fetch failure is non-critical */
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+      // Clear addingSession flag and navigate to main
+      useUiStore.getState().addingSession = false;
+      useUiStore.getState().setPage("main");
     },
-  });
-}
-
-/** Start QR code login flow (TW region). */
-export function useQrLoginStart() {
-  return useMutation<QrCodeData, Error>({
-    mutationFn: () => commands.qrLoginStart(),
   });
 }
 
 /** Poll QR login status. Updates auth store when confirmed. */
 export function useQrLoginPoll() {
-  const { setSession } = useAuthStore.getState();
   const queryClient = useQueryClient();
 
-  return useMutation<QrPollResult, Error, { sessionKey: string; verificationToken: string }>({
-    mutationFn: ({ sessionKey, verificationToken }) =>
-      commands.qrLoginPoll(sessionKey, verificationToken),
+  return useMutation<
+    QrPollResult,
+    Error,
+    { sessionId: string; sessionKey: string; verificationToken: string }
+  >({
+    mutationFn: ({ sessionId, sessionKey, verificationToken }) =>
+      commands.qrLoginPoll(sessionId, sessionKey, verificationToken),
     onSuccess: async (result: QrPollResult) => {
       if (result.status === "confirmed" && result.session) {
-        setSession(result.session);
-        const accounts = await commands.getGameAccounts();
-        useAuthStore.getState().setGameAccounts(accounts);
+        useAuthStore.getState().addSession(result.session);
+        const accounts = await commands.getGameAccounts(result.session.sessionId);
+        useAuthStore.getState().updateGameAccounts(result.session.sessionId, accounts);
         await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
       }
     },
@@ -102,13 +107,12 @@ export function useQrLoginPoll() {
 
 /** Verify TOTP code (HK region). Updates auth store on success. */
 export function useTotpVerify() {
-  const { setSession } = useAuthStore.getState();
   const queryClient = useQueryClient();
 
-  return useMutation<SessionDto, Error, string>({
-    mutationFn: (code: string) => commands.totpVerify(code),
+  return useMutation<SessionDto, Error, { sessionId: string; code: string }>({
+    mutationFn: ({ sessionId, code }) => commands.totpVerify(sessionId, code),
     onSuccess: async (session: SessionDto) => {
-      setSession(session);
+      useAuthStore.getState().addSession(session);
 
       // Save pending credentials from the login attempt
       const pending = useAuthStore.getState().pendingCredentials;
@@ -125,23 +129,37 @@ export function useTotpVerify() {
         useAuthStore.getState().setPendingCredentials(null);
       }
 
-      const accounts = await commands.getGameAccounts();
-      useAuthStore.getState().setGameAccounts(accounts);
+      const accounts = await commands.getGameAccounts(session.sessionId);
+      useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+      // Navigate to main
+      useUiStore.getState().addingSession = false;
+      useUiStore.getState().setPage("main");
     },
   });
 }
 
-/** Logout. Clears auth store and navigates to login page. */
+/** Logout the active session. Clears it from auth store. */
 export function useLogout() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => commands.logout(),
+    mutationFn: async () => {
+      const sessionId = useAuthStore.getState().activeSessionId;
+      if (sessionId) {
+        await commands.logout(sessionId);
+      }
+    },
     onSuccess: async () => {
-      useAuthStore.getState().clearSession();
+      const sessionId = useAuthStore.getState().activeSessionId;
+      if (sessionId) {
+        useAuthStore.getState().removeSession(sessionId);
+      }
       queryClient.removeQueries({ queryKey: ["gameAccounts"] });
-      useUiStore.getState().setPage("login");
+      // If no sessions left, go to login
+      if (useAuthStore.getState().sessions.size === 0) {
+        useUiStore.getState().setPage("login");
+      }
     },
   });
 }

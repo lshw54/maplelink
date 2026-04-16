@@ -5,4 +5,5 @@ pub mod config;
 pub mod error;
 pub mod game_account;
 pub mod session;
+pub mod session_state;
 pub mod update;

@@ -109,6 +109,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         // -- Command handlers -----------------------------------------------
         .invoke_handler(tauri::generate_handler![
+            commands::auth::create_session,
+            commands::auth::list_sessions,
             commands::auth::login,
             commands::auth::qr_login_start,
             commands::auth::qr_login_poll,
@@ -229,27 +231,19 @@ pub fn run() {
             // 4. Initialise AppState with loaded config.
             let auto_update_enabled = config.auto_update;
             let update_channel = config.update_channel.clone();
-            let cookie_jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
             let http_client = reqwest::Client::builder()
-                .cookie_provider(cookie_jar.clone())
-                // Accept invalid SSL certificates for compatibility with game
-                // accelerators (e.g. UU) that proxy beanfun/gamania traffic.
                 .danger_accept_invalid_certs(true)
                 .build()
                 .expect("failed to build HTTP client");
             let update_client = http_client.clone();
 
             let state = AppState {
-                session: tokio::sync::RwLock::new(None),
+                sessions: tokio::sync::RwLock::new(HashMap::new()),
                 config: tokio::sync::RwLock::new(config),
-                game_accounts: tokio::sync::RwLock::new(Vec::new()),
-                active_processes: tokio::sync::RwLock::new(HashMap::new()),
-                http_client,
-                cookie_jar,
                 config_path,
                 saved_accounts: tokio::sync::RwLock::new(saved_accounts),
                 accounts_path,
-                bf_client_lock: tokio::sync::Mutex::new(()),
+                http_client,
             };
 
             app.manage(state);
@@ -301,17 +295,14 @@ pub fn run() {
                 }
             });
 
-            // 6. Backend ping loop — runs every 60 seconds independently of frontend.
-            //    Frontend setInterval can be throttled by Windows when the app is
-            //    minimized or idle. This tokio loop is not affected by that.
-            //    Matches the original PingWorker behavior.
+            // 6. Backend ping loop — pings all active sessions every 60 seconds.
             let ping_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Wait for user to login before starting ping
+                // Wait for at least one session to exist
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                     if let Some(state) = ping_app.try_state::<AppState>() {
-                        if state.session.read().await.is_some() {
+                        if !state.sessions.read().await.is_empty() {
                             break;
                         }
                     }
@@ -322,19 +313,21 @@ pub fn run() {
                 loop {
                     interval.tick().await;
                     if let Some(state) = ping_app.try_state::<AppState>() {
-                        let region = {
-                            let session = state.session.read().await;
-                            session.as_ref().map(|s| s.region.clone())
-                        };
-                        if let Some(region) = region {
-                            // Non-blocking: skip if another operation holds the lock
-                            if let Ok(_guard) = state.bf_client_lock.try_lock() {
-                                services::beanfun_service::ping(&state.http_client, &region).await;
-                            }
-                        } else {
-                            // Session cleared (logged out) — stop pinging
-                            tracing::info!("backend ping loop stopped (no session)");
+                        let sessions = state.sessions.read().await;
+                        if sessions.is_empty() {
+                            tracing::info!("backend ping loop stopped (no sessions)");
                             break;
+                        }
+                        for ss in sessions.values() {
+                            let region = {
+                                let session = ss.session.read().await;
+                                session.as_ref().map(|s| s.region.clone())
+                            };
+                            if let Some(region) = region {
+                                if let Ok(_guard) = ss.bf_client_lock.try_lock() {
+                                    services::beanfun_service::ping(&ss.http_client, &region).await;
+                                }
+                            }
                         }
                     }
                 }
@@ -351,10 +344,10 @@ pub fn run() {
                 let app_handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     if label == "main" {
-                        // Main window closed — clear credentials
+                        // Main window closed — clear all sessions
                         if let Some(state) = app_handle.try_state::<AppState>() {
-                            state.clear_credentials().await;
-                            tracing::info!("credentials cleared on window close");
+                            state.clear_all_sessions().await;
+                            tracing::info!("all sessions cleared on window close");
                         }
                     } else if label == "debug-console" {
                         // Debug console closed — sync config toggle to false
@@ -370,14 +363,8 @@ pub fn run() {
                             let _ = app_handle.emit("debug-window-closed", ());
                         }
                     } else if label == "gamepass-login" {
-                        // GamePass popup closed — if not authenticated, notify frontend
-                        if let Some(state) = app_handle.try_state::<AppState>() {
-                            let session = state.session.read().await;
-                            if session.is_none() {
-                                tracing::info!("GamePass popup closed without completing login");
-                                let _ = app_handle.emit("gamepass-login-cancelled", ());
-                            }
-                        }
+                        // GamePass popup closed — notify frontend
+                        let _ = app_handle.emit("gamepass-login-cancelled", ());
                     }
                 });
             }

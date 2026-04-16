@@ -42,7 +42,7 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" => (350.0, 530.0),
+        "login" => (350.0, 580.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
         _ => {
@@ -342,11 +342,14 @@ pub async fn toggle_debug_window(enable: bool, app: tauri::AppHandle) -> Result<
 /// 5. After page loads, auto-resize window to fit the content area (right pane only)
 #[tauri::command]
 pub async fn open_gash_popup(
+    session_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     use reqwest::header;
     use tauri::WebviewWindowBuilder;
+
+    let ss = state.require_session(&session_id).await?;
 
     let label = "gash-popup";
 
@@ -365,7 +368,7 @@ pub async fn open_gash_popup(
 
     // Step 1: Call auth.aspx to establish server-side session via reqwest
     let auth_url = format!("https://{host}/{region_path}/auth.aspx");
-    let _ = state
+    let _ = ss
         .http_client
         .get(&auth_url)
         .header(header::USER_AGENT, WEBVIEW_USER_AGENT)
@@ -374,13 +377,13 @@ pub async fn open_gash_popup(
 
     // Step 2: Collect cookies + build gash URL
     let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
-    let cookies: String = state
+    let cookies: String = ss
         .cookie_jar
         .cookies(&jar_url)
         .and_then(|h: reqwest::header::HeaderValue| h.to_str().ok().map(|s: &str| s.to_string()))
         .unwrap_or_default();
 
-    let token = get_web_token(state.clone()).await?;
+    let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
     let gash_url = format!(
         "https://{host}/{region_path}/auth.aspx?channel=gash&page_and_query=default.aspx%3Fservice_code%3D999999%26service_region%3DT0&web_token={}",
         urlencoding::encode(&token)
@@ -556,11 +559,14 @@ pub async fn resize_gash_popup(
 /// Uses the same shared data_directory + cookie injection flow as gash popup.
 #[tauri::command]
 pub async fn open_member_popup(
+    session_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     use reqwest::cookie::CookieStore;
     use tauri::WebviewWindowBuilder;
+
+    let ss = state.require_session(&session_id).await?;
 
     let label = "member-popup";
 
@@ -580,15 +586,15 @@ pub async fn open_member_popup(
     };
     drop(config);
 
-    let token = get_web_token(state.clone()).await?;
+    let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
     let url = format!(
         "https://{host}/{region_path}/auth.aspx?channel=member&page_and_query={page_query}&web_token={}",
         urlencoding::encode(&token)
     );
 
-    // Inject cookies from reqwest jar
+    // Inject cookies from session's reqwest jar
     let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
-    let cookies: String = state
+    let cookies: String = ss
         .cookie_jar
         .cookies(&jar_url)
         .and_then(|h: reqwest::header::HeaderValue| h.to_str().ok().map(|s: &str| s.to_string()))
@@ -738,7 +744,17 @@ pub async fn open_web_popup(
 /// Get the bfWebToken from the cookie jar for constructing authenticated URLs.
 #[tauri::command]
 pub async fn get_web_token(
+    session_id: String,
     state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<String, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+    get_web_token_from_jar(&ss.cookie_jar, &state).await
+}
+
+/// Internal helper: extract bfWebToken from a cookie jar.
+async fn get_web_token_from_jar(
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    state: &tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<String, ErrorDto> {
     let config = state.config.read().await;
     let host = match config.region {
@@ -748,8 +764,7 @@ pub async fn get_web_token(
     drop(config);
 
     let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
-    let token = state
-        .cookie_jar
+    let token = cookie_jar
         .cookies(&jar_url)
         .and_then(|h: reqwest::header::HeaderValue| {
             h.to_str().ok().and_then(|s: &str| {

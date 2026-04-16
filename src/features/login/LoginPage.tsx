@@ -34,26 +34,26 @@ export function LoginPage() {
       .catch(() => {});
   }, []);
 
-  // Navigate to main page when authenticated
+  // Navigate to main page when authenticated (unless adding a new session)
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !useUiStore.getState().addingSession) {
       setPage("main");
     }
   }, [isAuthenticated, setPage]);
 
   // Listen for GamePass login completion event from backend
   useEffect(() => {
-    const { setSession, setGameAccounts } = useAuthStore.getState();
-
     const unlistenComplete = listen<SessionDto>("gamepass-login-complete", async (event) => {
-      setSession(event.payload);
+      useAuthStore.getState().addSession(event.payload);
       try {
-        const accounts = await commands.getGameAccounts();
-        setGameAccounts(accounts);
+        const accounts = await commands.getGameAccounts(event.payload.sessionId);
+        useAuthStore.getState().updateGameAccounts(event.payload.sessionId, accounts);
       } catch {
         /* non-critical */
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+      useUiStore.getState().addingSession = false;
+      setPage("main");
     });
 
     const unlistenError = listen<string>("gamepass-login-error", (event) => {
@@ -74,7 +74,7 @@ export function LoginPage() {
       unlistenError.then((fn) => fn());
       unlistenCancelled.then((fn) => fn());
     };
-  }, [queryClient]);
+  }, [queryClient, setPage]);
 
   const handleTotpRequired = useCallback(() => {
     setView("totp");
@@ -125,6 +125,19 @@ export function LoginPage() {
               onAdvanceCheck={handleAdvanceCheck}
               onGamePass={handleGamePass}
             />
+
+            {useUiStore.getState().addingSession && (
+              <button
+                type="button"
+                onClick={() => {
+                  useUiStore.getState().addingSession = false;
+                  setPage("main");
+                }}
+                className="mt-3 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+              >
+                {t("login.back_to_accounts")}
+              </button>
+            )}
           </>
         )}
 

@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::core::auth::{self, SessionAction};
 use crate::core::error::{AppError, AuthError};
-use crate::models::app_state::AppState;
+use crate::models::app_state::{AppState, SessionInfo};
 use crate::models::error::ErrorDto;
 use crate::models::session::Session;
 use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
@@ -20,15 +20,17 @@ use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDto {
+    pub session_id: String,
     pub token: String,
     pub region: String,
     pub account_name: String,
     pub expires_at: String,
 }
 
-impl From<&Session> for SessionDto {
-    fn from(s: &Session) -> Self {
+impl SessionDto {
+    fn from_session(s: &Session, session_id: &str) -> Self {
         Self {
+            session_id: session_id.to_string(),
             token: s.token.clone(),
             region: format!("{:?}", s.region),
             account_name: s.account_name.clone(),
@@ -38,12 +40,31 @@ impl From<&Session> for SessionDto {
 }
 
 // ---------------------------------------------------------------------------
+// Session management commands
+// ---------------------------------------------------------------------------
+
+/// Create a new empty session and return its ID.
+#[tauri::command]
+pub async fn create_session(state: State<'_, AppState>) -> Result<String, ErrorDto> {
+    let (id, _) = state.create_session().await;
+    tracing::info!("created new session: {id}");
+    Ok(id)
+}
+
+/// List all active sessions with their basic info.
+#[tauri::command]
+pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, ErrorDto> {
+    Ok(state.list_sessions().await)
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
 /// Normal username + password login.
 #[tauri::command]
 pub async fn login(
+    session_id: String,
     account: String,
     password: String,
     state: State<'_, AppState>,
@@ -52,14 +73,15 @@ pub async fn login(
     auth::validate_input("account", &account).map_err(to_dto)?;
     auth::validate_input("password", &password).map_err(to_dto)?;
 
+    let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
     let login_result = beanfun_service::login(
-        &state.http_client,
+        &ss.http_client,
         &account,
         &password,
         &region,
-        &state.cookie_jar,
+        &ss.cookie_jar,
     )
     .await;
 
@@ -67,12 +89,11 @@ pub async fn login(
     let session = match login_result {
         Ok(s) => s,
         Err(beanfun_service::LoginError::Auth(AuthError::TotpRequired { partial_session })) => {
-            *state.session.write().await = Some(*partial_session);
+            *ss.session.write().await = Some(*partial_session);
             tracing::info!("login requires TOTP verification");
             return Err(to_dto(AuthError::TotpRequired {
                 partial_session: Box::new(
-                    state
-                        .session
+                    ss.session
                         .read()
                         .await
                         .clone()
@@ -92,19 +113,18 @@ pub async fn login(
         Err(e) => return Err(login_err_to_dto(e)),
     };
 
-    let dto = SessionDto::from(&session);
+    let dto = SessionDto::from_session(&session, &session_id);
 
     // Fetch game accounts right after login (Req 1.6)
-    let accounts =
-        beanfun_service::get_game_accounts(&state.http_client, &session, &state.cookie_jar)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("failed to fetch game accounts after login: {e}");
-                Vec::new()
-            });
+    let accounts = beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to fetch game accounts after login: {e}");
+            Vec::new()
+        });
 
-    *state.session.write().await = Some(session);
-    *state.game_accounts.write().await = accounts;
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
 
     tracing::info!("user logged in: {}", dto.account_name);
     Ok(dto)
@@ -112,10 +132,14 @@ pub async fn login(
 
 /// Start a QR-code login flow (TW region).
 #[tauri::command]
-pub async fn qr_login_start(state: State<'_, AppState>) -> Result<QrCodeData, ErrorDto> {
+pub async fn qr_login_start(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<QrCodeData, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    beanfun_service::qr_login_start(&state.http_client, &region)
+    beanfun_service::qr_login_start(&ss.http_client, &region)
         .await
         .map_err(login_err_to_dto)
 }
@@ -123,46 +147,44 @@ pub async fn qr_login_start(state: State<'_, AppState>) -> Result<QrCodeData, Er
 /// Poll the status of an in-progress QR-code login.
 #[tauri::command]
 pub async fn qr_login_poll(
+    session_id: String,
     session_key: String,
     verification_token: String,
     state: State<'_, AppState>,
 ) -> Result<QrPollResult, ErrorDto> {
     auth::validate_input("session_key", &session_key).map_err(to_dto)?;
 
+    let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    let result = beanfun_service::qr_login_poll(
-        &state.http_client,
-        &session_key,
-        &verification_token,
-        &region,
-    )
-    .await
-    .map_err(login_err_to_dto)?;
+    let result =
+        beanfun_service::qr_login_poll(&ss.http_client, &session_key, &verification_token, &region)
+            .await
+            .map_err(login_err_to_dto)?;
 
     // If confirmed, complete the login and store the session
     if result.status == beanfun_service::QrPollStatus::Confirmed {
         let session =
-            beanfun_service::qr_login_complete(&state.http_client, &session_key, &state.cookie_jar)
+            beanfun_service::qr_login_complete(&ss.http_client, &session_key, &ss.cookie_jar)
                 .await
                 .map_err(login_err_to_dto)?;
 
         let accounts =
-            beanfun_service::get_game_accounts(&state.http_client, &session, &state.cookie_jar)
+            beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
                 .await
                 .unwrap_or_else(|e| {
                     tracing::warn!("failed to fetch game accounts after QR login: {e}");
                     Vec::new()
                 });
 
-        let dto = SessionDto::from(&session);
-        *state.session.write().await = Some(session);
-        *state.game_accounts.write().await = accounts;
+        let dto = SessionDto::from_session(&session, &session_id);
+        *ss.session.write().await = Some(session);
+        *ss.game_accounts.write().await = accounts;
         tracing::info!("user logged in via QR: {}", dto.account_name);
 
         return Ok(QrPollResult {
             status: beanfun_service::QrPollStatus::Confirmed,
-            session: Some(state.session.read().await.clone().unwrap()),
+            session: Some(ss.session.read().await.clone().unwrap()),
         });
     }
 
@@ -174,11 +196,17 @@ pub async fn qr_login_poll(
 /// Reads the partial session (with TOTP state) stored during login,
 /// then calls the session-based TOTP verification.
 #[tauri::command]
-pub async fn totp_verify(code: String, state: State<'_, AppState>) -> Result<SessionDto, ErrorDto> {
+pub async fn totp_verify(
+    session_id: String,
+    code: String,
+    state: State<'_, AppState>,
+) -> Result<SessionDto, ErrorDto> {
     auth::validate_input("code", &code).map_err(to_dto)?;
 
+    let ss = state.require_session(&session_id).await?;
+
     let partial_session = {
-        let session_guard = state.session.read().await;
+        let session_guard = ss.session.read().await;
         session_guard
             .clone()
             .ok_or(AuthError::NotAuthenticated)
@@ -187,22 +215,21 @@ pub async fn totp_verify(code: String, state: State<'_, AppState>) -> Result<Ses
 
     // Use the session-based TOTP verification that has access to totp_state
     let session =
-        beanfun_service::hk_totp_verify_with_session(&state.http_client, &code, &partial_session)
+        beanfun_service::hk_totp_verify_with_session(&ss.http_client, &code, &partial_session)
             .await
             .map_err(login_err_to_dto)?;
 
-    let dto = SessionDto::from(&session);
+    let dto = SessionDto::from_session(&session, &session_id);
 
-    let accounts =
-        beanfun_service::get_game_accounts(&state.http_client, &session, &state.cookie_jar)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("failed to fetch game accounts after TOTP: {e}");
-                Vec::new()
-            });
+    let accounts = beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to fetch game accounts after TOTP: {e}");
+            Vec::new()
+        });
 
-    *state.session.write().await = Some(session);
-    *state.game_accounts.write().await = accounts;
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
 
     tracing::info!("user verified TOTP: {}", dto.account_name);
     Ok(dto)
@@ -213,10 +240,13 @@ pub async fn totp_verify(code: String, state: State<'_, AppState>) -> Result<Ses
 /// Returns the form state including captcha image as base64.
 #[tauri::command]
 pub async fn get_advance_check(
+    session_id: String,
     url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<beanfun_service::AdvanceCheckState, ErrorDto> {
-    let check_state = beanfun_service::get_advance_check_page(&state.http_client, url.as_deref())
+    let ss = state.require_session(&session_id).await?;
+
+    let check_state = beanfun_service::get_advance_check_page(&ss.http_client, url.as_deref())
         .await
         .map_err(login_err_to_dto)?;
 
@@ -231,6 +261,7 @@ pub async fn get_advance_check(
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn submit_advance_check(
+    session_id: String,
     viewstate: String,
     viewstate_generator: String,
     event_validation: String,
@@ -240,6 +271,8 @@ pub async fn submit_advance_check(
     captcha_code: String,
     state: State<'_, AppState>,
 ) -> Result<bool, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+
     let check_state = beanfun_service::AdvanceCheckState {
         viewstate,
         viewstate_generator,
@@ -251,7 +284,7 @@ pub async fn submit_advance_check(
     };
 
     let result = beanfun_service::submit_advance_check(
-        &state.http_client,
+        &ss.http_client,
         &check_state,
         &verify_code,
         &captcha_code,
@@ -265,25 +298,30 @@ pub async fn submit_advance_check(
 /// Refresh the captcha image for an in-progress advance check.
 #[tauri::command]
 pub async fn refresh_advance_check_captcha(
+    session_id: String,
     samplecaptcha: String,
     state: State<'_, AppState>,
 ) -> Result<String, ErrorDto> {
-    let image = beanfun_service::refresh_advance_check_captcha(&state.http_client, &samplecaptcha)
+    let ss = state.require_session(&session_id).await?;
+
+    let image = beanfun_service::refresh_advance_check_captcha(&ss.http_client, &samplecaptcha)
         .await
         .map_err(login_err_to_dto)?;
 
     Ok(image)
 }
 
-/// Log out — clear all in-memory credentials (Req 1.8, 13.3).
+/// Log out — clear all in-memory credentials for this session (Req 1.8, 13.3).
 #[tauri::command]
-pub async fn logout(state: State<'_, AppState>) -> Result<(), ErrorDto> {
-    // Call beanfun logout endpoint to invalidate server-side session
-    let region = state.config.read().await.region.clone();
-    let _ = beanfun_service::logout(&state.http_client, &region).await;
+pub async fn logout(session_id: String, state: State<'_, AppState>) -> Result<(), ErrorDto> {
+    // Try to call beanfun logout endpoint before removing the session
+    if let Some(ss) = state.get_session(&session_id).await {
+        let region = state.config.read().await.region.clone();
+        let _ = beanfun_service::logout(&ss.http_client, &region).await;
+    }
 
-    state.clear_credentials().await;
-    tracing::info!("user logged out, credentials cleared");
+    state.remove_session(&session_id).await;
+    tracing::info!("session {session_id} logged out and removed");
     Ok(())
 }
 
@@ -292,21 +330,26 @@ pub async fn logout(state: State<'_, AppState>) -> Result<(), ErrorDto> {
 /// Called internally or from the frontend heartbeat. Not exposed as a
 /// primary user action — it's automatic (Req 1.4).
 #[tauri::command]
-pub async fn refresh_session(state: State<'_, AppState>) -> Result<SessionDto, ErrorDto> {
+pub async fn refresh_session(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<SessionDto, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+
     let action = {
-        let session_guard = state.session.read().await;
+        let session_guard = ss.session.read().await;
         auth::decide_session_action(&session_guard)
     };
 
     match action {
         SessionAction::UseExisting => {
-            let session_guard = state.session.read().await;
+            let session_guard = ss.session.read().await;
             let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
-            Ok(SessionDto::from(session))
+            Ok(SessionDto::from_session(session, &session_id))
         }
         SessionAction::AttemptRefresh => {
             let (refresh_token, region) = {
-                let session_guard = state.session.read().await;
+                let session_guard = ss.session.read().await;
                 let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
                 (
                     session
@@ -319,12 +362,12 @@ pub async fn refresh_session(state: State<'_, AppState>) -> Result<SessionDto, E
             };
 
             let new_session =
-                beanfun_service::refresh_session(&state.http_client, &refresh_token, &region)
+                beanfun_service::refresh_session(&ss.http_client, &refresh_token, &region)
                     .await
                     .map_err(login_err_to_dto)?;
 
-            let dto = SessionDto::from(&new_session);
-            *state.session.write().await = Some(new_session);
+            let dto = SessionDto::from_session(&new_session, &session_id);
+            *ss.session.write().await = Some(new_session);
             tracing::info!("session refreshed for {}", dto.account_name);
             Ok(dto)
         }
@@ -333,7 +376,7 @@ pub async fn refresh_session(state: State<'_, AppState>) -> Result<SessionDto, E
 }
 
 // ---------------------------------------------------------------------------
-// Saved account commands
+// Saved account commands (global state — no session_id needed)
 // ---------------------------------------------------------------------------
 
 /// DTO for saved login accounts sent to the frontend.
@@ -550,7 +593,8 @@ const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Appl
 
 /// Open GamePass login popup for TW region.
 ///
-/// The entire login flow happens inside the WebView2:
+/// Creates a new session for this GamePass login flow. The entire login
+/// flow happens inside the WebView2:
 /// 1. Navigate to `bflogin/default.aspx` → server redirects to `Login/Index?pSKey={skey}`
 /// 2. Init script auto-clicks `a.use-gama-pass` on the login page
 /// 3. User completes GamePass OAuth in the webview
@@ -560,7 +604,7 @@ const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Appl
 pub async fn open_gamepass_login(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
+) -> Result<String, ErrorDto> {
     use tauri::WebviewWindowBuilder;
 
     let label = "gamepass-login";
@@ -582,6 +626,10 @@ pub async fn open_gamepass_login(
     let incognito = config.gamepass_incognito;
     drop(config);
 
+    // Create a new session for this GamePass login flow
+    let (session_id, _) = state.create_session().await;
+    tracing::info!("GamePass: created session {session_id}");
+
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
         message: format!("Failed to get app data dir: {e}"),
@@ -594,15 +642,18 @@ pub async fn open_gamepass_login(
     // This way the WebView2 has the same session cookies as the skey request.
     let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
 
-    let init_script = r#"
-    (() => {
+    // Pass session_id to the init script so it can invoke gamepass_webview_done with it
+    let init_script = format!(
+        r#"
+    (() => {{
+        const SESSION_ID = "{}";
         const url = window.location.href;
         const onBeanfun = url.includes('beanfun.com');
         const onLoginPage = url.includes('Login/Index');
         const onGamania = url.includes('accounts.gamania.com');
         const onDefaultAspx = url.includes('bflogin/default.aspx');
 
-        Object.defineProperty(navigator, 'webdriver', {get: () => false});
+        Object.defineProperty(navigator, 'webdriver', {{get: () => false}});
 
         // Skip: initial redirect page, gamania OAuth, non-beanfun pages
         if (onDefaultAspx || onGamania || !onBeanfun) return;
@@ -610,101 +661,104 @@ pub async fn open_gamepass_login(
         const _origFetch = window.fetch;
 
         // On login page: auto-click GamePass button
-        if (onLoginPage) {
-            function tryClick() {
+        if (onLoginPage) {{
+            function tryClick() {{
                 const btn = document.querySelector('a.use-gama-pass');
-                if (btn) { btn.click(); console.log('[GamePass] clicked use-gama-pass'); return true; }
+                if (btn) {{ btn.click(); console.log('[GamePass] clicked use-gama-pass'); return true; }}
                 return false;
-            }
+            }}
             // Try immediately
-            if (!tryClick()) {
+            if (!tryClick()) {{
                 // Retry with MutationObserver + polling fallback
-                const obs = new MutationObserver(() => { if (tryClick()) obs.disconnect(); });
-                if (document.body) {
-                    obs.observe(document.body, { childList: true, subtree: true });
-                }
+                const obs = new MutationObserver(() => {{ if (tryClick()) obs.disconnect(); }});
+                if (document.body) {{
+                    obs.observe(document.body, {{ childList: true, subtree: true }});
+                }}
                 // Also poll every 200ms for up to 10s as fallback
                 let attempts = 0;
-                const poller = setInterval(() => {
+                const poller = setInterval(() => {{
                     attempts++;
-                    if (tryClick() || attempts > 50) {
+                    if (tryClick() || attempts > 50) {{
                         clearInterval(poller);
                         obs.disconnect();
-                    }
-                }, 200);
-            }
+                    }}
+                }}, 200);
+            }}
             return;
-        }
+        }}
 
         // On beanfun.com post-login pages (return.aspx, index.aspx, etc)
         // Poll echo_token, then fetch accounts, then signal backend
         console.log('[GamePass] post-login page detected:', url);
 
-        (async function() {
+        (async function() {{
             // Poll echo_token until session is confirmed
             let ready = false;
-            for (let i = 0; i < 60; i++) {
-                try {
+            for (let i = 0; i < 60; i++) {{
+                try {{
                     const r = await _origFetch(
                         'https://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1',
-                        { credentials: 'include' }
+                        {{ credentials: 'include' }}
                     );
                     const t = await r.text();
-                    if (t.includes('ResultCode:1')) {
+                    if (t.includes('ResultCode:1')) {{
                         console.log('[GamePass] session ready at attempt', i);
                         ready = true;
                         break;
-                    }
-                } catch(e) {}
+                    }}
+                }} catch(e) {{}}
                 await new Promise(r => setTimeout(r, 500));
-            }
+            }}
 
-            if (!ready) {
+            if (!ready) {{
                 console.log('[GamePass] session not ready, skipping (might be pre-login page)');
                 return;
-            }
+            }}
 
             // Session is ready — fetch account list
             console.log('[GamePass] fetching account list...');
             let accountHtml = '';
-            try {
+            try {{
                 const sc = '610074', sr = 'T9';
                 await _origFetch(
                     'https://tw.beanfun.com/beanfun_block/auth.aspx?channel=game_zone'
                     + '&page_and_query=game_start.aspx%3Fservice_code_and_region%3D' + sc + '_' + sr
                     + '&web_token=1',
-                    { credentials: 'include' }
+                    {{ credentials: 'include' }}
                 );
                 const listResp = await _origFetch(
                     'https://tw.beanfun.com/beanfun_block/game_zone/game_server_account_list.aspx'
                     + '?sc=' + sc + '&sr=' + sr + '&dt=' + Date.now(),
-                    { credentials: 'include' }
+                    {{ credentials: 'include' }}
                 );
                 accountHtml = await listResp.text();
                 console.log('[GamePass] account list length:', accountHtml.length);
-            } catch(e) {
+            }} catch(e) {{
                 console.error('[GamePass] account list fetch failed:', e);
-            }
+            }}
 
             const cookies = document.cookie;
             let webToken = 'cookie_auth';
-            cookies.split(';').forEach(c => {
+            cookies.split(';').forEach(c => {{
                 const t = c.trim();
                 if (t.startsWith('bfWebToken=')) webToken = t.substring(11);
-            });
+            }});
 
-            if (window.__TAURI_INTERNALS__) {
+            if (window.__TAURI_INTERNALS__) {{
                 console.log('[GamePass] invoking backend...');
-                window.__TAURI_INTERNALS__.invoke('gamepass_webview_done', {
+                window.__TAURI_INTERNALS__.invoke('gamepass_webview_done', {{
+                    sessionId: SESSION_ID,
                     webToken: webToken,
                     cookies: cookies,
                     accountHtml: accountHtml
-                }).then(() => console.log('[GamePass] SUCCESS'))
+                }}).then(() => console.log('[GamePass] SUCCESS'))
                   .catch(e => console.error('[GamePass] FAILED', e));
-            }
-        })();
-    })();
-    "#;
+            }}
+        }})();
+    }})();
+    "#,
+        session_id
+    );
 
     let mut builder = WebviewWindowBuilder::new(
         &app,
@@ -720,7 +774,7 @@ pub async fn open_gamepass_login(
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
     .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
-    .initialization_script(init_script)
+    .initialization_script(&init_script)
     .devtools(true);
 
     // In normal mode, persist WebView2 data so "remember me" works.
@@ -764,16 +818,18 @@ pub async fn open_gamepass_login(
     }
 
     tracing::info!("GamePass login window opened");
-    Ok(())
+    // Return the session_id so the frontend can track this GamePass session
+    Ok(session_id)
 }
 
 /// Called by the GamePass webview init script when login completes.
 ///
 /// Uses WebView2 CookieManager to extract ALL
-/// cookies (including HttpOnly), injects them into the reqwest cookie jar,
+/// cookies (including HttpOnly), injects them into the session's reqwest cookie jar,
 /// then fetches game accounts via reqwest.
 #[tauri::command]
 pub async fn gamepass_webview_done(
+    session_id: String,
     web_token: String,
     _cookies: String,
     account_html: String,
@@ -782,7 +838,9 @@ pub async fn gamepass_webview_done(
 ) -> Result<(), ErrorDto> {
     use tauri::Emitter;
 
-    tracing::info!("=== GamePass webview_done START ===");
+    tracing::info!("=== GamePass webview_done START (session: {session_id}) ===");
+
+    let ss = state.require_session(&session_id).await?;
 
     // Step 1: Extract ALL cookies from WebView2 via CookieManager (including HttpOnly)
     let all_cookies = extract_webview2_cookies(&app, "gamepass-login").await;
@@ -819,7 +877,7 @@ pub async fn gamepass_webview_done(
         &real_web_token[..real_web_token.len().min(20)]
     );
 
-    // Step 2: Inject ALL cookies into reqwest jar
+    // Step 2: Inject ALL cookies into the session's reqwest jar
     let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
     let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
     let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
@@ -836,10 +894,10 @@ pub async fn gamepass_webview_done(
             };
         let path_str = if path.is_empty() { "/" } else { path.as_str() };
         let cookie_str = format!("{}={}; Domain={}; Path={}", name, value, domain, path_str);
-        state.cookie_jar.add_cookie_str(&cookie_str, jar_url);
+        ss.cookie_jar.add_cookie_str(&cookie_str, jar_url);
     }
 
-    tracing::info!("GamePass: injected all cookies into reqwest jar");
+    tracing::info!("GamePass: injected all cookies into session's reqwest jar");
 
     // Step 3: Build session with real bfWebToken
     let session = crate::models::session::Session {
@@ -854,9 +912,9 @@ pub async fn gamepass_webview_done(
 
     // Step 4: Fetch game accounts via reqwest (now has full cookies)
     let accounts = crate::services::beanfun_service::get_game_accounts(
-        &state.http_client,
+        &ss.http_client,
         &session,
-        &state.cookie_jar,
+        &ss.cookie_jar,
     )
     .await
     .unwrap_or_else(|e| {
@@ -866,9 +924,9 @@ pub async fn gamepass_webview_done(
 
     tracing::info!("GamePass: got {} accounts", accounts.len());
 
-    let dto = SessionDto::from(&session);
-    *state.session.write().await = Some(session);
-    *state.game_accounts.write().await = accounts;
+    let dto = SessionDto::from_session(&session, &session_id);
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
 
     let _ = app.emit("gamepass-login-complete", dto);
 

@@ -1,10 +1,17 @@
 /** Mirrors of Rust models for type-safe IPC. */
 
 export interface SessionDto {
+  sessionId: string;
   token: string;
   region: "TW" | "HK";
   accountName: string;
   expiresAt: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  accountName: string;
+  region: string;
 }
 
 export interface GameAccountDto {

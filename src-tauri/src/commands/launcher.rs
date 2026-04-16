@@ -30,6 +30,7 @@ use crate::services::{beanfun_service, lr_service, process_service};
 #[tauri::command]
 pub async fn launch_game(
     app: tauri::AppHandle,
+    session_id: String,
     account_id: String,
     otp: Option<String>,
     state: State<'_, AppState>,
@@ -38,7 +39,8 @@ pub async fn launch_game(
     auth::validate_input("account_id", &account_id).map_err(auth_err_to_dto)?;
 
     // 2. Require valid session
-    let session_guard = state.session.read().await;
+    let ss = state.require_session(&session_id).await?;
+    let session_guard = ss.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(auth_err_to_dto)?;
 
     // 3. Read config and validate game path exists on disk
@@ -75,12 +77,12 @@ pub async fn launch_game(
             command_line_template: None,
         }
     } else {
-        let _bf_lock = state.bf_client_lock.lock().await;
+        let _bf_lock = ss.bf_client_lock.lock().await;
         let creds = beanfun_service::get_game_credentials(
-            &state.http_client,
+            &ss.http_client,
             session,
             &account_id,
-            &state.cookie_jar,
+            &ss.cookie_jar,
         )
         .await
         .map_err(login_err_to_dto)?;
@@ -125,8 +127,7 @@ pub async fn launch_game(
     // For LR launches, `pid` is LRProc.exe which exits quickly.
     let account_id_for_track = account_id.clone();
     if pid > 0 {
-        state
-            .active_processes
+        ss.active_processes
             .write()
             .await
             .insert(pid, account_id.clone());
@@ -136,13 +137,10 @@ pub async fn launch_game(
     // Anti-cheat (e.g. NGS/HackShield) may restart the game process multiple
     // times during startup, so we keep polling until the game truly exits.
     {
-        let app_handle = app.clone();
+        let ss_clone = ss.clone();
         let lr_pid = if use_lr { pid } else { 0 };
         let acct = account_id_for_track.clone();
         tauri::async_runtime::spawn(async move {
-            use tauri::Manager;
-            let state = app_handle.state::<AppState>();
-
             // If launched via LR, wait for LRProc.exe to exit first (up to 10s)
             if lr_pid > 0 {
                 for _ in 0..100 {
@@ -151,7 +149,7 @@ pub async fn launch_game(
                         break;
                     }
                 }
-                state.active_processes.write().await.remove(&lr_pid);
+                ss_clone.active_processes.write().await.remove(&lr_pid);
             }
 
             // Continuously track MapleStory.exe PID.
@@ -168,8 +166,8 @@ pub async fn launch_game(
                 match (found_pid, current_pid) {
                     (Some(new_pid), Some(old_pid)) if new_pid != old_pid => {
                         // PID changed (anti-cheat restarted the process)
-                        state.active_processes.write().await.remove(&old_pid);
-                        state
+                        ss_clone.active_processes.write().await.remove(&old_pid);
+                        ss_clone
                             .active_processes
                             .write()
                             .await
@@ -184,7 +182,7 @@ pub async fn launch_game(
                     }
                     (Some(new_pid), None) => {
                         // First time finding MapleStory
-                        state
+                        ss_clone
                             .active_processes
                             .write()
                             .await
@@ -203,7 +201,7 @@ pub async fn launch_game(
                         consecutive_missing += 1;
                         if consecutive_missing >= 5 {
                             // 10 seconds of no MapleStory — it's really gone
-                            state.active_processes.write().await.remove(&old_pid);
+                            ss_clone.active_processes.write().await.remove(&old_pid);
                             tracing::info!(pid = old_pid, "MapleStory.exe exited");
                             return;
                         }
@@ -275,7 +273,6 @@ pub async fn launch_game_direct(
         fs_err_to_dto(fs_err)
     })?;
 
-    // Build a minimal launch command with no OTP
     let dummy_creds = GameCredentials {
         account_id: String::new(),
         otp: String::new(),
@@ -289,25 +286,19 @@ pub async fn launch_game_direct(
     let use_lr = !system_is_zhtw;
 
     let pid = if use_lr {
-        launch_with_lr(
-            &app,
-            &launch_cmd,
-            true, // force traditional (no credential args)
-            &config.region,
-            &dummy_creds,
-        )
-        .await
-        .map_err(proc_err_to_dto)?
+        launch_with_lr(&app, &launch_cmd, true, &config.region, &dummy_creds)
+            .await
+            .map_err(proc_err_to_dto)?
     } else {
         process_service::spawn_process(&launch_cmd.executable, &launch_cmd.working_dir, &[])
             .await
             .map_err(proc_err_to_dto)?
     };
 
-    // Register initial PID
+    // Create a temporary session for PID tracking
+    let (_, ss) = state.create_session().await;
     if pid > 0 {
-        state
-            .active_processes
+        ss.active_processes
             .write()
             .await
             .insert(pid, "__direct__".to_string());
@@ -315,13 +306,9 @@ pub async fn launch_game_direct(
 
     // Background monitor: track the real MapleStory.exe PID
     {
-        let app_handle = app.clone();
+        let ss_clone = ss.clone();
         let lr_pid = if use_lr { pid } else { 0 };
         tauri::async_runtime::spawn(async move {
-            use tauri::Manager;
-            let state = app_handle.state::<AppState>();
-
-            // Wait for LRProc.exe to exit
             if lr_pid > 0 {
                 for _ in 0..100 {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -329,37 +316,35 @@ pub async fn launch_game_direct(
                         break;
                     }
                 }
-                state.active_processes.write().await.remove(&lr_pid);
+                ss_clone.active_processes.write().await.remove(&lr_pid);
             }
 
-            // Track MapleStory.exe PID
             let mut current_pid: Option<u32> = None;
             let mut consecutive_missing = 0u32;
 
             for _ in 0..300 {
                 tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-
                 let found_pid = find_process_pid_by_name("MapleStory.exe");
 
                 match (found_pid, current_pid) {
                     (Some(new_pid), Some(old_pid)) if new_pid != old_pid => {
-                        state.active_processes.write().await.remove(&old_pid);
-                        state
+                        ss_clone.active_processes.write().await.remove(&old_pid);
+                        ss_clone
                             .active_processes
                             .write()
                             .await
                             .insert(new_pid, "__direct__".to_string());
-                        tracing::info!(old_pid, new_pid, "MapleStory PID changed");
+                        tracing::info!(old_pid, new_pid, "MapleStory PID changed (direct)");
                         current_pid = Some(new_pid);
                         consecutive_missing = 0;
                     }
                     (Some(new_pid), None) => {
-                        state
+                        ss_clone
                             .active_processes
                             .write()
                             .await
                             .insert(new_pid, "__direct__".to_string());
-                        tracing::info!(pid = new_pid, "MapleStory.exe found (direct launch)");
+                        tracing::info!(pid = new_pid, "MapleStory.exe found (direct)");
                         current_pid = Some(new_pid);
                         consecutive_missing = 0;
                     }
@@ -369,15 +354,14 @@ pub async fn launch_game_direct(
                     (None, Some(old_pid)) => {
                         consecutive_missing += 1;
                         if consecutive_missing >= 5 {
-                            state.active_processes.write().await.remove(&old_pid);
-                            tracing::info!(pid = old_pid, "MapleStory.exe exited (direct launch)");
+                            ss_clone.active_processes.write().await.remove(&old_pid);
+                            tracing::info!(pid = old_pid, "MapleStory.exe exited (direct)");
                             return;
                         }
                     }
                     (None, None) => {
                         consecutive_missing += 1;
                         if consecutive_missing >= 30 {
-                            tracing::warn!("MapleStory.exe never appeared (direct launch)");
                             return;
                         }
                     }
@@ -791,43 +775,33 @@ async fn launch_with_lr(
     }
 }
 
-/// Check if any MapleStory process is currently running.
+/// Check if any MapleStory process is currently running across ALL sessions.
 ///
 /// Checks both tracked PIDs and the MapleStory window class name.
 #[tauri::command]
 pub async fn is_game_running(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
-    // Check tracked PIDs first
-    let active = state.active_processes.read().await;
-    for &pid in active.keys() {
-        if pid > 0 && process_service::is_process_running(pid) {
-            return Ok(true);
-        }
-    }
-    drop(active);
-
-    // Check if MapleStory.exe process exists (covers LR-launched games where PID=0)
-    Ok(process_service::is_process_name_running("MapleStory.exe"))
+    Ok(state.is_any_game_running().await)
 }
 
-/// Return the PID of the currently tracked MapleStory process, or 0 if none.
+/// Return the PID of the currently tracked MapleStory process across ALL sessions, or 0 if none.
 #[tauri::command]
 pub async fn get_game_pid(state: State<'_, AppState>) -> Result<u32, ErrorDto> {
-    let active = state.active_processes.read().await;
-    for &pid in active.keys() {
-        if pid > 0 && process_service::is_process_running(pid) {
-            return Ok(pid);
-        }
-    }
-    Ok(0)
+    Ok(state.get_any_game_pid().await)
 }
 
 /// Check whether a tracked game process is still running (Req 4.5).
 ///
 /// Returns `true` if the process is alive, `false` otherwise.
-/// Automatically removes dead processes from the active list.
+/// Automatically removes dead processes from the session's active list.
 #[tauri::command]
-pub async fn get_process_status(pid: u32, state: State<'_, AppState>) -> Result<bool, ErrorDto> {
-    let tracked = state.active_processes.read().await.contains_key(&pid);
+pub async fn get_process_status(
+    session_id: String,
+    pid: u32,
+    state: State<'_, AppState>,
+) -> Result<bool, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+
+    let tracked = ss.active_processes.read().await.contains_key(&pid);
     if !tracked {
         return Ok(false);
     }
@@ -835,31 +809,29 @@ pub async fn get_process_status(pid: u32, state: State<'_, AppState>) -> Result<
     let running = process_service::is_process_running(pid);
 
     if !running {
-        state.active_processes.write().await.remove(&pid);
+        ss.active_processes.write().await.remove(&pid);
         tracing::info!(pid, "game process exited, removed from active list");
     }
 
     Ok(running)
 }
-/// Kill all running MapleStory processes and clear tracked PIDs.
-///
-/// Used for the "relaunch" flow — kill the old game before starting a new one.
+
+/// Kill all running MapleStory processes across ALL sessions and clear tracked PIDs.
 #[tauri::command]
 pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
-    // Kill all tracked PIDs
-    let pids: Vec<u32> = state
-        .active_processes
-        .read()
-        .await
-        .keys()
-        .copied()
-        .collect();
-    for pid in &pids {
-        if *pid > 0 && process_service::is_process_running(*pid) {
-            let _ = process_service::terminate_process(*pid).await;
-            tracing::info!(pid, "killed tracked game process");
+    // Kill all tracked PIDs across all sessions
+    let sessions = state.sessions.read().await;
+    for ss in sessions.values() {
+        let pids: Vec<u32> = ss.active_processes.read().await.keys().copied().collect();
+        for pid in &pids {
+            if *pid > 0 && process_service::is_process_running(*pid) {
+                let _ = process_service::terminate_process(*pid).await;
+                tracing::info!(pid, "killed tracked game process");
+            }
         }
+        ss.active_processes.write().await.clear();
     }
+    drop(sessions);
 
     // Also kill any MapleStory.exe not in our tracked list
     #[cfg(target_os = "windows")]
@@ -871,8 +843,6 @@ pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
         }
     }
 
-    // Clear all tracked processes
-    state.active_processes.write().await.clear();
     tracing::info!("all game processes killed and tracking cleared");
     Ok(())
 }

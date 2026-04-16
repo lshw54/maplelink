@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameCredentials } from "../../lib/hooks/use-accounts";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { commands } from "../../lib/tauri";
 import type { GameCredentialsDto } from "../../lib/types";
 
@@ -24,7 +25,10 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       // Auto-paste mode: get OTP + auto-input to game window
       setPasting(true);
       try {
-        const pasted = await commands.autoPasteOtp(selectedAccountId);
+        const pasted = await commands.autoPasteOtp(
+          useAuthStore.getState().activeSessionId ?? "",
+          selectedAccountId,
+        );
         // Always fetch credentials to display OTP regardless of paste result
         credentialsMutation.mutate(selectedAccountId, {
           onSuccess: async (data) => {

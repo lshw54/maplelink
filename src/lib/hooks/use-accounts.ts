@@ -3,25 +3,30 @@ import { commands } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import type { GameAccountDto, GameCredentialsDto } from "../types";
 
-/** Fetch game accounts. Enabled only when authenticated. */
+/** Fetch game accounts for the active session. Enabled only when authenticated. */
 export function useGameAccounts() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const activeSessionId = useAuthStore((s) => s.activeSessionId);
 
   return useQuery<GameAccountDto[]>({
-    queryKey: ["gameAccounts"],
+    queryKey: ["gameAccounts", activeSessionId],
     queryFn: async () => {
-      const accounts = await commands.getGameAccounts();
-      useAuthStore.getState().setGameAccounts(accounts);
+      if (!activeSessionId) return [];
+      const accounts = await commands.getGameAccounts(activeSessionId);
+      useAuthStore.getState().updateGameAccounts(activeSessionId, accounts);
       return accounts;
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !!activeSessionId,
   });
 }
 
 /** Retrieve one-time credentials for a game account. */
 export function useGameCredentials() {
   return useMutation<GameCredentialsDto, Error, string>({
-    mutationFn: (accountId: string) => commands.getGameCredentials(accountId),
+    mutationFn: (accountId: string) => {
+      const sessionId = useAuthStore.getState().activeSessionId ?? "";
+      return commands.getGameCredentials(sessionId, accountId);
+    },
   });
 }
 
@@ -30,12 +35,13 @@ export function useRefreshAccounts() {
   const queryClient = useQueryClient();
 
   return async () => {
+    const sessionId = useAuthStore.getState().activeSessionId;
+    if (!sessionId) return;
     try {
-      const accounts = await commands.refreshAccounts();
-      useAuthStore.getState().setGameAccounts(accounts);
-      queryClient.setQueryData(["gameAccounts"], accounts);
+      const accounts = await commands.refreshAccounts(sessionId);
+      useAuthStore.getState().updateGameAccounts(sessionId, accounts);
+      queryClient.setQueryData(["gameAccounts", sessionId], accounts);
     } catch {
-      // If refresh fails, at least try to invalidate the cached query
       queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
     }
   };

@@ -13,6 +13,8 @@ export interface UiState {
   sidebarOpen: boolean;
   gamePid: number | null;
   gameRunning: boolean;
+  /** When true, LoginPage won't auto-redirect to main even if authenticated. */
+  addingSession: boolean;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
@@ -31,6 +33,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   sidebarOpen: false,
   gamePid: null,
   gameRunning: false,
+  addingSession: false,
   setPage: (page) => {
     const current = get().currentPage;
     const prev = current !== "toolbox" ? current : get().previousPage;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useUiStore } from "../../lib/stores/ui-store";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
 
 interface QrLoginFormProps {
@@ -31,7 +32,9 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     setError(null);
 
     try {
-      const data = await commands.qrLoginStart();
+      // Create a new session for this QR login flow
+      const sessionId = await commands.createSession();
+      const data = await commands.qrLoginStart(sessionId);
       setQrData(data);
       setStatus("pending");
 
@@ -39,22 +42,22 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       intervalRef.current = setInterval(async () => {
         try {
           const result: QrPollResult = await commands.qrLoginPoll(
+            sessionId,
             data.sessionKey,
             data.verificationToken,
           );
           if (result.status === "confirmed") {
             stopPolling();
             setStatus("confirmed");
-            // Session is set by backend — update frontend store
-            if (result.session) {
-              useAuthStore.getState().setSession({
-                token: result.session.token,
-                region: result.session.region,
-                accountName: result.session.accountName,
-                expiresAt: result.session.expiresAt,
-              });
-              const accounts = await commands.getGameAccounts();
-              useAuthStore.getState().setGameAccounts(accounts);
+            // result.session is the raw Session from backend — add sessionId manually
+            const confirmedSession = result.session ? { ...result.session, sessionId } : null;
+            if (confirmedSession) {
+              useAuthStore.getState().addSession(confirmedSession);
+              const accounts = await commands.getGameAccounts(sessionId);
+              useAuthStore.getState().updateGameAccounts(sessionId, accounts);
+              // Navigate to main
+              useUiStore.getState().addingSession = false;
+              useUiStore.getState().setPage("main");
             }
           } else if (result.status === "expired") {
             stopPolling();
