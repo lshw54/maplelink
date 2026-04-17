@@ -348,7 +348,9 @@ pub async fn download_update_with_progress(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("stream error during download: {e}, falling back to non-streaming");
+                    tracing::warn!(
+                        "stream error during download: {e}, falling back to non-streaming"
+                    );
                     stream_failed = true;
                     break;
                 }
@@ -373,11 +375,12 @@ pub async fn download_update_with_progress(
                     reason: format!("fallback network error: {e}"),
                 })?;
 
-            let bytes = fallback_resp.bytes().await.map_err(|e| {
-                UpdateError::DownloadFailed {
+            let bytes = fallback_resp
+                .bytes()
+                .await
+                .map_err(|e| UpdateError::DownloadFailed {
                     reason: format!("fallback read error: {e}"),
-                }
-            })?;
+                })?;
 
             let _ = app_handle.emit(
                 "update-download-progress",
