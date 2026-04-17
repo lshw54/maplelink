@@ -43,6 +43,7 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
     let (width, height): (f64, f64) = match page.as_str() {
         "login" => (350.0, 580.0),
+        "qr-viewer" => (500.0, 560.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
         _ => {
@@ -113,9 +114,22 @@ pub fn get_app_version() -> String {
 }
 
 /// Auto-detect the MapleStory game path from the Windows Registry.
+/// Inner function for detect_game_path, callable from both the command and startup.
+pub async fn detect_game_path_inner(
+    state: &crate::models::app_state::AppState,
+) -> Result<Option<String>, ErrorDto> {
+    detect_game_path_impl(state).await
+}
+
 #[tauri::command]
 pub async fn detect_game_path(
     state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<Option<String>, ErrorDto> {
+    detect_game_path_impl(&state).await
+}
+
+async fn detect_game_path_impl(
+    state: &crate::models::app_state::AppState,
 ) -> Result<Option<String>, ErrorDto> {
     #[cfg(target_os = "windows")]
     {

@@ -248,9 +248,33 @@ pub fn run() {
 
             app.manage(state);
 
-            // 4. Auto-update check (non-blocking background task).
-            //    Respects the auto_update toggle — skips if disabled.
-            //    Failures are logged and swallowed so the app always starts.
+            // 4a. Auto-detect game path on first launch (if not set).
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app_handle.state::<AppState>();
+                    let needs_detect = state.config.read().await.game_path.is_empty();
+                    if !needs_detect {
+                        return;
+                    }
+                    match commands::system::detect_game_path_inner(&state).await {
+                        Ok(Some(path)) => {
+                            let mut config = state.config.write().await;
+                            config.game_path = path.clone();
+                            let _ = config_service::save_config(&state.config_path, &config).await;
+                            tracing::info!("auto-detected game path on startup: {path}");
+                        }
+                        Ok(None) => {
+                            tracing::debug!("no game path detected on startup");
+                        }
+                        Err(e) => {
+                            tracing::warn!("game path detection failed on startup: {:?}", e);
+                        }
+                    }
+                });
+            }
+
+            // 4b. Auto-update check (non-blocking background task).
             if update_service::should_check_on_startup(auto_update_enabled) {
                 let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
