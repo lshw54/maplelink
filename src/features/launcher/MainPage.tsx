@@ -71,7 +71,10 @@ export function MainPage() {
       .getAppVersion()
       .then(setAppVersion)
       .catch(() => {});
-    // Auto-detect game path if not set
+  }, [activeSessionId]);
+
+  // Auto-detect game path on first mount only
+  useEffect(() => {
     const currentConfig = useConfigStore.getState().config;
     if (!currentConfig?.gamePath) {
       commands
@@ -87,7 +90,7 @@ export function MainPage() {
         })
         .catch(() => {});
     }
-  }, [activeSessionId]);
+  }, []);
 
   // Session keep-alive: frontend backup ping every 60 seconds.
   // The main ping loop runs in the Rust backend (not affected by browser throttling).
