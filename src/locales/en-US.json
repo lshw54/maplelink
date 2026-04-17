@@ -28,6 +28,7 @@
   "login.qr.refresh": "Refresh QR Code",
   "login.qr.copy": "Copy QR",
   "login.qr.enlarge": "Enlarge",
+  "login.qr.shrink": "Shrink",
   "login.qr.zoom_hint": "Scroll to zoom · Click outside to close",
   "login.totp.instruction": "Enter the 6-digit code from your authenticator app",
   "login.totp.title": "Two-Step Verification",

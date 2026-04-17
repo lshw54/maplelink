@@ -28,6 +28,7 @@
   "login.qr.refresh": "刷新 QR Code",
   "login.qr.copy": "复制 QR",
   "login.qr.enlarge": "放大",
+  "login.qr.shrink": "缩小",
   "login.qr.zoom_hint": "滚轮缩放 · 点击外部关闭",
   "login.totp.instruction": "请输入验证器上的 6 位数字",
   "login.totp.title": "两步骤验证",

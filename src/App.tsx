@@ -12,8 +12,6 @@ import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
 import type { UpdateInfoDto } from "./lib/types";
 
-import { QrViewerPage } from "./features/login/QrViewerPage";
-
 function PageRouter() {
   const currentPage = useUiStore((s) => s.currentPage);
 
@@ -24,8 +22,6 @@ function PageRouter() {
       return <MainPage />;
     case "toolbox":
       return <ToolboxPage />;
-    case "qr-viewer":
-      return <QrViewerPage />;
   }
 }
 

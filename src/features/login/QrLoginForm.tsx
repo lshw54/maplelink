@@ -19,6 +19,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   );
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [enlarged, setEnlarged] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
   const sessionIdRef = useRef<string | null>(useUiStore.getState().qrSessionId);
@@ -42,6 +43,11 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         if (result.status === "confirmed") {
           stopPolling();
           setStatus("confirmed");
+          commands.logFrontendError(
+            "info",
+            "QrLoginForm",
+            `confirmed! session=${JSON.stringify(result.session)?.slice(0, 100)}, sessionId=${sessionId}`,
+          );
           const confirmedSession = result.session ? { ...result.session, sessionId } : null;
           if (confirmedSession) {
             useAuthStore.getState().addSession(confirmedSession);
@@ -50,6 +56,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             // Clear persisted QR state
             useUiStore.setState({ qrSessionId: null, qrData: null, loginView: "normal" });
             useUiStore.getState().addingSession = false;
+            // Reset window size if enlarged
+            commands.resizeWindow("login").catch(() => {});
             useUiStore.getState().setPage("main");
           }
         } else if (result.status === "expired") {
@@ -87,7 +95,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       setQrData(data);
       setStatus("pending");
 
-      // Persist for qr-viewer round-trip
+      // Persist for session resume
       useUiStore.setState({ qrSessionId: sessionId, qrData: data });
 
       startPolling(sessionId, data);
@@ -116,22 +124,27 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
   return (
     <div className="flex w-full flex-col items-center">
-      <div className="mb-5 flex flex-col items-center">
-        <img
-          src="/app-icon.png"
-          alt="MapleLink"
-          className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
-        />
-        <div className="text-[12px] uppercase tracking-[4px] text-text-dim">
-          {t("login.qr.title")}
+      {/* Header — hide when enlarged */}
+      {!enlarged && (
+        <div className="mb-5 flex flex-col items-center">
+          <img
+            src="/app-icon.png"
+            alt="MapleLink"
+            className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+          />
+          <div className="text-[12px] uppercase tracking-[4px] text-text-dim">
+            {t("login.qr.title")}
+          </div>
+          <div className="mt-1.5 text-[12px] tracking-[0.5px] text-text-faint">
+            {t("login.qr.instruction")}
+          </div>
         </div>
-        <div className="mt-1.5 text-[12px] tracking-[0.5px] text-text-faint">
-          {t("login.qr.instruction")}
-        </div>
-      </div>
+      )}
 
       <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] p-5">
-        <div className="flex h-[180px] w-[180px] items-center justify-center rounded-xl bg-white p-4 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+        <div
+          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${enlarged ? "p-5" : "h-[180px] w-[180px] p-4"}`}
+        >
           {status === "loading" ? (
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
           ) : qrData?.qrImageUrl ? (
@@ -139,8 +152,11 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               src={qrData.qrImageUrl}
               alt="QR Code"
               className="block rounded"
-              width="150"
-              height="150"
+              style={{
+                width: enlarged ? 380 : 150,
+                height: enlarged ? 380 : 150,
+                imageRendering: "pixelated",
+              }}
             />
           ) : (
             <div className="text-xs text-text-faint">—</div>
@@ -205,12 +221,16 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               type="button"
               onClick={() => {
                 if (qrData?.qrImageUrl) {
-                  useUiStore.getState().qrViewerImage = qrData.qrImageUrl;
-                  commands.resizeWindow("qr-viewer").catch(() => {});
-                  useUiStore.setState({ currentPage: "qr-viewer" as "login" });
+                  if (!enlarged) {
+                    commands.resizeWindow("login-enlarged").catch(() => {});
+                    setEnlarged(true);
+                  } else {
+                    commands.resizeWindow("login").catch(() => {});
+                    setEnlarged(false);
+                  }
                 }
               }}
-              title={t("login.qr.enlarge")}
+              title={enlarged ? t("login.qr.shrink") : t("login.qr.enlarge")}
               className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
             >
               <svg
@@ -223,26 +243,39 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <polyline points="15 3 21 3 21 9" />
-                <polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" />
-                <line x1="3" y1="21" x2="10" y2="14" />
+                {enlarged ? (
+                  <>
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                ) : (
+                  <>
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                )}
               </svg>
-              {t("login.qr.enlarge")}
+              {enlarged ? t("login.qr.shrink") : t("login.qr.enlarge")}
             </button>
           </div>
         )}
 
-        <div className="animate-pulse text-[12px] tracking-[1px] text-text-dim">
-          {status === "expired"
-            ? t("login.qr.expired")
-            : status === "error"
-              ? (error ?? "Error")
-              : t("login.qr.waiting")}
-        </div>
+        {!enlarged && (
+          <div className="animate-pulse text-[12px] tracking-[1px] text-text-dim">
+            {status === "expired"
+              ? t("login.qr.expired")
+              : status === "error"
+                ? (error ?? "Error")
+                : t("login.qr.waiting")}
+          </div>
+        )}
       </div>
 
-      {status === "expired" && (
+      {!enlarged && status === "expired" && (
         <button
           type="button"
           onClick={handleRefresh}
@@ -252,13 +285,17 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         </button>
       )}
 
-      <button
-        type="button"
-        onClick={onBack}
-        className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
-      >
-        {t("login.back_normal")}
-      </button>
+      {!enlarged && (
+        <button
+          type="button"
+          onClick={() => {
+            onBack();
+          }}
+          className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+        >
+          {t("login.back_normal")}
+        </button>
+      )}
     </div>
   );
 }
