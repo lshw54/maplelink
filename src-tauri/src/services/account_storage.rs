@@ -126,28 +126,32 @@ pub fn upsert_account(
     password: &str,
     remember: bool,
 ) {
-    if let Some(existing) = accounts
-        .iter_mut()
-        .find(|a| a.region == region && a.account == account)
-    {
-        existing.remember_password = remember;
-        existing.password = if remember {
-            password.to_string()
+    // Remove existing entry first so we can re-add at the end.
+    // This ensures get_last_account returns the most recently logged-in account.
+    let existing = accounts
+        .iter()
+        .position(|a| a.region == region && a.account == account)
+        .map(|idx| accounts.remove(idx));
+
+    let pwd = if remember {
+        password.to_string()
+    } else if let Some(prev) = &existing {
+        // Keep old password if user unchecked remember but had one saved
+        if prev.remember_password {
+            prev.password.clone()
         } else {
             String::new()
-        };
+        }
     } else {
-        accounts.push(SavedAccount {
-            region: region.to_string(),
-            account: account.to_string(),
-            password: if remember {
-                password.to_string()
-            } else {
-                String::new()
-            },
-            remember_password: remember,
-        });
-    }
+        String::new()
+    };
+
+    accounts.push(SavedAccount {
+        region: region.to_string(),
+        account: account.to_string(),
+        password: pwd,
+        remember_password: remember,
+    });
 }
 
 /// Get all saved accounts for a specific region.
