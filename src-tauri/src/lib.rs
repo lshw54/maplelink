@@ -373,6 +373,10 @@ pub fn run() {
                             state.clear_all_sessions().await;
                             tracing::info!("all sessions cleared on window close");
                         }
+                        // Also close debug console if open
+                        if let Some(debug_win) = app_handle.get_webview_window("debug-console") {
+                            let _ = debug_win.destroy();
+                        }
                     } else if label == "debug-console" {
                         // Debug console closed — sync config toggle to false
                         if let Some(state) = app_handle.try_state::<AppState>() {
