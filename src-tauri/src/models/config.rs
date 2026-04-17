@@ -49,7 +49,7 @@ impl Default for AppConfig {
         Self {
             game_path: String::new(),
             locale: "zh-TW".into(),
-            theme: Theme::Dark,
+            theme: Theme::System,
             language: Language::ZhTW,
             auto_update: true,
             update_channel: UpdateChannel::Release,
