@@ -120,7 +120,9 @@ export function App() {
         .then((info) => {
           if (info) setPendingUpdate(info);
         })
-        .catch(() => {});
+        .catch((e) => {
+          commands.logFrontendError("warn", "App", `update check failed: ${e}`);
+        });
     }, 1500);
 
     return () => {
