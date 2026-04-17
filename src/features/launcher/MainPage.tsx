@@ -54,9 +54,9 @@ export function MainPage() {
   const [beansMenuOpen, setBeansMenuOpen] = useState(false);
   const beansRef = useRef<HTMLSpanElement>(null);
 
-  // Redirect to login if session is cleared (e.g. expired server-side)
+  // Redirect to login if all sessions are cleared (e.g. expired server-side)
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && useAuthStore.getState().sessions.size === 0) {
       setPage("login");
     }
   }, [isAuthenticated, setPage]);
