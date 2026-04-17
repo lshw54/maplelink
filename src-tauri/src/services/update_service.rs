@@ -314,21 +314,83 @@ pub async fn download_update_with_progress(
     }
 
     let total = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-    let mut buf = Vec::with_capacity(total as usize);
-    let mut stream = response.bytes_stream();
-    let start = std::time::Instant::now();
-    let mut last_emit = std::time::Instant::now();
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| UpdateError::DownloadFailed {
-            reason: format!("stream error: {e}"),
-        })?;
-        downloaded += chunk.len() as u64;
-        buf.extend_from_slice(&chunk);
+    // Try streaming download first for progress reporting.
+    // Some proxy mirrors return responses that fail during streaming
+    // (chunked encoding issues, gzip decode errors). If streaming fails,
+    // fall back to a simple non-streaming download.
+    let buf = {
+        let mut downloaded: u64 = 0;
+        let mut buf = Vec::with_capacity(total as usize);
+        let mut stream = response.bytes_stream();
+        let start = std::time::Instant::now();
+        let mut last_emit = std::time::Instant::now();
+        let mut stream_failed = false;
 
-        // Emit progress at most every 200ms to avoid flooding
-        if last_emit.elapsed().as_millis() >= 200 {
+        while let Some(chunk_result) = stream.next().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    downloaded += chunk.len() as u64;
+                    buf.extend_from_slice(&chunk);
+
+                    if last_emit.elapsed().as_millis() >= 200 {
+                        let elapsed = start.elapsed().as_secs_f64().max(0.001);
+                        let speed = (downloaded as f64 / elapsed) as u64;
+                        let _ = app_handle.emit(
+                            "update-download-progress",
+                            serde_json::json!({
+                                "downloaded": downloaded,
+                                "total": total,
+                                "speed": speed,
+                            }),
+                        );
+                        last_emit = std::time::Instant::now();
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("stream error during download: {e}, falling back to non-streaming");
+                    stream_failed = true;
+                    break;
+                }
+            }
+        }
+
+        if stream_failed {
+            // Fallback: re-download without streaming
+            tracing::info!("retrying download without streaming...");
+            let _ = app_handle.emit(
+                "update-download-progress",
+                serde_json::json!({ "downloaded": 0u64, "total": total, "speed": 0u64 }),
+            );
+
+            let fallback_resp = client
+                .get(download_url)
+                .header("User-Agent", "MapleLink-Updater")
+                .timeout(std::time::Duration::from_secs(300))
+                .send()
+                .await
+                .map_err(|e| UpdateError::DownloadFailed {
+                    reason: format!("fallback network error: {e}"),
+                })?;
+
+            let bytes = fallback_resp.bytes().await.map_err(|e| {
+                UpdateError::DownloadFailed {
+                    reason: format!("fallback read error: {e}"),
+                }
+            })?;
+
+            let _ = app_handle.emit(
+                "update-download-progress",
+                serde_json::json!({
+                    "downloaded": bytes.len() as u64,
+                    "total": bytes.len() as u64,
+                    "speed": 0u64,
+                }),
+            );
+
+            bytes.to_vec()
+        } else {
+            // Final progress event
             let elapsed = start.elapsed().as_secs_f64().max(0.001);
             let speed = (downloaded as f64 / elapsed) as u64;
             let _ = app_handle.emit(
@@ -339,27 +401,15 @@ pub async fn download_update_with_progress(
                     "speed": speed,
                 }),
             );
-            last_emit = std::time::Instant::now();
+            buf
         }
-    }
-
-    // Final progress event
-    let elapsed = start.elapsed().as_secs_f64().max(0.001);
-    let speed = (downloaded as f64 / elapsed) as u64;
-    let _ = app_handle.emit(
-        "update-download-progress",
-        serde_json::json!({
-            "downloaded": downloaded,
-            "total": total,
-            "speed": speed,
-        }),
-    );
+    };
 
     if buf.is_empty() {
         return Err(UpdateError::CorruptDownload);
     }
 
-    tracing::info!("downloaded {} bytes in {:.1}s", buf.len(), elapsed);
+    tracing::info!("downloaded {} bytes", buf.len());
     Ok(buf)
 }
 
