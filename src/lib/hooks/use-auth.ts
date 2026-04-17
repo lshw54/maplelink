@@ -76,8 +76,8 @@ export function useLogin() {
         /* accounts fetch failure is non-critical */
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      // Clear addingSession flag and navigate to main
-      useUiStore.getState().addingSession = false;
+      // Clear addingSession flag, reset login view, and navigate to main
+      useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
     },
   });
@@ -132,8 +132,8 @@ export function useTotpVerify() {
       const accounts = await commands.getGameAccounts(session.sessionId);
       useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      // Navigate to main
-      useUiStore.getState().addingSession = false;
+      // Reset login view, clear addingSession, navigate to main
+      useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
     },
   });

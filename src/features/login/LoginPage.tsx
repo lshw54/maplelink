@@ -57,7 +57,7 @@ export function LoginPage() {
         /* non-critical */
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      useUiStore.getState().addingSession = false;
+      useUiStore.setState({ addingSession: false, loginView: "normal" });
       setPage("main");
     });
 
