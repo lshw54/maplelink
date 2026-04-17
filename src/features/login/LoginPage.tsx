@@ -22,7 +22,12 @@ export function LoginPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const queryClient = useQueryClient();
-  const [view, setView] = useState<LoginView>("normal");
+  const persistedView = useUiStore((s) => s.loginView);
+  const [view, setViewLocal] = useState<LoginView>((persistedView as LoginView) || "normal");
+  const setView = (v: LoginView) => {
+    setViewLocal(v);
+    useUiStore.setState({ loginView: v });
+  };
   const [advanceCheckUrl, setAdvanceCheckUrl] = useState<string | undefined>();
   const [appVersion, setAppVersion] = useState("...");
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);

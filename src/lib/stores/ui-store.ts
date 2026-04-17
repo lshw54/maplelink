@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
 
-export type Page = "login" | "main" | "toolbox";
+export type Page = "login" | "main" | "toolbox" | "qr-viewer";
 export type ThemeMode = "system" | "dark" | "light";
 export type Language = "en-US" | "zh-TW" | "zh-CN";
 
@@ -15,6 +15,13 @@ export interface UiState {
   gameRunning: boolean;
   /** When true, LoginPage won't auto-redirect to main even if authenticated. */
   addingSession: boolean;
+  /** QR image data URL for the QR viewer page. */
+  qrViewerImage: string | null;
+  /** Persisted login view so QR form survives page switches. */
+  loginView: string;
+  /** Persisted QR login state so it survives qr-viewer round-trip. */
+  qrSessionId: string | null;
+  qrData: { sessionKey: string; qrImageUrl: string; verificationToken: string } | null;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
@@ -34,6 +41,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   gamePid: null,
   gameRunning: false,
   addingSession: false,
+  qrViewerImage: null,
+  loginView: "normal",
+  qrSessionId: null,
+  qrData: null,
   setPage: (page) => {
     const current = get().currentPage;
     const prev = current !== "toolbox" ? current : get().previousPage;
