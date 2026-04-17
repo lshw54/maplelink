@@ -320,13 +320,24 @@ pub async fn toggle_debug_window(enable: bool, app: tauri::AppHandle) -> Result<
             return Ok(());
         }
 
+        // Use a separate data directory to avoid WebView2 lock conflicts
+        // with the main window (fixes 0x8007139F in elevated processes).
+        let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
+            code: "SYS_PATH_ERROR".to_string(),
+            message: format!("Failed to get app data dir: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+        let debug_data_dir = data_dir.join("debug-webview");
+
         WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App("debug.html".into()))
             .title("Debug Console")
-            .inner_size(520.0, 320.0)
+            .inner_size(1000.0, 520.0)
             .decorations(false)
             .resizable(true)
             .shadow(true)
             .always_on_top(true)
+            .data_directory(debug_data_dir)
             .build()
             .map_err(|e| ErrorDto {
                 code: "SYS_DEBUG_WINDOW_FAILED".to_string(),

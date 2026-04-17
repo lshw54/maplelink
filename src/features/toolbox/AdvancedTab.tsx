@@ -1,14 +1,39 @@
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
+import { commands } from "../../lib/tauri";
 
 export function AdvancedTab() {
   const { t } = useTranslation();
   const config = useConfigStore((s) => s.config);
   const setConfig = useSetConfig();
 
+  // Sync toggle when debug window is closed via its own × button
+  useEffect(() => {
+    const unlisten = listen("debug-window-closed", () => {
+      useConfigStore.getState().updateConfigField("debugLogging", false);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   return (
     <div className="flex flex-col gap-3">
+      {/* Debug console */}
+      <SettingRow label={t("settings.debug_console")}>
+        <Toggle
+          checked={config?.debugLogging ?? false}
+          onChange={() => {
+            if (!config) return;
+            const newVal = !config.debugLogging;
+            setConfig.mutate({ key: "debug_logging", value: String(newVal) });
+            commands.toggleDebugWindow(newVal).catch(() => {});
+          }}
+        />
+      </SettingRow>
       {/* GamePass incognito mode */}
       <SettingRow label={t("settings.gamepass_incognito")}>
         <Toggle

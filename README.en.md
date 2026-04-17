@@ -43,7 +43,8 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 - Auto-update via GitHub Releases with automatic proxy detection and fallback (ghproxy.vip / ghproxy.net / ghfast.top)
 - Download progress bar — speed, percentage, method display with background download and restart-later option
 - Block game auto-update — optionally kill Patcher.exe on launch
-- Accelerator-friendly SSL tolerance (UU, etc.)
+- Debug console — real-time log viewer with sensitive data masking, filter/search/copy
+- Accelerator-friendly — output binary named Beanfun.exe for UU etc., SSL tolerance
 - Locale emulation via [Locale Remulator](https://github.com/InWILL/Locale_Remulator)
 
 ## Getting Started

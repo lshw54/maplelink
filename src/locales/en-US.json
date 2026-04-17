@@ -76,6 +76,7 @@
   "settings.font_size.large": "Large",
   "settings.font_size.extra_large": "XL",
   "settings.gamepass_incognito": "GamePass Incognito Mode",
+  "settings.debug_console": "Debug Console",
   "settings.gamepass_incognito_desc": "Don't save login session in GamePass browser",
   "settings.skip_play_confirm": "Skip Play Window",
   "settings.skip_play_confirm_desc": "Auto-close the game's Play button window and skip relaunch confirmation",

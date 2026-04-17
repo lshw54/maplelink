@@ -76,6 +76,7 @@
   "settings.font_size.large": "大",
   "settings.font_size.extra_large": "特大",
   "settings.gamepass_incognito": "GamePass 无痕模式",
+  "settings.debug_console": "调试控制台",
   "settings.gamepass_incognito_desc": "不保存 GamePass 浏览器的登录状态",
   "settings.skip_play_confirm": "跳过 Play 窗口",
   "settings.skip_play_confirm_desc": "自动关闭游戏的 Play 按钮窗口，并跳过重启确认",
