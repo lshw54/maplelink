@@ -25,11 +25,13 @@
 
 ## 為什麼要做 MapleLink？
 
-原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 使用多年，但底層架構已經老舊 — .NET WinForms，不易維護也難以擴充。MapleLink 是從零開始的全新重寫：
-
-- Rust 後端 — 所有邏輯都在 Rust 中處理，包含 session 管理、OTP、帳號解析
-- WebView2 前端 — React 19 + Tailwind，輕量且快速
-- 單一設定檔 — 一個 `config.ini`，HK / TW 通用
+原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 使用多年，但底層架構已經老舊 — .NET WinForms，不易維護也難以擴充。MapleLink 是從零開始的全新重寫，為長期維護而設計：
+ 
+- **Rust 後端** — 所有業務邏輯都在 Rust 中處理，包含 session 管理、OTP、帳號解析、DLL 注入、程序控制，沒有捷徑。
+- **Tauri v2 + WebView2** — 輕量原生殼層，執行檔體積小、記憶體佔用低、啟動速度快。
+- **React 19 + Tailwind** — 簡潔現代的前端，完整的樣式自由度。
+- **Clean Architecture** — `commands/` → `core/` → `services/` → `models/`，功能增長時仍保持可維護性。
+- **單一設定檔** — 一個 `config.ini`，HK / TW 通用。
 
 ## 功能特色
 

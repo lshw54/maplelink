@@ -25,11 +25,13 @@
 
 ## Why MapleLink?
 
-The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well but was showing its age — .NET WinForms, hard to extend. MapleLink is a ground-up rewrite:
-
-- Rust backend — all logic in Rust. Session management, OTP, account parsing, no shortcuts.
-- WebView2 frontend — React 19 + Tailwind. Lightweight and fast.
-- Single config — one `config.ini` for both HK and TW regions.
+The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well but was showing its age — .NET WinForms, hard to maintain and extend. MapleLink is a ground-up rewrite built for the long run:
+ 
+- **Rust backend** — all business logic lives in Rust. Session management, OTP, account parsing, DLL injection, process control. No shortcuts.
+- **Tauri v2 + WebView2** — lightweight native shell. Small binary, low memory, fast startup.
+- **React 19 + Tailwind** — clean, modern frontend with full styling freedom.
+- **Clean Architecture** — `commands/` → `core/` → `services/` → `models/`. Structured to stay maintainable as features grow.
+- **Single config** — one `config.ini` for both HK and TW regions.
 
 ## Features
 
