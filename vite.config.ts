@@ -1,12 +1,13 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": resolve(import.meta.dirname, "./src"),
     },
   },
   clearScreen: false,
@@ -17,12 +18,12 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_"],
   build: {
     target: "esnext",
-    minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
+    minify: !process.env.TAURI_DEBUG ? true : false,
     sourcemap: !!process.env.TAURI_DEBUG,
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "index.html"),
-        debug: path.resolve(__dirname, "debug.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        debug: resolve(import.meta.dirname, "debug.html"),
       },
     },
   },
