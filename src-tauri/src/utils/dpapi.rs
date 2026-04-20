@@ -4,7 +4,7 @@
 //! matching the original Beanfun client's ProtectedData.Protect/Unprotect
 //! with `DataProtectionScope.CurrentUser`.
 
-use rand::Rng;
+use rand::RngExt;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Security::Cryptography::{
