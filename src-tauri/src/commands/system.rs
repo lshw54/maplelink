@@ -359,18 +359,31 @@ pub async fn toggle_debug_window(enable: bool, app: tauri::AppHandle) -> Result<
 
 /// Open Beanfun Gash Top-up popup with FULL cookie injection.
 ///
-/// Flow:
-/// 1. Call auth.aspx via reqwest (set server-side session)
-/// 2. Open seed page HIDDEN — establishes .beanfun.com domain context in WebView2
-/// 3. Inject cookies from reqwest jar into WebView2
-/// 4. Navigate to gash page, show window
-/// 5. After page loads, auto-resize window to fit the content area (right pane only)
+/// Open Beanfun Gash Top-up popup with native WebView2 COM cookie seeding.
+///
+/// 3-layer flow (mirrors WPF WebBrowser.xaml.cs):
+///
+/// 1. **Cookie seeding** — Rust reqwest client has session cookies (bfWebToken,
+///    bfUID, ASP.NET_SessionId, etc.) after login. We seed them into WebView2
+///    via native `ICoreWebView2CookieManager` COM API (`CreateCookie` with
+///    `Domain=.beanfun.com` including leading dot). This bypasses wry's
+///    `set_cookie` bug that strips the leading dot.
+///
+/// 2. **NewWindowRequested handler** — Native COM event handler that intercepts
+///    `target="_blank"` / `window.open()` popups and redirects them to navigate
+///    the same WebView2 window. Bypasses wry completely.
+///
+/// 3. **Window lifecycle** — Build window on `about:blank` (hidden) → register
+///    NewWindowRequested handler → seed cookies via native COM → 200ms yield
+///    for cookie manager flush → navigate to `auth.aspx?web_token=xxx` →
+///    on page load → show + focus. Safety timer 5s force-shows if page hangs.
 #[tauri::command]
 pub async fn open_gash_popup(
     session_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
+    use crate::services::cookie_native;
     use reqwest::header;
     use tauri::WebviewWindowBuilder;
 
@@ -391,7 +404,7 @@ pub async fn open_gash_popup(
     };
     drop(config);
 
-    // Step 1: Call auth.aspx to establish server-side session via reqwest
+    // Step 1: Call auth.aspx via reqwest to establish server-side session
     let auth_url = format!("https://{host}/{region_path}/auth.aspx");
     let _ = ss
         .http_client
@@ -400,22 +413,21 @@ pub async fn open_gash_popup(
         .send()
         .await;
 
-    // Step 2: Collect cookies + build gash URL
-    let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
-    let cookies: String = ss
-        .cookie_jar
-        .cookies(&jar_url)
-        .and_then(|h: reqwest::header::HeaderValue| h.to_str().ok().map(|s: &str| s.to_string()))
-        .unwrap_or_default();
-
+    // Build gash URL with web_token
     let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
     let gash_url = format!(
         "https://{host}/{region_path}/auth.aspx?channel=gash&page_and_query=default.aspx%3Fservice_code%3D999999%26service_region%3DT0&web_token={}",
         urlencoding::encode(&token)
     );
 
+    // Collect cookies from reqwest jar for native seeding
+    let seed_cookies = cookie_native::cookies_from_jar(
+        &ss.cookie_jar,
+        &[&format!("https://{host}/"), "https://beanfun.com/"],
+    );
+
     tracing::debug!("gash_url={gash_url}");
-    tracing::debug!("cookies to inject: {cookies}");
+    tracing::debug!("cookies to seed natively: {}", seed_cookies.len());
 
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
@@ -424,10 +436,9 @@ pub async fn open_gash_popup(
         details: None,
     })?;
 
-    // Init script: TSPD bypass + window.open intercept (runs on every page load)
+    // Init script: TSPD bypass only (popup handling is now native COM)
     let init_script = r#"
     (() => {
-        // --- TSPD bypass ---
         Object.defineProperty(navigator, 'webdriver', {get: () => false});
         Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
         Object.defineProperty(navigator, 'languages', {get: () => ['zh-TW','zh','en-US']});
@@ -446,47 +457,23 @@ pub async fn open_gash_popup(
             return _xhr.apply(this, arguments);
         };
 
-        // --- window.open → navigate top-level window ---
-        // WebView2 blocks popup windows. Redirect to top so we stay inside
-        // our managed WebviewWindow and don't break out of iframe context.
-        const _open = window.open;
-        window.open = function(url, target, features) {
-            if (url && url !== '' && url !== 'about:blank') {
-                console.log('[MapleLink] window.open →', url);
-                try { window.top.location.href = url; } catch(e) { window.location.href = url; }
-                return { closed: false, close(){}, focus(){}, location: { href: url } };
-            }
-            return _open.apply(this, arguments);
-        };
-
-        // --- <a target="_blank"> → same top-level navigation ---
-        document.addEventListener('click', function(e) {
-            const a = e.target.closest('a[target="_blank"]');
-            if (a && a.href && !a.href.startsWith('javascript')) {
-                e.preventDefault();
-                try { window.top.location.href = a.href; } catch(e) { window.location.href = a.href; }
-            }
-        }, true);
-
-        console.log('[MapleLink] init_script active');
+        console.log('[MapleLink] gash init_script active (native popup handler)');
     })();
     "#;
 
-    // Step 3: Open seed page HIDDEN — do NOT touch innerHTML, just let it load silently.
-    // This establishes the .beanfun.com domain context so document.cookie works correctly.
-    let seed_url = format!("https://{host}/");
+    // Step 2: Build window on about:blank (HIDDEN)
     let window = WebviewWindowBuilder::new(
         &app,
         label,
-        tauri::WebviewUrl::External(seed_url.parse().unwrap()),
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
     )
     .title("Beanfun 儲值與購點")
-    .inner_size(840.0, 520.0) // initial size — will be auto-adjusted after load
+    .inner_size(840.0, 520.0)
     .min_inner_size(600.0, 400.0)
     .decorations(true)
     .resizable(true)
     .center()
-    .visible(false) // hidden until we navigate to the real gash page
+    .visible(false) // hidden until page loads
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
     .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
@@ -500,40 +487,81 @@ pub async fn open_gash_popup(
         details: None,
     })?;
 
-    // Step 4: Wait for seed page to load, then inject cookies from reqwest jar.
-    // Do NOT call window.show() or eval innerHTML — keep it fully hidden.
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-
-    if !cookies.is_empty() {
-        let inject_js = format!(
-            r#"(function() {{
-                `{cookies}`.split(';').forEach(c => {{
-                    const t = c.trim();
-                    if (t) document.cookie = t + '; path=/; domain=.beanfun.com; SameSite=None; Secure';
-                }});
-                console.log('[MapleLink] cookies injected');
-            }})();"#,
-            cookies = cookies
+    // Step 3: Register native NewWindowRequested handler (COM event)
+    // This intercepts target="_blank" / window.open() at the WebView2 level,
+    // redirecting popups to navigate the same window. Bypasses wry completely.
+    if let Err(e) = cookie_native::register_new_window_handler(&window) {
+        tracing::warn!("NewWindowRequested handler failed: {e}, falling back to JS intercept");
+        // Fallback: inject JS-based window.open intercept
+        let _ = window.eval(
+            r#"
+            const _open = window.open;
+            window.open = function(url, target, features) {
+                if (url && url !== '' && url !== 'about:blank') {
+                    try { window.top.location.href = url; } catch(e) { window.location.href = url; }
+                    return { closed: false, close(){}, focus(){}, location: { href: url } };
+                }
+                return _open.apply(this, arguments);
+            };
+        "#,
         );
-        let _ = window.eval(&inject_js);
     }
 
-    // Step 5: Navigate to gash page (still hidden)
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let _ = window.eval(format!("window.location.href = '{gash_url}';"));
+    // Step 4: Seed cookies via native COM CookieManager
+    // This sets HttpOnly cookies (bfWebToken, ASP.NET_SessionId, etc.) that
+    // document.cookie cannot access. Domain=.beanfun.com with leading dot
+    // ensures subdomain matching (bfweb.hk.beanfun.com, etc.)
+    if let Err(e) = cookie_native::seed_cookies_native(&window, &seed_cookies) {
+        tracing::warn!("Native cookie seeding failed: {e}, falling back to JS injection");
+        // Fallback: navigate to host first, then inject via document.cookie
+        let seed_url = format!("https://{host}/");
+        let _ = window.eval(format!("window.location.href = '{}';", seed_url));
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
-    // Step 6: Wait for gash page to fully render, then:
-    //   a) measure the RIGHT-side content pane (not the sidebar) for width
-    //   b) measure full scrollHeight for height
-    //   c) resize + show
+        let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
+        let cookies: String = ss
+            .cookie_jar
+            .cookies(&jar_url)
+            .and_then(|h: reqwest::header::HeaderValue| {
+                h.to_str().ok().map(|s: &str| s.to_string())
+            })
+            .unwrap_or_default();
+        if !cookies.is_empty() {
+            let inject_js = format!(
+                r#"(function() {{
+                    `{cookies}`.split(';').forEach(c => {{
+                        const t = c.trim();
+                        if (t) document.cookie = t + '; path=/; domain=.beanfun.com; SameSite=None; Secure';
+                    }});
+                }})();"#,
+                cookies = cookies
+            );
+            let _ = window.eval(&inject_js);
+        }
+    }
+
+    // Step 5: Register NavigationCompleted handler BEFORE navigating
+    let nav_rx = cookie_native::on_navigation_completed(&window).ok();
+
+    // Step 6: Navigate to gash auth page (carries seeded cookies)
+    // No flush delay needed — native CookieManager is synchronous.
+    let _ = window.eval(format!("window.location.href = '{}';", gash_url));
+
+    // Step 7: Wait for NavigationCompleted event (or 5s safety timeout), then show
     let win_clone = window.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+        // Wait for page to finish loading via native event, with 5s safety timeout
+        if let Some(rx) = nav_rx {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await;
+        } else {
+            // Fallback if handler registration failed
+            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        }
 
-        // Measure the content area, not the whole page.
-        // The beanfun gash page has a right-side content pane; we want the
-        // sidebar + content pane total width, but using scrollWidth of the
-        // eval() is fire-and-forget in Tauri v2 — use IPC callback instead
+        // Small yield for DOM to settle after NavigationCompleted fires
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Auto-resize based on content
         let resize_js = r#"
         (function() {
             var container =
@@ -554,12 +582,12 @@ pub async fn open_gash_popup(
         "#;
         let _ = win_clone.eval(resize_js);
 
-        // Small delay for resize to complete, then show
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let _ = win_clone.show();
+        let _ = win_clone.set_focus();
     });
 
-    tracing::info!("gash popup: seed(hidden) → {gash_url}");
+    tracing::info!("gash popup: about:blank → native seed → {gash_url}");
     Ok(())
 }
 
@@ -581,14 +609,14 @@ pub async fn resize_gash_popup(
 
 /// Open the member center in a popup WebviewWindow.
 ///
-/// Uses the same shared data_directory + cookie injection flow as gash popup.
+/// Uses the same native COM cookie seeding + NewWindowRequested handler as gash popup.
 #[tauri::command]
 pub async fn open_member_popup(
     session_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
-    use reqwest::cookie::CookieStore;
+    use crate::services::cookie_native;
     use tauri::WebviewWindowBuilder;
 
     let ss = state.require_session(&session_id).await?;
@@ -617,13 +645,11 @@ pub async fn open_member_popup(
         urlencoding::encode(&token)
     );
 
-    // Inject cookies from session's reqwest jar
-    let jar_url: url::Url = format!("https://{host}/").parse().unwrap();
-    let cookies: String = ss
-        .cookie_jar
-        .cookies(&jar_url)
-        .and_then(|h: reqwest::header::HeaderValue| h.to_str().ok().map(|s: &str| s.to_string()))
-        .unwrap_or_default();
+    // Collect cookies for native seeding
+    let seed_cookies = cookie_native::cookies_from_jar(
+        &ss.cookie_jar,
+        &[&format!("https://{host}/"), "https://beanfun.com/"],
+    );
 
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
@@ -632,11 +658,11 @@ pub async fn open_member_popup(
         details: None,
     })?;
 
-    let seed_url = format!("https://{host}/");
+    // Build on about:blank (hidden)
     let win = WebviewWindowBuilder::new(
         &app,
         label,
-        tauri::WebviewUrl::External(seed_url.parse().unwrap()),
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
     )
     .title("Beanfun 會員中心")
     .inner_size(1024.0, 720.0)
@@ -656,27 +682,38 @@ pub async fn open_member_popup(
         details: None,
     })?;
 
-    // Inject cookies then navigate
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    if !cookies.is_empty() {
-        for cookie in cookies.split(';') {
-            let c = cookie.trim();
-            if c.is_empty() {
-                continue;
-            }
-            let js = format!(
-                "document.cookie = '{}; domain=.beanfun.com; path=/; secure';",
-                c.replace('\'', "\\'")
-            );
-            let _ = win.eval(&js);
-        }
+    // Register native NewWindowRequested handler
+    if let Err(e) = cookie_native::register_new_window_handler(&win) {
+        tracing::warn!("member popup: NewWindowRequested handler failed: {e}");
     }
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let _ = win.eval(format!("window.location.href = '{}';", url));
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let _ = win.show();
 
-    tracing::info!("member popup opened: {url}");
+    // Seed cookies via native COM CookieManager
+    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+        tracing::warn!("member popup: native cookie seeding failed: {e}");
+    }
+
+    // Register NavigationCompleted handler BEFORE navigating
+    let nav_rx = cookie_native::on_navigation_completed(&win).ok();
+
+    // Navigate (no flush delay — native CookieManager is synchronous)
+    let _ = win.eval(format!("window.location.href = '{}';", url));
+
+    // Wait for NavigationCompleted event (or 5s safety timeout), then show
+    let win_clone = win.clone();
+    let url_log = url.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(rx) = nav_rx {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await;
+        } else {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let _ = win_clone.show();
+        let _ = win_clone.set_focus();
+        tracing::info!("member popup opened: {url_log}");
+    });
+
     Ok(())
 }
 
