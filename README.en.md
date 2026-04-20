@@ -4,19 +4,18 @@
 
 <h1 align="center">MapleLink</h1>
 
-<p align="center">
-  A next-gen third-party Beanfun launcher
-</p>
+<p align="center">A next-gen third-party Beanfun launcher</p>
 
 <p align="center">
-  <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://github.com/lshw54/maplelink/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lshw54/maplelink/ci.yml?label=CI" alt="CI" /></a>
+  <a href="https://github.com/lshw54/maplelink/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/lshw54/maplelink/build.yml?label=build" alt="Build" /></a>
   <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#architecture">Architecture</a> · <a href="#development">Dev Guide</a> · <a href="README.md">繁體中文</a>
+  <a href="../../releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#development">Dev Guide</a> · <a href="README.md">繁體中文</a>
 </p>
 
 ---
@@ -26,7 +25,7 @@
 ## Why MapleLink?
 
 The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well but was showing its age — .NET WinForms, hard to maintain and extend. MapleLink is a ground-up rewrite built for the long run:
- 
+
 - **Rust backend** — all business logic lives in Rust. Session management, OTP, account parsing, DLL injection, process control. No shortcuts.
 - **Tauri v2 + WebView2** — lightweight native shell. Small binary, low memory, fast startup.
 - **React 19 + Tailwind** — clean, modern frontend with full styling freedom.
@@ -68,7 +67,8 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 | State | [Zustand](https://zustand.docs.pmnd.rs/) + [TanStack Query](https://tanstack.com/query) |
 | Locale | [Locale Remulator](https://github.com/InWILL/Locale_Remulator) |
 
-## Architecture
+<details>
+<summary>Architecture</summary>
 
 The Rust backend owns all business logic, side effects, and data. The React/TypeScript frontend is a pure presentation layer that invokes Tauri commands and renders state.
 
@@ -80,8 +80,7 @@ The Rust backend owns all business logic, side effects, and data. The React/Type
 4. **In-memory-only credentials** — session tokens and passwords never touch disk. Cleared on exit/logout.
 5. **DLL integrity check** — SHA-256 verification before Locale_Remulator injection.
 
-<details>
-<summary>High-Level Architecture</summary>
+### High-Level Architecture
 
 ```mermaid
 graph TB
@@ -121,10 +120,7 @@ graph TB
     Services --> Updater
 ```
 
-</details>
-
-<details>
-<summary>Request Flow</summary>
+### Request Flow
 
 ```mermaid
 sequenceDiagram
@@ -145,8 +141,6 @@ sequenceDiagram
     CMD->>CMD: Map to serializable response
     CMD-->>FE: Ok(SessionDto) | Err(ErrorDto)
 ```
-
-</details>
 
 ### Project Structure
 
@@ -182,6 +176,8 @@ src/
 | Login | 340 × 520 | Login forms |
 | Main | 750 × 520 | Account grid, OTP, launch button |
 | Toolbox | 740 × 480 | Tools, settings, account manager, about |
+
+</details>
 
 ## Development
 

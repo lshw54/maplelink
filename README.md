@@ -4,19 +4,18 @@
 
 <h1 align="center">MapleLink</h1>
 
-<p align="center">
-  新世代 Beanfun 第三方啟動器
-</p>
+<p align="center">新世代 Beanfun 第三方啟動器</p>
 
 <p align="center">
-  <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://github.com/lshw54/maplelink/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/lshw54/maplelink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lshw54/maplelink/ci.yml?label=CI" alt="CI" /></a>
+  <a href="https://github.com/lshw54/maplelink/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/lshw54/maplelink/build.yml?label=build" alt="Build" /></a>
   <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/latest">下載</a> · <a href="#功能特色">功能</a> · <a href="#架構設計">架構</a> · <a href="#開發指南">開發</a> · <a href="README.en.md">English</a>
+  <a href="../../releases/latest">下載</a> · <a href="#功能特色">功能</a> · <a href="#開發指南">開發</a> · <a href="README.en.md">English</a>
 </p>
 
 ---
@@ -26,7 +25,7 @@
 ## 為什麼要做 MapleLink？
 
 原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 使用多年，但底層架構已經老舊 — .NET WinForms，不易維護也難以擴充。MapleLink 是從零開始的全新重寫，為長期維護而設計：
- 
+
 - **Rust 後端** — 所有業務邏輯都在 Rust 中處理，包含 session 管理、OTP、帳號解析、DLL 注入、程序控制，沒有捷徑。
 - **Tauri v2 + WebView2** — 輕量原生殼層，執行檔體積小、記憶體佔用低、啟動速度快。
 - **React 19 + Tailwind** — 簡潔現代的前端，完整的樣式自由度。
@@ -68,7 +67,8 @@
 | 狀態管理 | [Zustand](https://zustand.docs.pmnd.rs/) + [TanStack Query](https://tanstack.com/query) |
 | 區域模擬 | [Locale Remulator](https://github.com/InWILL/Locale_Remulator) |
 
-## 架構設計
+<details>
+<summary>架構設計</summary>
 
 Rust 後端負責所有業務邏輯、副作用與資料管理；React/TypeScript 前端僅負責 UI 呈現與呼叫 Tauri commands。
 
@@ -80,8 +80,7 @@ Rust 後端負責所有業務邏輯、副作用與資料管理；React/TypeScrip
 4. **憑證不落地** — Session token 與密碼只存在記憶體中，登出或關閉程式時立即清除
 5. **DLL 注入前先驗證** — 注入 Locale_Remulator 前會以 SHA-256 比對已知雜湊值，確保檔案未被竄改
 
-<details>
-<summary>整體架構圖</summary>
+### 整體架構圖
 
 ```mermaid
 graph TB
@@ -121,10 +120,7 @@ graph TB
     Services --> Updater
 ```
 
-</details>
-
-<details>
-<summary>請求流程</summary>
+### 請求流程
 
 ```mermaid
 sequenceDiagram
@@ -145,8 +141,6 @@ sequenceDiagram
     指令->>指令: 轉換為可序列化回應
     指令-->>前端: Ok(SessionDto) | Err(ErrorDto)
 ```
-
-</details>
 
 ### 專案結構
 
@@ -182,6 +176,8 @@ src/
 | Login | 340 × 520 | 登入表單 |
 | Main | 750 × 520 | 帳號列表、OTP、啟動按鈕 |
 | Toolbox | 740 × 480 | 工具、設定、帳號管理、關於 |
+
+</details>
 
 ## 開發指南
 
