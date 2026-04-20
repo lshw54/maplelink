@@ -3,7 +3,7 @@
 //! DES ECB decryption matching the original WCDESComp.DecryStrHex:
 //! DES ECB mode, no padding, ASCII key, hex-encoded ciphertext input.
 
-use des::cipher::{BlockDecrypt, KeyInit};
+use des::cipher::{BlockCipherDecrypt, KeyInit};
 use des::Des;
 
 /// Decrypt a hex-encoded DES ECB ciphertext using an 8-byte ASCII key.
@@ -29,7 +29,7 @@ pub fn des_ecb_decrypt_hex(hex_ciphertext: &str, key_ascii: &str) -> Option<Stri
 
     let mut plaintext = ciphertext;
     for chunk in plaintext.chunks_exact_mut(8) {
-        let block = des::cipher::generic_array::GenericArray::from_mut_slice(chunk);
+        let block: &mut des::cipher::Array<u8, _> = chunk.try_into().unwrap();
         cipher.decrypt_block(block);
     }
 
@@ -46,14 +46,14 @@ mod tests {
     fn decrypt_known_value() {
         // Encrypt "HELLO123" with key "TESTKEY1" in DES ECB, no padding
         // We test round-trip by encrypting first
-        use des::cipher::BlockEncrypt;
+        use des::cipher::BlockCipherEncrypt;
 
         let key = b"TESTKEY1";
         let plaintext = b"HELLO123"; // exactly 8 bytes
         let cipher = Des::new_from_slice(key).unwrap();
 
         let mut block = *plaintext;
-        let ga = des::cipher::generic_array::GenericArray::from_mut_slice(&mut block);
+        let ga: &mut des::cipher::Array<u8, _> = (&mut block[..]).try_into().unwrap();
         cipher.encrypt_block(ga);
 
         let hex_ct: String = block.iter().map(|b| format!("{b:02X}")).collect();
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn trims_null_bytes() {
-        use des::cipher::BlockEncrypt;
+        use des::cipher::BlockCipherEncrypt;
 
         let key = b"TESTKEY1";
         // "HI" + 6 null bytes
@@ -87,7 +87,7 @@ mod tests {
         plaintext[1] = b'I';
 
         let cipher = Des::new_from_slice(key).unwrap();
-        let ga = des::cipher::generic_array::GenericArray::from_mut_slice(&mut plaintext);
+        let ga: &mut des::cipher::Array<u8, _> = (&mut plaintext[..]).try_into().unwrap();
         cipher.encrypt_block(ga);
 
         let hex_ct: String = plaintext.iter().map(|b| format!("{b:02X}")).collect();

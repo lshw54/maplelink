@@ -21,8 +21,8 @@ use windows_sys::Win32::Foundation::LocalFree;
 #[cfg(target_os = "windows")]
 pub fn protect(plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let entropy_bytes: Vec<u8> = {
-        let mut rng = rand::thread_rng();
-        (0..16).map(|_| rng.gen::<u8>()).collect()
+        let mut rng = rand::rng();
+        (0..16).map(|_| rng.random::<u8>()).collect()
     };
 
     let ciphertext = protect_with_entropy(plaintext, &entropy_bytes)?;
