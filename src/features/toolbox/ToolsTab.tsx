@@ -33,7 +33,7 @@ function ToolCardItem({ card }: { card: ToolCard }) {
     <button
       onClick={card.onClick}
       disabled={card.disabled || card.loading}
-      className="hover:border-accent/30 flex w-[160px] flex-col items-center gap-2 rounded-[12px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-5 transition-all hover:translate-y-[-2px] active:scale-95 disabled:opacity-50 disabled:hover:translate-y-0"
+      className="flex w-[160px] flex-col items-center gap-2 rounded-[12px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-5 transition-all hover:translate-y-[-2px] hover:border-accent/30 active:scale-95 disabled:opacity-50 disabled:hover:translate-y-0"
     >
       <div
         className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg ${card.iconBg}`}
@@ -100,7 +100,7 @@ export function ToolsTab() {
 
       {/* System tools */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[2px] text-text-faint">
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
           {t("toolbox.tools.section_system")}
         </div>
         <div className="flex flex-wrap gap-3">
@@ -119,7 +119,7 @@ export function ToolsTab() {
 
       {/* Report center */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[2px] text-text-faint">
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
           {t("toolbox.tools.section_report")}
         </div>
         <div className="flex flex-wrap gap-3">
@@ -146,7 +146,7 @@ export function ToolsTab() {
 
       {/* Calculators */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[2px] text-text-faint">
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
           {t("toolbox.tools.section_calc")}
         </div>
         <div className="flex flex-wrap gap-3">

@@ -100,7 +100,7 @@ export function SettingsTab() {
             <button
               key={theme.value}
               onClick={() => handleThemeChange(theme.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] outline-none transition-all active:scale-95 ${
+              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-all outline-none active:scale-95 ${
                 i < THEMES.length - 1 ? "border-r border-[var(--tb-border)]" : ""
               } ${
                 config?.theme === theme.value
@@ -121,7 +121,7 @@ export function SettingsTab() {
             <button
               key={lang.value}
               onClick={() => handleLanguageChange(lang.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] outline-none transition-all active:scale-95 ${
+              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-all outline-none active:scale-95 ${
                 i < LANGUAGES.length - 1 ? "border-r border-[var(--tb-border)]" : ""
               } ${
                 config?.language === lang.value
@@ -147,7 +147,7 @@ export function SettingsTab() {
             <button
               key={ch.value}
               onClick={() => handleUpdateChannelChange(ch.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] outline-none transition-colors ${
+              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-colors outline-none ${
                 i < UPDATE_CHANNELS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
               } ${
                 (config?.updateChannel ?? "release") === ch.value
@@ -184,7 +184,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
       }`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
           checked ? "translate-x-4" : "translate-x-0"
         }`}
       />

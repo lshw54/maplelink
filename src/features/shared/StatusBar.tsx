@@ -84,13 +84,13 @@ function DownloadProgressBar() {
 
   if (isDone) {
     return (
-      <div className="border-accent/20 bg-accent/5 mx-2 mb-0.5 flex items-center justify-between rounded-md border px-2.5 py-1">
+      <div className="mx-2 mb-0.5 flex items-center justify-between rounded-md border border-accent/20 bg-accent/5 px-2.5 py-1">
         <span className="text-[10px] text-accent">
           v{version} {t("update.restart_required")}
         </span>
         <button
           onClick={handleRestart}
-          className="hover:bg-accent/10 rounded px-2 py-0.5 text-[10px] font-semibold text-accent transition-colors"
+          className="rounded px-2 py-0.5 text-[10px] font-semibold text-accent transition-colors hover:bg-accent/10"
         >
           {t("update.restart")}
         </button>
@@ -100,7 +100,7 @@ function DownloadProgressBar() {
 
   if (hasError) {
     return (
-      <div className="border-[var(--danger)]/20 bg-[var(--danger)]/5 mx-2 mb-0.5 rounded-md border px-2.5 py-1">
+      <div className="mx-2 mb-0.5 rounded-md border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-2.5 py-1">
         <span className="text-[10px] text-[var(--danger)]">{error}</span>
       </div>
     );

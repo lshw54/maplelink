@@ -7,7 +7,7 @@ export function ErrorToastContainer() {
   const toasts = useErrorToastStore((s) => s.toasts);
 
   return (
-    <div className="pointer-events-none fixed bottom-8 right-3 z-50 flex flex-col gap-2">
+    <div className="pointer-events-none fixed right-3 bottom-8 z-50 flex flex-col gap-2">
       {toasts.map((toast) => (
         <ErrorToastItem key={toast.id} toast={toast} />
       ))}

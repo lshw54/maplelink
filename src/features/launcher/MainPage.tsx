@@ -264,7 +264,7 @@ export function MainPage() {
         {/* Left: Focus Side (40%) */}
         <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6">
           {/* Ghost icon bg */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
+          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
             <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
           </div>
 
@@ -286,7 +286,7 @@ export function MainPage() {
             <button
               onClick={handlePlayClick}
               disabled={launching}
-              className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold uppercase tracking-[3px] text-white shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(232,162,58,0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
+              className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold tracking-[3px] text-white uppercase shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(232,162,58,0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
             >
               {launching ? "..." : t("launcher.play")}
             </button>
@@ -303,7 +303,7 @@ export function MainPage() {
               <button
                 onClick={() => setShowLogoutConfirm(true)}
                 disabled={logout.isPending}
-                className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[12px] font-semibold uppercase tracking-[1px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
+                className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[12px] font-semibold tracking-[1px] text-text-dim uppercase transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
               >
                 {t("launcher.logout")}
               </button>
@@ -311,7 +311,7 @@ export function MainPage() {
           </div>
 
           {/* Bottom status */}
-          <div className="absolute bottom-0 left-0 right-0">
+          <div className="absolute right-0 bottom-0 left-0">
             <StatusBar />
             <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
               MapleLink v{appVersion}
@@ -335,7 +335,7 @@ export function MainPage() {
                 <span
                   ref={beansRef}
                   onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] transition-all hover:bg-[rgba(232,162,58,0.14)]"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.14)]"
                 >
                   <span className="font-semibold text-accent">
                     {t("launcher.beans")}: <b>{remainPoint}</b>
@@ -510,7 +510,7 @@ function BeansPopupMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute left-0 top-full z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
+      className="absolute top-full left-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
     >
       <button
         onClick={onRefresh}
