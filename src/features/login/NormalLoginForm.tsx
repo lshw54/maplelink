@@ -42,6 +42,14 @@ export function NormalLoginForm({
     const regionChanged = prevRegionRef.current !== region;
     prevRegionRef.current = region;
 
+    // Clear fields when switching region so stale cross-region data is never shown
+    if (regionChanged) {
+      setAccount("");
+      setPassword("");
+      setRemember(true);
+      setSavedAccounts([]);
+    }
+
     let cancelled = false;
     async function loadSaved() {
       try {
@@ -51,7 +59,7 @@ export function NormalLoginForm({
         ]);
         if (cancelled) return;
         setSavedAccounts(accounts);
-        if (!regionChanged && last) {
+        if (last) {
           setAccount(last.account);
           if (last.password) {
             setPassword(last.password);
