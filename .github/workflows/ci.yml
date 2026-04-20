@@ -33,6 +33,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'tsconfig.json'
+              - 'tsconfig.node.json'
               - '.prettierrc'
               - 'eslint.config.js'
 
@@ -89,5 +90,5 @@ jobs:
       - name: prettier --check
         run: npx prettier --check "src/**/*.{ts,tsx,css,json}"
 
-      - name: tsc --noEmit
-        run: npx tsc -b --noEmit
+      - name: tsc --build
+        run: npx tsc -b
