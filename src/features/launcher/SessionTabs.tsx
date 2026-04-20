@@ -16,11 +16,11 @@ export function SessionTabs() {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use refs for drag state so closures always see latest values
-  const dragSrcId = useRef<string | null>(null);
+  // Drag state
+  const dragSrcIdRef = useRef<string | null>(null);
   const dragStartX = useRef(0);
-  const dragOverIdxRef = useRef<number | null>(null);
-  const [, forceRender] = useState(0);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const entries = Array.from(sessions.values());
   if (entries.length === 0) return null;
@@ -65,12 +65,13 @@ export function SessionTabs() {
 
   function handleTabMouseDown(e: React.MouseEvent, id: string) {
     if (editingId || e.button !== 0) return;
-    dragSrcId.current = id;
+    dragSrcIdRef.current = id;
     dragStartX.current = e.clientX;
-    dragOverIdxRef.current = null;
+    setIsDragging(true);
+    if (dragOverIdx !== null) setDragOverIdx(null);
 
     const onMove = (ev: MouseEvent) => {
-      if (!containerRef.current || !dragSrcId.current) return;
+      if (!containerRef.current || !dragSrcIdRef.current) return;
       if (Math.abs(ev.clientX - dragStartX.current) < 5) return;
 
       const tabs = containerRef.current.querySelectorAll<HTMLElement>("[data-tab-id]");
@@ -79,21 +80,18 @@ export function SessionTabs() {
         const rect = tab.getBoundingClientRect();
         if (ev.clientX >= rect.left && ev.clientX <= rect.right) overIdx = idx;
       });
-      if (overIdx !== dragOverIdxRef.current) {
-        dragOverIdxRef.current = overIdx;
-        forceRender((n) => n + 1);
-      }
+      setDragOverIdx(overIdx);
     };
 
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
 
-      const srcId = dragSrcId.current;
-      const targetIdx = dragOverIdxRef.current;
-      dragSrcId.current = null;
-      dragOverIdxRef.current = null;
-      forceRender((n) => n + 1);
+      const srcId = dragSrcIdRef.current;
+      const targetIdx = dragOverIdx;
+      dragSrcIdRef.current = null;
+      setDragOverIdx(null);
+      setIsDragging(false);
 
       if (!srcId || targetIdx === null) return;
 
@@ -121,7 +119,7 @@ export function SessionTabs() {
       {entries.map((entry, idx) => {
         const isActive = entry.sessionId === activeSessionId;
         const isEditing = editingId === entry.sessionId;
-        const isDragOver = dragOverIdxRef.current === idx && dragSrcId.current !== null;
+        const isDragOver = dragOverIdx === idx && isDragging;
 
         return (
           <div
@@ -129,7 +127,7 @@ export function SessionTabs() {
             data-tab-id={entry.sessionId}
             onMouseDown={(e) => handleTabMouseDown(e, entry.sessionId)}
             onClick={() => !isEditing && setActiveSessionId(entry.sessionId)}
-            className={`group flex cursor-pointer select-none items-center gap-1 rounded-t-md px-2 py-1 text-[11px] transition-colors ${
+            className={`group flex cursor-pointer items-center gap-1 rounded-t-md px-2 py-1 text-[11px] transition-colors select-none ${
               isActive
                 ? "bg-[var(--surface)] text-accent"
                 : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
@@ -162,7 +160,7 @@ export function SessionTabs() {
                   e.stopPropagation();
                   startRename(entry);
                 }}
-                className="rounded p-0.5 text-text-faint opacity-0 transition-all hover:text-accent group-hover:opacity-100"
+                className="rounded p-0.5 text-text-faint opacity-0 transition-all group-hover:opacity-100 hover:text-accent"
                 title="Rename"
               >
                 <svg
@@ -184,7 +182,7 @@ export function SessionTabs() {
                 e.stopPropagation();
                 handleClose(entry.sessionId);
               }}
-              className="rounded p-0.5 text-text-faint opacity-0 transition-all hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400 group-hover:opacity-100"
+              className="rounded p-0.5 text-text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400"
               title="Close"
             >
               <svg

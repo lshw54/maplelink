@@ -77,13 +77,8 @@ function SplashScreen() {
 export function App() {
   useThemeEffect();
   const configLoading = useInitialConfigSync();
-  const [ready, setReady] = useState(false);
+  const ready = !configLoading;
   const [pendingUpdate, setPendingUpdate] = useState<UpdateInfoDto | null>(null);
-
-  // Wait for config to load before showing UI
-  useEffect(() => {
-    if (!configLoading) setReady(true);
-  }, [configLoading]);
 
   // Global listener for download progress events (works even when UpdateDialog is closed)
   useEffect(() => {

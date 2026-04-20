@@ -48,13 +48,6 @@ export function VerifyForm({
   const [reLogging, setReLogging] = useState(false);
   const loadedRef = useRef(false);
 
-  // Load page ONCE only
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    loadPage();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   async function loadPage() {
     setLoading(true);
     setError(null);
@@ -76,6 +69,13 @@ export function VerifyForm({
       setLoading(false);
     }
   }
+
+  // Load page ONCE only
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    loadPage();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRefreshCaptcha() {
     if (!checkState) return;
@@ -154,7 +154,7 @@ export function VerifyForm({
     return (
       <div className="flex w-full flex-col items-center gap-4 py-12">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-text-faint border-t-accent" />
-        <span className="text-[12px] uppercase tracking-[2px] text-text-dim">
+        <span className="text-[12px] tracking-[2px] text-text-dim uppercase">
           {t("login.logging_in")}
         </span>
       </div>
@@ -166,7 +166,7 @@ export function VerifyForm({
     return (
       <div className="flex w-full flex-col items-center gap-4">
         <div className="text-lg">🔒</div>
-        <div className="text-[12px] uppercase tracking-[3px] text-text-dim">
+        <div className="text-[12px] tracking-[3px] text-text-dim uppercase">
           {t("login.verify.title")}
         </div>
         <p className="text-center text-[12px] leading-relaxed text-text-dim">
@@ -174,7 +174,7 @@ export function VerifyForm({
         </p>
         <button
           onClick={() => open(webVerifyUrl)}
-          className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold uppercase tracking-[1.5px] text-white shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95"
+          className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95"
         >
           {t("login.verify.open_browser")}
         </button>
@@ -262,7 +262,7 @@ export function VerifyForm({
       <button
         onClick={handleSubmit}
         disabled={submitting || !authInfo.trim() || !captchaCode.trim()}
-        className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold uppercase tracking-[1.5px] text-white shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
+        className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
       >
         {submitting ? t("login.verify.submitting") : t("login.verify.submit")}
       </button>

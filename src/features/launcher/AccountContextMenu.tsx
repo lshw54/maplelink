@@ -53,7 +53,8 @@ function AccountDetailView({
 }) {
   const hasDate = account.createdAt && account.createdAt.length > 0;
   const created = hasDate ? new Date(account.createdAt) : null;
-  const days = created ? Math.floor((Date.now() - created.getTime()) / 86_400_000) : null;
+  const [now] = useState(() => Date.now());
+  const days = created ? Math.floor((now - created.getTime()) / 86_400_000) : null;
   const fmtDate = created
     ? `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}-${String(created.getDate()).padStart(2, "0")}`
     : "—";
@@ -96,7 +97,7 @@ function AccountDetailView({
           { label: t("launcher.context.detail_created"), value: fmtDate },
         ].map((s) => (
           <div key={s.label} className="flex flex-col gap-0.5 bg-[var(--bg)] px-3 py-3">
-            <span className="text-[12px] font-semibold uppercase tracking-[1.5px] text-[var(--text-faint)]">
+            <span className="text-[12px] font-semibold tracking-[1.5px] text-[var(--text-faint)] uppercase">
               {s.label}
             </span>
             <span className="font-mono text-[12px] font-bold text-[var(--text)]">
@@ -110,8 +111,8 @@ function AccountDetailView({
       {days !== null && (
         <div className="relative flex flex-col items-center gap-0.5 py-2">
           <div className="pointer-events-none absolute h-[100px] w-[100px] rounded-full bg-[radial-gradient(circle,rgba(232,162,58,0.35),transparent_70%)] opacity-30" />
-          <div className="relative text-[52px] font-black leading-none text-accent">{days}</div>
-          <div className="text-[12px] font-semibold uppercase tracking-[2px] text-[var(--text-dim)]">
+          <div className="relative text-[52px] leading-none font-black text-accent">{days}</div>
+          <div className="text-[12px] font-semibold tracking-[2px] text-[var(--text-dim)] uppercase">
             {t("launcher.context.detail_days")}
           </div>
           <div className="mt-1.5 font-mono text-[12px] text-[var(--text-faint)]">
@@ -148,7 +149,7 @@ function EditAccountView({
         onKeyDown={(e) => {
           if (e.key === "Enter" && name) onSave(name);
         }}
-        className="rounded-lg border border-[var(--tb-border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text)] outline-none transition-colors focus:border-accent"
+        className="rounded-lg border border-[var(--tb-border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text)] transition-colors outline-none focus:border-accent"
       />
       <div className="flex justify-end gap-2">
         <button
