@@ -19,6 +19,19 @@ const MAX_RETAINED_FILES: usize = 5;
 /// Log file name inside the log directory.
 const LOG_FILE_NAME: &str = "maplelink.log";
 
+/// Custom timer that formats timestamps in local time using chrono.
+///
+/// `tracing-subscriber`'s default timer uses UTC. This timer uses
+/// `chrono::Local::now()` so log timestamps match the user's system clock.
+struct LocalTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        let now = chrono::Local::now();
+        write!(w, "{}", now.format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+    }
+}
+
 /// Initialise the global tracing subscriber with both console and file layers.
 ///
 /// The file layer writes structured log entries (timestamp, level, module,
@@ -50,10 +63,11 @@ pub fn init_logging(log_dir: &Path) -> anyhow::Result<()> {
     // Environment-based filter: honours RUST_LOG, defaults to "info".
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    // File layer — structured format with timestamp, level, module, message.
+    // File layer — structured format with local timestamp, level, module, message.
     let file_layer = fmt::layer()
         .with_writer(non_blocking)
         .with_ansi(false)
+        .with_timer(LocalTimer)
         .with_target(true)
         .with_level(true)
         .with_thread_ids(false)
@@ -62,6 +76,7 @@ pub fn init_logging(log_dir: &Path) -> anyhow::Result<()> {
     // Console layer — coloured output for development.
     let console_layer = fmt::layer()
         .with_writer(std::io::stdout)
+        .with_timer(LocalTimer)
         .with_target(true)
         .with_level(true);
 
@@ -197,12 +212,12 @@ mod tests {
             let writer = BufWriter::new();
             let output = emit_and_capture(level, &message, &writer);
 
-            // 1. Timestamp — tracing_subscriber::fmt default format includes an
-            //    ISO-8601-like timestamp at the start, e.g. "2024-01-15T10:30:00.123456Z".
-            //    We check for a date-like pattern.
+            // 1. Timestamp — tracing_subscriber::fmt with LocalTimer includes a
+            //    local-time timestamp, e.g. "2024-01-15T18:30:00.123456+08:00".
+            //    We check for a date-like pattern with 'T' separator.
             prop_assert!(
-                output.contains('T') && output.contains('Z'),
-                "log output must contain a timestamp (T…Z pattern), got: {}",
+                output.contains('T'),
+                "log output must contain a timestamp (T separator), got: {}",
                 output
             );
 
