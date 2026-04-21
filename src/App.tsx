@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "./lib/i18n";
+import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
 import { useConfig } from "./lib/hooks/use-config";
@@ -122,20 +123,35 @@ export function App() {
     };
   }, []);
 
-  // Check for updates after app is ready — listen for backend event only
-  // (backend already checks on startup and emits "update-available")
+  // Listen for backend update-available event + fallback frontend check.
+  // listen() is async so the backend event may fire before the listener
+  // is registered. The delayed checkUpdate() catches that race.
   useEffect(() => {
-    if (!ready) return;
+    function onUpdate(info: UpdateInfoDto) {
+      setPendingUpdate(info);
+      useUpdateStore.getState().setAvailableUpdate(info);
+    }
 
     const unlisten = listen<UpdateInfoDto>("update-available", (event) => {
-      setPendingUpdate(event.payload);
-      useUpdateStore.getState().setAvailableUpdate(event.payload);
+      onUpdate(event.payload);
     });
 
+    // Fallback: if backend event was missed, check after a short delay
+    const timer = setTimeout(() => {
+      if (useUpdateStore.getState().availableUpdate) return; // already got it
+      commands
+        .checkUpdate()
+        .then((info) => {
+          if (info) onUpdate(info);
+        })
+        .catch(() => {});
+    }, 3000);
+
     return () => {
+      clearTimeout(timer);
       unlisten.then((f) => f());
     };
-  }, [ready]);
+  }, []);
 
   if (!ready) return <SplashScreen />;
 
