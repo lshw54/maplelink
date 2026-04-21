@@ -166,7 +166,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
         {/* Copy & Enlarge buttons */}
         {qrData?.qrImageUrl && status !== "loading" && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={async () => {
@@ -262,6 +262,34 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               </svg>
               {enlarged ? t("login.qr.shrink") : t("login.qr.enlarge")}
             </button>
+            {qrData?.deeplink && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!qrData?.deeplink) return;
+                  await navigator.clipboard.writeText(qrData.deeplink);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                title={t("login.qr.copy_deeplink")}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                {t("login.qr.copy_deeplink")}
+              </button>
+            )}
           </div>
         )}
 

@@ -64,6 +64,7 @@ export interface QrCodeData {
   sessionKey: string;
   qrImageUrl: string;
   verificationToken: string;
+  deeplink: string;
 }
 
 export interface QrPollResult {
