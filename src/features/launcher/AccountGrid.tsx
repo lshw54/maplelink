@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 import { AccountContextMenu } from "./AccountContextMenu";
@@ -22,9 +23,17 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
   const { t } = useTranslation();
   const { data: accounts, isLoading } = useGameAccounts();
   const refreshAccounts = useRefreshAccounts();
+  const queryClient = useQueryClient();
   const [contextMenu, setContextMenu] = useState<ContextState | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const viewMode = useConfigStore((s) => s.config?.accountViewMode ?? "card") as ViewMode;
+
+  // Drag reorder
+  const [dragOrder, setDragOrder] = useState<GameAccountDto[] | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [bumpId, setBumpId] = useState<string | null>(null);
+  const dragState = useRef({ srcIdx: 0, startY: 0, active: false, items: [] as GameAccountDto[] });
+  const displayAccounts = dragOrder ?? accounts ?? [];
 
   function toggleViewMode() {
     const next = viewMode === "card" ? "list" : "card";
@@ -48,6 +57,56 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
     navigator.clipboard.writeText(accountId);
     setCopiedId(accountId);
     setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  function onGripDown(e: React.MouseEvent, idx: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const items = [...(accounts ?? [])];
+    dragState.current = { srcIdx: idx, startY: e.clientY, active: false, items };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragState.current.active) {
+        if (Math.abs(ev.clientY - dragState.current.startY) < 4) return;
+        dragState.current.active = true;
+        setDraggingId(dragState.current.items[dragState.current.srcIdx]?.id ?? null);
+        setDragOrder([...dragState.current.items]);
+      }
+      // Find target index from mouse Y
+      const els = document.querySelectorAll<HTMLElement>("[data-acct-idx]");
+      let target = dragState.current.srcIdx;
+      els.forEach((el, i) => {
+        const r = el.getBoundingClientRect();
+        if (ev.clientY > r.top + r.height / 2) target = i;
+      });
+      target = Math.max(0, Math.min(target, dragState.current.items.length - 1));
+      if (target !== dragState.current.srcIdx) {
+        const arr = dragState.current.items;
+        const displacedId = arr[target]?.id ?? null;
+        const [moved] = arr.splice(dragState.current.srcIdx, 1);
+        if (moved) arr.splice(target, 0, moved);
+        dragState.current.srcIdx = target;
+        setDragOrder([...arr]);
+        // Bump the displaced item
+        setBumpId(displacedId);
+        setTimeout(() => setBumpId(null), 200);
+      }
+    };
+
+    const onUp = async () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (dragState.current.active) {
+        await commands.setAccountOrder(dragState.current.items.map((a) => a.id));
+        await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+      }
+      setDragOrder(null);
+      setDraggingId(null);
+      dragState.current.active = false;
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   }
 
   return (
@@ -105,30 +164,38 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
           <p className="py-4 text-center text-xs text-text-dim">{t("launcher.no_accounts")}</p>
         ) : viewMode === "card" ? (
           <div className="grid grid-cols-2 gap-2">
-            {accounts.map((account) => (
+            {displayAccounts.map((account, idx) => (
               <CardItem
                 key={account.id}
                 account={account}
                 isSelected={selectedAccountId === account.id}
                 isCopied={copiedId === account.id}
-                onSelect={() => onSelectAccount(account)}
+                isDragging={draggingId === account.id}
+                isBumped={bumpId === account.id}
+                idx={idx}
+                onSelect={() => !dragState.current.active && onSelectAccount(account)}
                 onContextMenu={(e) => handleContextMenu(e, account.id)}
                 onCopy={(e) => handleCopyAccount(e, account.id)}
+                onGripDown={(e) => onGripDown(e, idx)}
                 copyTitle={t("launcher.context.copy_account")}
               />
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            {accounts.map((account) => (
+            {displayAccounts.map((account, idx) => (
               <ListItem
                 key={account.id}
                 account={account}
                 isSelected={selectedAccountId === account.id}
                 isCopied={copiedId === account.id}
-                onSelect={() => onSelectAccount(account)}
+                isDragging={draggingId === account.id}
+                isBumped={bumpId === account.id}
+                idx={idx}
+                onSelect={() => !dragState.current.active && onSelectAccount(account)}
                 onContextMenu={(e) => handleContextMenu(e, account.id)}
                 onCopy={(e) => handleCopyAccount(e, account.id)}
+                onGripDown={(e) => onGripDown(e, idx)}
                 copyTitle={t("launcher.context.copy_account")}
               />
             ))}
@@ -138,7 +205,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
 
       <AccountContextMenu
         position={contextMenu?.position ?? null}
-        account={accounts?.find((a) => a.id === contextMenu?.accountId) ?? null}
+        account={displayAccounts.find((a) => a.id === contextMenu?.accountId) ?? null}
         onClose={closeContextMenu}
       />
     </div>
@@ -150,25 +217,36 @@ function CardItem({
   account,
   isSelected,
   isCopied,
+  isDragging,
+  isBumped,
+  idx,
   onSelect,
   onContextMenu,
   onCopy,
+  onGripDown,
   copyTitle,
 }: {
   account: GameAccountDto;
   isSelected: boolean;
   isCopied: boolean;
+  isDragging: boolean;
+  isBumped: boolean;
+  idx: number;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onCopy: (e: React.MouseEvent) => void;
+  onGripDown: (e: React.MouseEvent) => void;
   copyTitle: string;
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
   return (
     <button
+      data-acct-idx={idx}
       onClick={onSelect}
       onContextMenu={onContextMenu}
-      className={`group relative flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center backdrop-blur-sm transition-colors duration-150 ${
+      className={`group relative flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center backdrop-blur-sm transition-all duration-150 ${
+        isDragging ? "opacity-50" : ""
+      } ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
           ? "border-accent bg-[rgba(232,162,58,0.05)] shadow-[0_0_20px_rgba(232,162,58,0.15)]"
           : "border-border bg-[var(--surface)] hover:border-[var(--border)] hover:bg-[var(--surface-hover)]"
@@ -180,6 +258,19 @@ function CardItem({
         title={copyTitle}
         position="absolute top-1.5 right-1.5"
       />
+      <span
+        onMouseDown={onGripDown}
+        className="absolute top-1.5 left-1.5 cursor-grab rounded p-0.5 text-text-faint opacity-0 transition-opacity group-hover:opacity-50 hover:text-accent active:cursor-grabbing"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+          <circle cx="3" cy="2" r="1" />
+          <circle cx="7" cy="2" r="1" />
+          <circle cx="3" cy="5" r="1" />
+          <circle cx="7" cy="5" r="1" />
+          <circle cx="3" cy="8" r="1" />
+          <circle cx="7" cy="8" r="1" />
+        </svg>
+      </span>
       <div
         className={`flex h-[38px] w-[38px] items-center justify-center rounded-full border-2 text-sm font-bold transition-colors duration-150 ${
           isSelected
@@ -190,7 +281,7 @@ function CardItem({
         {initial}
       </div>
       <span className="truncate text-xs font-medium text-[var(--text)]">{account.displayName}</span>
-      <span className="truncate font-mono text-[12px] text-text-faint">#{account.sn}</span>
+      <span className="truncate font-mono text-[12px] text-text-faint">{account.id}</span>
     </button>
   );
 }
@@ -200,30 +291,54 @@ function ListItem({
   account,
   isSelected,
   isCopied,
+  isDragging,
+  isBumped,
+  idx,
   onSelect,
   onContextMenu,
   onCopy,
+  onGripDown,
   copyTitle,
 }: {
   account: GameAccountDto;
   isSelected: boolean;
   isCopied: boolean;
+  isDragging: boolean;
+  isBumped: boolean;
+  idx: number;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onCopy: (e: React.MouseEvent) => void;
+  onGripDown: (e: React.MouseEvent) => void;
   copyTitle: string;
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
   return (
     <button
+      data-acct-idx={idx}
       onClick={onSelect}
       onContextMenu={onContextMenu}
-      className={`group flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors duration-150 ${
+      className={`group flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
+        isDragging ? "opacity-50" : ""
+      } ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
           ? "border-accent bg-[rgba(232,162,58,0.05)]"
           : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
       }`}
     >
+      <span
+        onMouseDown={onGripDown}
+        className="shrink-0 cursor-grab rounded p-0.5 text-text-faint opacity-0 transition-opacity group-hover:opacity-50 hover:text-accent active:cursor-grabbing"
+      >
+        <svg width="8" height="10" viewBox="0 0 10 10" fill="currentColor">
+          <circle cx="3" cy="2" r="1" />
+          <circle cx="7" cy="2" r="1" />
+          <circle cx="3" cy="5" r="1" />
+          <circle cx="7" cy="5" r="1" />
+          <circle cx="3" cy="8" r="1" />
+          <circle cx="7" cy="8" r="1" />
+        </svg>
+      </span>
       <div
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.5px] text-xs font-bold ${
           isSelected
@@ -235,7 +350,7 @@ function ListItem({
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs font-medium text-[var(--text)]">{account.displayName}</div>
-        <div className="truncate font-mono text-[11px] text-text-faint">#{account.sn}</div>
+        <div className="truncate font-mono text-[11px] text-text-faint">{account.id}</div>
       </div>
       <CopyIcon isCopied={isCopied} onClick={onCopy} title={copyTitle} position="" />
     </button>
