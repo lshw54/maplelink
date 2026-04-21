@@ -125,22 +125,22 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
   return (
     <div className="flex w-full flex-col items-center">
-      {/* Header — hide when enlarged */}
-      {!enlarged && (
-        <div className="mb-5 flex flex-col items-center">
-          <img
-            src="/app-icon.png"
-            alt="MapleLink"
-            className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
-          />
-          <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
-            {t("login.qr.title")}
-          </div>
+      {/* Header */}
+      <div className={`flex flex-col items-center ${enlarged ? "mb-3" : "mb-5"}`}>
+        <img
+          src="/app-icon.png"
+          alt="MapleLink"
+          className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+        />
+        <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
+          {t("login.qr.title")}
+        </div>
+        {!enlarged && (
           <div className="mt-1.5 text-[12px] tracking-[0.5px] text-text-faint">
             {t("login.qr.instruction")}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] p-5">
         <div
@@ -276,7 +276,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
       </div>
 
-      {!enlarged && status === "expired" && (
+      {status === "expired" && (
         <button
           type="button"
           onClick={handleRefresh}
@@ -286,17 +286,19 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         </button>
       )}
 
-      {!enlarged && (
-        <button
-          type="button"
-          onClick={() => {
-            onBack();
-          }}
-          className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
-        >
-          {t("login.back_normal")}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (enlarged) {
+            commands.resizeWindow("login").catch(() => {});
+            setEnlarged(false);
+          }
+          onBack();
+        }}
+        className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+      >
+        {t("login.back_normal")}
+      </button>
     </div>
   );
 }

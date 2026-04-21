@@ -43,7 +43,7 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
     let (width, height): (f64, f64) = match page.as_str() {
         "login" => (350.0, 580.0),
-        "login-enlarged" => (500.0, 560.0),
+        "login-enlarged" => (540.0, 780.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
         _ => {
