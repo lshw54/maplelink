@@ -103,7 +103,11 @@ pub async fn get_game_accounts(
     // Apply custom sort order
     if !overrides.order.is_empty() {
         dtos.sort_by_key(|d| {
-            overrides.order.iter().position(|id| id == &d.id).unwrap_or(usize::MAX)
+            overrides
+                .order
+                .iter()
+                .position(|id| id == &d.id)
+                .unwrap_or(usize::MAX)
         });
     }
     Ok(dtos)
@@ -181,7 +185,11 @@ pub async fn refresh_accounts(
         .collect();
     if !overrides.order.is_empty() {
         dtos.sort_by_key(|d| {
-            overrides.order.iter().position(|id| id == &d.id).unwrap_or(usize::MAX)
+            overrides
+                .order
+                .iter()
+                .position(|id| id == &d.id)
+                .unwrap_or(usize::MAX)
         });
     }
 
@@ -361,7 +369,9 @@ pub async fn set_display_override(
     if display_name.is_empty() {
         overrides.names.remove(&account_id);
     } else {
-        overrides.names.insert(account_id.clone(), display_name.clone());
+        overrides
+            .names
+            .insert(account_id.clone(), display_name.clone());
     }
     if let Err(e) =
         crate::services::account_storage::save_display_overrides(&state.overrides_path, &overrides)

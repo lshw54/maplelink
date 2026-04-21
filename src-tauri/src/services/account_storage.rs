@@ -237,8 +237,13 @@ pub async fn load_display_overrides(path: &Path) -> DisplayOverrides {
                 let _ = tokio::fs::remove_file(path).await;
                 return o;
             }
-            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&json) {
-                let o = DisplayOverrides { names: map, order: Vec::new() };
+            if let Ok(map) =
+                serde_json::from_str::<std::collections::HashMap<String, String>>(&json)
+            {
+                let o = DisplayOverrides {
+                    names: map,
+                    order: Vec::new(),
+                };
                 let _ = save_display_overrides(path, &o).await;
                 let _ = tokio::fs::remove_file(path).await;
                 return o;
