@@ -169,6 +169,8 @@
   "launcher.play": "PLAY",
   "launcher.launching": "Launching...",
   "launcher.accounts": "Accounts",
+  "launcher.view_list": "List view",
+  "launcher.view_card": "Card view",
   "launcher.no_accounts": "No accounts found",
   "launcher.refresh": "Refresh",
   "launcher.refreshing": "Refreshing...",
