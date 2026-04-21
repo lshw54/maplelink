@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { useAuthStore } from "../../lib/stores/auth-store";
 import { commands } from "../../lib/tauri";
 import { Modal } from "../shared/Modal";
 
@@ -50,7 +49,6 @@ function ToolCardItem({ card }: { card: ToolCard }) {
 export function ToolsTab() {
   const { t } = useTranslation();
   const { weekday, date, isMaintenanceDay } = getMaintenanceInfo();
-  const activeSessionId = useAuthStore((s) => s.activeSessionId);
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -133,13 +131,11 @@ export function ToolsTab() {
               desc: t("toolbox.tools.report_hack_desc"),
               onClick: () =>
                 commands
-                  .openAuthPopup(
-                    activeSessionId ?? "",
+                  .openWebPopup(
                     "https://event.beanfun.com/customerservice/PluginReporting/PlayerReport.aspx",
                     t("toolbox.tools.report_hack"),
                   )
                   .catch(() => {}),
-              disabled: !activeSessionId,
             }}
           />
           <ToolCardItem
