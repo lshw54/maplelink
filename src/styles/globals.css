@@ -107,6 +107,18 @@
     z-index: 1;
   }
 
+  @keyframes dragBump {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.04);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
   @keyframes hbeat {
     0% {
       transform: scale(1);
