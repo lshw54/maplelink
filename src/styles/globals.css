@@ -70,7 +70,7 @@
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    border: 1px solid var(--border);
+    border: none;
     border-radius: var(--radius);
     position: relative;
     transition:

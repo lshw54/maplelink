@@ -363,6 +363,24 @@ pub fn run() {
         })
         // -- Window lifecycle -----------------------------------------------
         .on_window_event(|window, event| {
+            // Remove Windows 11 DWM border on every focus gain.
+            // Must be re-applied because Windows can restore it.
+            #[cfg(target_os = "windows")]
+            if let tauri::WindowEvent::Focused(true) = event {
+                if let Ok(hwnd) = window.hwnd() {
+                    unsafe {
+                        const DWMWA_BORDER_COLOR: u32 = 34;
+                        let color: u32 = 0xFFFFFFFE; // DWMWCP_NONE
+                        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+                            hwnd.0,
+                            DWMWA_BORDER_COLOR,
+                            &color as *const _ as *const _,
+                            std::mem::size_of::<u32>() as u32,
+                        );
+                    }
+                }
+            }
+
             if let tauri::WindowEvent::Destroyed = event {
                 let label = window.label().to_string();
                 let app_handle = window.app_handle().clone();
