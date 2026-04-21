@@ -139,6 +139,7 @@ export function ToolsTab() {
                     t("toolbox.tools.report_hack"),
                   )
                   .catch(() => {}),
+              disabled: !activeSessionId,
             }}
           />
           <ToolCardItem

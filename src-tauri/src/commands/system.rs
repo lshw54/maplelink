@@ -768,7 +768,19 @@ pub async fn open_auth_popup(
         crate::models::session::Region::HK => "bfweb.hk.beanfun.com",
         crate::models::session::Region::TW => "tw.beanfun.com",
     };
+    let region_path = match config.region {
+        crate::models::session::Region::HK => "HK",
+        crate::models::session::Region::TW => "TW",
+    };
     drop(config);
+
+    // Build auth URL with web_token — same pattern as member/gash popups
+    let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
+    let encoded_page = urlencoding::encode(&url);
+    let auth_url = format!(
+        "https://{host}/{region_path}/auth.aspx?channel=auth&page_and_query={encoded_page}&web_token={}",
+        urlencoding::encode(&token)
+    );
 
     let seed_cookies = cookie_native::cookies_from_jar(
         &ss.cookie_jar,
@@ -817,7 +829,7 @@ pub async fn open_auth_popup(
     }
 
     let nav_rx = cookie_native::on_navigation_completed(&win).ok();
-    let _ = win.eval(format!("window.location.href = '{}';", url));
+    let _ = win.eval(format!("window.location.href = '{}';", auth_url));
 
     let win_clone = win.clone();
     tauri::async_runtime::spawn(async move {
@@ -829,7 +841,7 @@ pub async fn open_auth_popup(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let _ = win_clone.show();
         let _ = win_clone.set_focus();
-        tracing::info!("auth popup opened: {url} ({title})");
+        tracing::info!("auth popup opened: {auth_url} ({title})");
     });
 
     Ok(())
