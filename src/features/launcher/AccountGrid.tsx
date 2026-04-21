@@ -22,9 +22,17 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
   const refreshAccounts = useRefreshAccounts();
   const [contextMenu, setContextMenu] = useState<ContextState | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    (accounts?.length ?? 0) > 4 ? "list" : "card",
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem("maplelink-account-view");
+    if (saved === "card" || saved === "list") return saved;
+    return (accounts?.length ?? 0) > 4 ? "list" : "card";
+  });
+
+  function toggleViewMode() {
+    const next = viewMode === "card" ? "list" : "card";
+    setViewMode(next);
+    localStorage.setItem("maplelink-account-view", next);
+  }
 
   const handleContextMenu = useCallback((e: React.MouseEvent, accountId: string) => {
     e.preventDefault();
@@ -47,7 +55,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
           <span className="text-xs font-medium text-text-dim">{t("launcher.accounts")}</span>
           {/* View toggle */}
           <button
-            onClick={() => setViewMode(viewMode === "card" ? "list" : "card")}
+            onClick={toggleViewMode}
             title={viewMode === "card" ? t("launcher.view_list") : t("launcher.view_card")}
             className="rounded p-0.5 text-text-faint transition-colors hover:text-accent"
           >
