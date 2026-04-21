@@ -493,14 +493,9 @@ function BeansPopupMenu({
   }
 
   async function handleExchange() {
-    if (region === "TW") {
-      onClose();
-      return;
-    }
-    // Exchange uses a different URL — for now open in browser
+    // Same URL as original Beanfun client (m.beanfun.com/Deposite)
     try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      await open("https://m.beanfun.com/Deposite");
+      await commands.openWebPopup("https://m.beanfun.com/Deposite", t("launcher.beans_exchange"));
     } catch {
       /* ignore */
     }

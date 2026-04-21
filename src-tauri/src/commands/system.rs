@@ -719,9 +719,10 @@ pub async fn open_member_popup(
 
 /// Open customer service page in system browser.
 ///
-/// Customer service pages don't require auth — just open the URL directly.
+/// Customer service pages don't require auth — open in internal WebView popup.
 #[tauri::command]
 pub async fn open_customer_service(
+    app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     let config = state.config.read().await;
@@ -733,17 +734,10 @@ pub async fn open_customer_service(
             "https://tw.beanfun.com/customerservice/www/main.aspx"
         }
     };
+    let url = url.to_string();
     drop(config);
 
-    open::that(url).map_err(|e| ErrorDto {
-        code: "SYS_OPEN_FAILED".to_string(),
-        message: format!("Failed to open: {e}"),
-        category: ErrorCategory::Process,
-        details: None,
-    })?;
-
-    tracing::info!("customer service opened: {url}");
-    Ok(())
+    open_web_popup(url, "客服中心".to_string(), app, state).await
 }
 
 /// Open a simple WebView popup window for a given URL (no auth needed).
