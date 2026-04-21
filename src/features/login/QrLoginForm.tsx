@@ -19,6 +19,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   );
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [enlarged, setEnlarged] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
@@ -268,11 +269,15 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                 onClick={async () => {
                   if (!qrData?.deeplink) return;
                   await navigator.clipboard.writeText(qrData.deeplink);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 1500);
                 }}
                 title={t("login.qr.copy_deeplink")}
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                  linkCopied
+                    ? "text-green-400"
+                    : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-accent"
+                }`}
               >
                 <svg
                   width="14"
@@ -287,7 +292,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
-                {t("login.qr.copy_deeplink")}
+                {linkCopied ? t("common.copied") : t("login.qr.copy_deeplink")}
               </button>
             )}
           </div>
