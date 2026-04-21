@@ -212,19 +212,50 @@ jobs:
           git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json
           if (git diff --cached --quiet) { exit 0 }
 
+          $repo = "${{ github.repository }}"
+          $parentSha = "${{ github.sha }}"
+
+          # Build tree entries from the modified files using GitHub's blob API
+          $files = @(
+            "src-tauri/Cargo.toml",
+            "src-tauri/tauri.conf.json5",
+            "package.json"
+          )
+
+          $treeEntries = @()
+          foreach ($file in $files) {
+            $content = Get-Content $file -Raw
+            # Create a blob via GitHub API
+            $blobBody = @{ content = $content; encoding = "utf-8" } | ConvertTo-Json -Compress
+            $blob = $blobBody | gh api repos/$repo/git/blobs --method POST --input - | ConvertFrom-Json
+            $treeEntries += @{
+              path = $file
+              mode = "100644"
+              type = "blob"
+              sha  = $blob.sha
+            }
+          }
+
+          # Create a new tree based on the parent commit's tree
+          $parentCommit = gh api repos/$repo/git/commits/$parentSha | ConvertFrom-Json
+          $baseTreeSha = $parentCommit.tree.sha
+
+          $treeBody = @{
+            base_tree = $baseTreeSha
+            tree = $treeEntries
+          } | ConvertTo-Json -Compress -Depth 4
+          $tree = $treeBody | gh api repos/$repo/git/trees --method POST --input - | ConvertFrom-Json
+          Write-Host "Created tree: $($tree.sha)"
+
           # Create a verified commit via GitHub API (signed by GitHub)
-          $treeSha = git write-tree
-          $parentSha = git rev-parse HEAD
-          $body = @{
+          $commitBody = @{
             message = "chore: bump version to ${{ steps.version.outputs.version }}"
-            tree = $treeSha
+            tree    = $tree.sha
             parents = @($parentSha)
           } | ConvertTo-Json -Compress
-
-          $response = $body | gh api repos/${{ github.repository }}/git/commits --method POST --input - | ConvertFrom-Json
-          $newCommitSha = $response.sha
-          Write-Host "Created verified commit: $newCommitSha"
+          $commit = $commitBody | gh api repos/$repo/git/commits --method POST --input - | ConvertFrom-Json
+          Write-Host "Created verified commit: $($commit.sha)"
 
           # Update the branch ref to point to the new verified commit
-          $refBody = @{ sha = $newCommitSha; force = $false } | ConvertTo-Json -Compress
-          $refBody | gh api repos/${{ github.repository }}/git/refs/heads/main --method PATCH --input -
+          $refBody = @{ sha = $commit.sha; force = $false } | ConvertTo-Json -Compress
+          $refBody | gh api repos/$repo/git/refs/heads/main --method PATCH --input -
