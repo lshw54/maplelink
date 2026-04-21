@@ -493,9 +493,12 @@ function BeansPopupMenu({
   }
 
   async function handleExchange() {
-    // Same URL as original Beanfun client (m.beanfun.com/Deposite)
     try {
-      await commands.openWebPopup("https://m.beanfun.com/Deposite", t("launcher.beans_exchange"));
+      await commands.openAuthPopup(
+        sessionId,
+        "https://m.beanfun.com/Deposite",
+        t("launcher.beans_exchange"),
+      );
     } catch {
       /* ignore */
     }
