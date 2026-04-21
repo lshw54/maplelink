@@ -150,6 +150,9 @@ function EditAccountView({
       </label>
       <input
         autoFocus
+        name="edit-display-name"
+        autoComplete="off"
+        data-form-type="other"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
@@ -161,6 +164,7 @@ function EditAccountView({
         <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim">
           <input
             type="checkbox"
+            name="sync-to-server"
             checked={syncToServer}
             onChange={(e) => setSyncToServer(e.target.checked)}
             className="h-3.5 w-3.5 accent-accent"
