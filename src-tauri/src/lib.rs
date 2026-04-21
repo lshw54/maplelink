@@ -156,6 +156,7 @@ pub fn run() {
             commands::system::resize_gash_popup,
             commands::system::open_member_popup,
             commands::system::open_customer_service,
+            commands::system::open_auth_popup,
             commands::system::get_web_token,
             commands::system::cleanup_game_cache,
             commands::auth::open_gamepass_login,

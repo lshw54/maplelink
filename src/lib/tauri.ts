@@ -106,6 +106,8 @@ export const commands = {
   openGashPopup: (sessionId: string) => invoke("open_gash_popup", { sessionId }),
   openMemberPopup: (sessionId: string) => invoke("open_member_popup", { sessionId }),
   openCustomerService: () => invoke("open_customer_service"),
+  openAuthPopup: (sessionId: string, url: string, title: string) =>
+    invoke("open_auth_popup", { sessionId, url, title }),
   pingSession: (sessionId: string) => invoke<boolean>("ping_session", { sessionId }),
   getRemainPoint: (sessionId: string) => invoke<number>("get_remain_point", { sessionId }),
 
