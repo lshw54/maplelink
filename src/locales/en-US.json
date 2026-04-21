@@ -173,6 +173,7 @@
   "launcher.otp": "One-Time Password",
   "launcher.otp_placeholder": "Select an account to get OTP",
   "launcher.get_otp": "Get OTP",
+  "launcher.otp_error": "Failed to retrieve OTP",
   "launcher.fetching_otp": "Fetching...",
   "launcher.auto_input": "Auto Input",
   "launcher.game_info": "MapleStory",
