@@ -129,7 +129,13 @@ export function ToolsTab() {
               iconBg: "bg-[rgba(234,179,8,0.1)]",
               name: t("toolbox.tools.report_hack"),
               desc: t("toolbox.tools.report_hack_desc"),
-              disabled: true,
+              onClick: () =>
+                commands
+                  .openWebPopup(
+                    "https://event.beanfun.com/customerservice/PluginReporting/PlayerReport.aspx",
+                    t("toolbox.tools.report_hack"),
+                  )
+                  .catch(() => {}),
             }}
           />
           <ToolCardItem
@@ -138,7 +144,13 @@ export function ToolsTab() {
               iconBg: "bg-[rgba(168,85,247,0.1)]",
               name: t("toolbox.tools.report_team"),
               desc: t("toolbox.tools.report_team_desc"),
-              disabled: true,
+              onClick: () =>
+                commands
+                  .openWebPopup(
+                    "https://event.beanfun.com/MapleStory/eventad/EventAD.aspx?EventADID=3453",
+                    t("toolbox.tools.report_team"),
+                  )
+                  .catch(() => {}),
             }}
           />
         </div>
@@ -156,7 +168,13 @@ export function ToolsTab() {
               iconBg: "bg-[rgba(234,179,8,0.1)]",
               name: t("toolbox.tools.starforce"),
               desc: t("toolbox.tools.starforce_desc"),
-              disabled: true,
+              onClick: () =>
+                commands
+                  .openWebPopup(
+                    "https://brendonmay.github.io/starforceCalculator/",
+                    t("toolbox.tools.starforce"),
+                  )
+                  .catch(() => {}),
             }}
           />
           <ToolCardItem
@@ -165,7 +183,13 @@ export function ToolsTab() {
               iconBg: "bg-[rgba(59,130,246,0.1)]",
               name: t("toolbox.tools.core_calc"),
               desc: t("toolbox.tools.core_calc_desc"),
-              disabled: true,
+              onClick: () =>
+                commands
+                  .openWebPopup(
+                    "https://brendonmay.github.io/hexaCalculator/",
+                    t("toolbox.tools.core_calc"),
+                  )
+                  .catch(() => {}),
             }}
           />
         </div>
