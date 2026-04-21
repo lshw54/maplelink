@@ -279,6 +279,9 @@ pub fn run() {
             if update_service::should_check_on_startup(auto_update_enabled) {
                 let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    // Small delay to ensure frontend listener is registered
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
                     let version = update_service::current_version();
                     let include_prerelease =
                         update_channel == models::config::UpdateChannel::PreRelease;
