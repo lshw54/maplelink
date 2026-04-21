@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { open } from "@tauri-apps/plugin-shell";
 import { commands } from "../../lib/tauri";
@@ -212,6 +212,20 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   const [modalView, setModalView] = useState<ModalView | null>(null);
   const [editError, setEditError] = useState(false);
   const modalViewRef = useRef<ModalView | null>(null);
+  const [clampedPos, setClampedPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Clamp menu position to stay within window bounds after render
+  useLayoutEffect(() => {
+    if (!position || !menuRef.current) {
+      setClampedPos(null);
+      return;
+    }
+    const rect = menuRef.current.getBoundingClientRect();
+    const pad = 8;
+    const x = Math.min(position.x, window.innerWidth - rect.width - pad);
+    const y = Math.min(position.y, window.innerHeight - rect.height - pad);
+    setClampedPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
+  }, [position]);
 
   // Keep ref in sync
   useEffect(() => {
@@ -361,7 +375,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
           ref={menuRef}
           role="menu"
           className="fixed z-50 min-w-[170px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-          style={{ left: position.x, top: position.y }}
+          style={clampedPos ? { left: clampedPos.x, top: clampedPos.y } : { left: -9999, top: -9999 }}
         >
           <MenuItem icon="📋" onClick={handleCopyAccount}>
             {t("launcher.context.copy_account")}
