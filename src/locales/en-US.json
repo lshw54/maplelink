@@ -1,6 +1,7 @@
 {
   "app.name": "MapleLink",
   "app.loading": "Loading...",
+  "app.update_banner": "v{{version}} available — click to update",
 
   "login.title": "Sign In",
   "login.tabs.normal": "Login",
@@ -34,6 +35,7 @@
   "login.totp.title": "Two-Step Verification",
   "login.totp.code": "Verification Code",
   "login.totp.submit": "Verify",
+  "login.totp.auto_submit": "Auto-verify when complete",
   "login.totp.verifying": "Verifying...",
 
   "login.verify.title": "Security Verification",

@@ -1,6 +1,7 @@
 {
   "app.name": "MapleLink",
   "app.loading": "載入中...",
+  "app.update_banner": "v{{version}} 可用 — 點擊更新",
 
   "login.title": "登入",
   "login.tabs.normal": "帳號登入",
@@ -34,6 +35,7 @@
   "login.totp.title": "兩步驟驗證",
   "login.totp.code": "驗證碼",
   "login.totp.submit": "驗證",
+  "login.totp.auto_submit": "輸入完成自動驗證",
   "login.totp.verifying": "驗證中...",
 
   "login.verify.title": "安全驗證",

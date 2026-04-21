@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { useUpdateStore } from "../../lib/stores/update-store";
 import { UpdateDialog } from "../shared/UpdateDialog";
 import type { UpdateInfoDto } from "../../lib/types";
 
@@ -10,6 +11,10 @@ export function AboutTab() {
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateInfoDto | null | undefined>(undefined);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const cachedUpdate = useUpdateStore((s) => s.availableUpdate);
+
+  // Show cached update from startup check without needing manual re-check
+  const effectiveResult = updateResult !== undefined ? updateResult : cachedUpdate;
 
   useEffect(() => {
     commands
@@ -24,7 +29,10 @@ export function AboutTab() {
     try {
       const info = await commands.checkUpdate();
       setUpdateResult(info);
-      if (info) setShowUpdateDialog(true);
+      if (info) {
+        useUpdateStore.getState().setAvailableUpdate(info);
+        setShowUpdateDialog(true);
+      }
     } catch {
       setUpdateResult(null);
     } finally {
@@ -54,12 +62,16 @@ export function AboutTab() {
       >
         {checking ? t("toolbox.about.checking_update") : t("toolbox.about.check_update")}
       </button>
-      {updateResult !== undefined && !showUpdateDialog && (
-        <span className={`text-[12px] ${updateResult ? "text-accent" : "text-text-faint"}`}>
-          {updateResult
-            ? t("toolbox.about.update_available").replace("{{version}}", updateResult.version)
-            : t("toolbox.about.no_update")}
-        </span>
+      {effectiveResult !== undefined && effectiveResult !== null && !showUpdateDialog && (
+        <button
+          onClick={() => setShowUpdateDialog(true)}
+          className="text-[12px] text-accent transition-opacity hover:underline hover:opacity-80"
+        >
+          {t("toolbox.about.update_available").replace("{{version}}", effectiveResult.version)}
+        </button>
+      )}
+      {updateResult === null && (
+        <span className="text-[12px] text-text-faint">{t("toolbox.about.no_update")}</span>
       )}
 
       <div className="flex flex-col items-center gap-1 text-[12px] text-text-dim">
@@ -74,8 +86,8 @@ export function AboutTab() {
         <span>{t("toolbox.about.license")}</span>
       </div>
 
-      {showUpdateDialog && updateResult && (
-        <UpdateDialog update={updateResult} onClose={() => setShowUpdateDialog(false)} />
+      {showUpdateDialog && effectiveResult && (
+        <UpdateDialog update={effectiveResult} onClose={() => setShowUpdateDialog(false)} />
       )}
     </div>
   );
