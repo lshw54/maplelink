@@ -211,6 +211,8 @@
   "launcher.context.email": "查询认证信箱",
   "launcher.context.website": "官方网站",
   "launcher.context.edit_prompt": "请输入新的显示名称",
+  "launcher.context.edit_sync": "同步至官方服务器",
+  "launcher.context.edit_local_only": "HK 地区：仅限本地修改（官方不支持此功能）",
   "launcher.context.edit_failed": "变更显示名称失败",
   "launcher.context.detail_sn": "账号 SN",
   "launcher.context.detail_name": "账号名称",

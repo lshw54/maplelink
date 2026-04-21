@@ -217,6 +217,8 @@
   "launcher.context.email": "查詢認證信箱",
   "launcher.context.website": "官方網站",
   "launcher.context.edit_prompt": "請輸入新的顯示名稱",
+  "launcher.context.edit_sync": "同步至官方伺服器",
+  "launcher.context.edit_local_only": "HK 地區：僅限本地修改（官方不支援此功能）",
   "launcher.context.edit_failed": "變更顯示名稱失敗",
   "launcher.context.detail_sn": "帳號 SN",
   "launcher.context.detail_name": "帳號名稱",

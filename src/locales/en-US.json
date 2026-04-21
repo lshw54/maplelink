@@ -211,6 +211,8 @@
   "launcher.context.email": "Check Auth Email",
   "launcher.context.website": "Official Website",
   "launcher.context.edit_prompt": "Enter new display name",
+  "launcher.context.edit_sync": "Sync to official server",
+  "launcher.context.edit_local_only": "HK region: local change only (server API not supported)",
   "launcher.context.edit_failed": "Failed to change display name",
   "launcher.context.detail_sn": "Account SN",
   "launcher.context.detail_name": "Display Name",

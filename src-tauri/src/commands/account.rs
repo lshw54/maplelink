@@ -89,7 +89,23 @@ pub async fn get_game_accounts(
     }
 
     let accounts = ss.game_accounts.read().await;
-    let dtos = accounts.iter().map(GameAccountDto::from).collect();
+    let overrides = state.display_overrides.read().await;
+    let mut dtos: Vec<GameAccountDto> = accounts
+        .iter()
+        .map(|a| {
+            let mut dto = GameAccountDto::from(a);
+            if let Some(name) = overrides.names.get(&dto.id) {
+                dto.display_name = name.clone();
+            }
+            dto
+        })
+        .collect();
+    // Apply custom sort order
+    if !overrides.order.is_empty() {
+        dtos.sort_by_key(|d| {
+            overrides.order.iter().position(|id| id == &d.id).unwrap_or(usize::MAX)
+        });
+    }
     Ok(dtos)
 }
 
@@ -152,7 +168,22 @@ pub async fn refresh_accounts(
         .await
         .map_err(login_err_to_dto)?;
 
-    let dtos: Vec<GameAccountDto> = accounts.iter().map(GameAccountDto::from).collect();
+    let overrides = state.display_overrides.read().await;
+    let mut dtos: Vec<GameAccountDto> = accounts
+        .iter()
+        .map(|a| {
+            let mut dto = GameAccountDto::from(a);
+            if let Some(name) = overrides.names.get(&dto.id) {
+                dto.display_name = name.clone();
+            }
+            dto
+        })
+        .collect();
+    if !overrides.order.is_empty() {
+        dtos.sort_by_key(|d| {
+            overrides.order.iter().position(|id| id == &d.id).unwrap_or(usize::MAX)
+        });
+    }
 
     drop(session_guard);
     *ss.game_accounts.write().await = accounts;
@@ -295,12 +326,18 @@ pub async fn change_account_display_name(
     let session_guard = ss.session.read().await;
     let _session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
+    let region = state.config.read().await.region.clone();
     let game_code = format!("{}_{}", DEFAULT_SERVICE_CODE, DEFAULT_SERVICE_REGION);
 
-    let success =
-        beanfun_service::change_display_name(&ss.http_client, &game_code, &account_id, &new_name)
-            .await
-            .map_err(login_err_to_dto)?;
+    let success = beanfun_service::change_display_name(
+        &ss.http_client,
+        &region,
+        &game_code,
+        &account_id,
+        &new_name,
+    )
+    .await
+    .map_err(login_err_to_dto)?;
 
     if success {
         tracing::info!(account_id = %account_id, new_name = %new_name, "display name changed");
@@ -309,6 +346,58 @@ pub async fn change_account_display_name(
     }
 
     Ok(success)
+}
+
+/// Save a local display name override (persisted to display_overrides.json).
+///
+/// Used when the user renames an account locally (HK region, or TW without sync).
+#[tauri::command]
+pub async fn set_display_override(
+    account_id: String,
+    display_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    let mut overrides = state.display_overrides.write().await;
+    if display_name.is_empty() {
+        overrides.names.remove(&account_id);
+    } else {
+        overrides.names.insert(account_id.clone(), display_name.clone());
+    }
+    if let Err(e) =
+        crate::services::account_storage::save_display_overrides(&state.overrides_path, &overrides)
+            .await
+    {
+        tracing::warn!("failed to save display overrides: {e}");
+    }
+    tracing::info!("display override saved: {account_id} = {display_name}");
+    Ok(())
+}
+
+/// Save custom account sort order (persisted to display_overrides).
+#[tauri::command]
+pub async fn set_account_order(
+    order: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    let mut overrides = state.display_overrides.write().await;
+    overrides.order = order;
+    if let Err(e) =
+        crate::services::account_storage::save_display_overrides(&state.overrides_path, &overrides)
+            .await
+    {
+        tracing::warn!("failed to save display overrides: {e}");
+    }
+    tracing::info!("account order saved ({} entries)", overrides.order.len());
+    Ok(())
+}
+
+/// Get all local display name overrides.
+#[tauri::command]
+pub async fn get_display_overrides(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, String>, ErrorDto> {
+    let overrides = state.display_overrides.read().await;
+    Ok(overrides.names.clone())
 }
 
 /// Retrieve the authenticated user's email address (context menu action).

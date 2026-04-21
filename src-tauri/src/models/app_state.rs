@@ -25,6 +25,10 @@ pub struct AppState {
     pub saved_accounts: RwLock<Vec<SavedAccount>>,
     /// Path to the `accounts.json` file on disk.
     pub accounts_path: PathBuf,
+    /// Path to `display_overrides.dat` for local account customizations.
+    pub overrides_path: PathBuf,
+    /// Local account customizations (display names + sort order).
+    pub display_overrides: RwLock<crate::services::account_storage::DisplayOverrides>,
     /// A shared HTTP client for non-session operations (update checks, etc.)
     pub http_client: reqwest::Client,
 }
