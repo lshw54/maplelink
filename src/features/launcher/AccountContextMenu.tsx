@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { open } from "@tauri-apps/plugin-shell";
 import { commands } from "../../lib/tauri";
@@ -214,17 +214,24 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   const modalViewRef = useRef<ModalView | null>(null);
   const [clampedPos, setClampedPos] = useState<{ x: number; y: number } | null>(null);
 
-  // Clamp menu position to stay within window bounds after render
-  useLayoutEffect(() => {
-    if (!position || !menuRef.current) {
-      setClampedPos(null);
-      return;
-    }
-    const rect = menuRef.current.getBoundingClientRect();
-    const pad = 8;
-    const x = Math.min(position.x, window.innerWidth - rect.width - pad);
-    const y = Math.min(position.y, window.innerHeight - rect.height - pad);
-    setClampedPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
+  // Clamp menu position to stay within window bounds.
+  // Uses rAF to ensure the menu is fully painted before measuring.
+  useEffect(() => {
+    if (!position) return;
+
+    const raf = requestAnimationFrame(() => {
+      const el = menuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const pad = 8;
+      const menuW = rect.width || 170;
+      const menuH = rect.height || 300;
+      const x = Math.min(position.x, window.innerWidth - menuW - pad);
+      const y = Math.min(position.y, window.innerHeight - menuH - pad);
+      setClampedPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
+    });
+
+    return () => cancelAnimationFrame(raf);
   }, [position]);
 
   // Keep ref in sync
