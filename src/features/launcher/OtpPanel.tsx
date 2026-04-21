@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameCredentials } from "../../lib/hooks/use-accounts";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { commands } from "../../lib/tauri";
 import type { GameCredentialsDto } from "../../lib/types";
 
@@ -11,12 +12,39 @@ interface OtpPanelProps {
 }
 
 export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
-  const { t } = useTranslation();
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
   const [copied, setCopied] = useState(false);
   const [autoInput, setAutoInput] = useState(true);
   const [pasting, setPasting] = useState(false);
+  const { t } = useTranslation();
+  const addToast = useErrorToastStore((s) => s.addToast);
+
+  function handleOtpError(error: Error) {
+    const msg = error.message || t("launcher.otp_error");
+    const isSessionGone =
+      msg.includes("Not authenticated") ||
+      msg.includes("expired") ||
+      msg.includes("閒置過久") ||
+      msg.includes("重新登入") ||
+      msg.includes("Invalid credentials");
+
+    if (isSessionGone) {
+      // Session is dead — remove it and redirect to login
+      const sessionId = useAuthStore.getState().activeSessionId;
+      if (sessionId) {
+        commands.logout(sessionId).catch(() => {});
+        useAuthStore.getState().removeSession(sessionId);
+      }
+      addToast({
+        message: t("errors.AUTH_SESSION_EXPIRED"),
+        category: "authentication",
+        critical: true,
+      });
+    } else {
+      addToast({ message: msg, category: "authentication", critical: false });
+    }
+  }
 
   async function handleGetOtp() {
     if (!selectedAccountId) return;
@@ -42,6 +70,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
               setTimeout(() => setCopied(false), 2000);
             }
           },
+          onError: handleOtpError,
         });
       } catch {
         // Error — fall back to regular OTP
@@ -51,6 +80,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             onOtpFetched?.(selectedAccountId, data.otp);
             setCopied(false);
           },
+          onError: handleOtpError,
         });
       } finally {
         setPasting(false);
@@ -63,6 +93,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           onOtpFetched?.(selectedAccountId, data.otp);
           setCopied(false);
         },
+        onError: handleOtpError,
       });
     }
   }

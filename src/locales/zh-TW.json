@@ -179,6 +179,7 @@
   "launcher.otp": "一次性密碼",
   "launcher.otp_placeholder": "選擇帳號以取得 OTP",
   "launcher.get_otp": "取得 OTP",
+  "launcher.otp_error": "取得密碼失敗",
   "launcher.fetching_otp": "取得中...",
   "launcher.auto_input": "自動輸入",
   "launcher.game_info": "MapleStory",
