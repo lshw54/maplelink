@@ -191,12 +191,15 @@ cargo tauri build          # 正式建置
 
 ```bash
 # Rust
-cargo fmt --all            # 格式化
-cargo clippy -- -D warnings  # 靜態分析
+cargo fmt --all --check        # 格式檢查
+cargo clippy --all-targets -- -D warnings  # 靜態分析
+cargo test                     # 單元測試 + 屬性測試
 
 # TypeScript
-npm run lint               # ESLint 檢查
-npm run format             # Prettier 格式化
+npm run lint                   # ESLint 檢查
+npx prettier --check "src/**/*.{ts,tsx,css,json}"  # 格式檢查
+npx tsc -b                    # 型別檢查
+npm run format                 # Prettier 格式化
 
 # Git commit 遵循 Conventional Commits
 # feat: / fix: / refactor: / chore: ...
