@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { commands } from "./lib/tauri";
 import { useTranslation } from "./lib/i18n";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
@@ -123,7 +122,8 @@ export function App() {
     };
   }, []);
 
-  // Check for updates after app is ready
+  // Check for updates after app is ready — listen for backend event only
+  // (backend already checks on startup and emits "update-available")
   useEffect(() => {
     if (!ready) return;
 
@@ -132,23 +132,7 @@ export function App() {
       useUpdateStore.getState().setAvailableUpdate(event.payload);
     });
 
-    // Small delay to ensure UI is rendered before showing update dialog
-    const timer = setTimeout(() => {
-      commands
-        .checkUpdate()
-        .then((info) => {
-          if (info) {
-            setPendingUpdate(info);
-            useUpdateStore.getState().setAvailableUpdate(info);
-          }
-        })
-        .catch((e) => {
-          commands.logFrontendError("warn", "App", `update check failed: ${e}`);
-        });
-    }, 1500);
-
     return () => {
-      clearTimeout(timer);
       unlisten.then((f) => f());
     };
   }, [ready]);
