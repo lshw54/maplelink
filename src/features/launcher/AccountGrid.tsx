@@ -1,6 +1,8 @@
 import { useState, useCallback } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
+import { useConfigStore } from "../../lib/stores/config-store";
+import { commands } from "../../lib/tauri";
 import { AccountContextMenu } from "./AccountContextMenu";
 import type { GameAccountDto } from "../../lib/types";
 
@@ -22,16 +24,16 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
   const refreshAccounts = useRefreshAccounts();
   const [contextMenu, setContextMenu] = useState<ContextState | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem("maplelink-account-view");
-    if (saved === "card" || saved === "list") return saved;
-    return (accounts?.length ?? 0) > 4 ? "list" : "card";
-  });
+  const viewMode = useConfigStore((s) => s.config?.accountViewMode ?? "card") as ViewMode;
 
   function toggleViewMode() {
     const next = viewMode === "card" ? "list" : "card";
-    setViewMode(next);
-    localStorage.setItem("maplelink-account-view", next);
+    // Update local store immediately for instant UI feedback
+    const store = useConfigStore.getState();
+    if (store.config) {
+      useConfigStore.setState({ config: { ...store.config, accountViewMode: next } });
+    }
+    commands.setConfig("accountViewMode", next).catch(() => {});
   }
 
   const handleContextMenu = useCallback((e: React.MouseEvent, accountId: string) => {

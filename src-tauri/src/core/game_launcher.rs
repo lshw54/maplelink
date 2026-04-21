@@ -255,6 +255,7 @@ mod tests {
                         font_size: crate::models::config::FontSize::Medium,
                         traditional_login: true,
                         auto_kill_patcher: true,
+                        account_view_mode: crate::models::config::AccountViewMode::Card,
                     }
                 },
             )

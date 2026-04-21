@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::core::error::{AppError, ConfigError};
 use crate::models::app_state::AppState;
-use crate::models::config::{AppConfig, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{AccountViewMode, AppConfig, FontSize, Language, Theme, UpdateChannel};
 use crate::models::error::ErrorDto;
 use crate::models::session::Region;
 use crate::services::config_service;
@@ -166,6 +166,13 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         }
         "window_height" => {
             config.window_height = parse_optional_u32(value)?;
+        }
+        "accountViewMode" | "account_view_mode" => {
+            config.account_view_mode = match value.to_lowercase().as_str() {
+                "list" => AccountViewMode::List,
+                "card" => AccountViewMode::Card,
+                _ => AccountViewMode::Card,
+            };
         }
         "__reset__" => {
             *config = AppConfig::default();

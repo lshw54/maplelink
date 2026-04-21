@@ -104,6 +104,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 font_size,
                 traditional_login: true,
                 auto_kill_patcher: true,
+                account_view_mode: maplelink_lib::models::config::AccountViewMode::Card,
             }
         },
     )

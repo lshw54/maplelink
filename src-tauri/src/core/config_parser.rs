@@ -4,7 +4,7 @@
 //! Malformed entries fall back to [`AppConfig::default()`] values with logged warnings.
 
 use crate::core::error::ConfigError;
-use crate::models::config::{AppConfig, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{AccountViewMode, AppConfig, FontSize, Language, Theme, UpdateChannel};
 use crate::models::session::Region;
 use std::collections::HashMap;
 
@@ -112,6 +112,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = appearance.get("font_size") {
             config.font_size = parse_font_size(v);
         }
+        if let Some(v) = appearance.get("account_view_mode") {
+            config.account_view_mode = parse_account_view_mode(v);
+        }
     }
 
     // --- [window] ---
@@ -181,6 +184,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "font_size = {}\n",
         font_size_to_str(&config.font_size)
+    ));
+    out.push_str(&format!(
+        "account_view_mode = {}\n",
+        account_view_mode_to_str(&config.account_view_mode)
     ));
     out.push('\n');
 
@@ -339,6 +346,21 @@ fn font_size_to_str(size: &FontSize) -> &'static str {
     }
 }
 
+fn parse_account_view_mode(value: &str) -> AccountViewMode {
+    match value.to_lowercase().as_str() {
+        "list" => AccountViewMode::List,
+        "card" => AccountViewMode::Card,
+        _ => AccountViewMode::Card,
+    }
+}
+
+fn account_view_mode_to_str(mode: &AccountViewMode) -> &'static str {
+    match mode {
+        AccountViewMode::Card => "card",
+        AccountViewMode::List => "list",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -434,6 +456,7 @@ x = not_a_number
             font_size: crate::models::config::FontSize::Large,
             traditional_login: false,
             auto_kill_patcher: false,
+            account_view_mode: crate::models::config::AccountViewMode::List,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

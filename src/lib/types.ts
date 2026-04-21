@@ -44,6 +44,7 @@ export interface AppConfigDto {
   fontSize: "small" | "medium" | "large" | "extra-large";
   traditionalLogin: boolean;
   autoKillPatcher: boolean;
+  accountViewMode: "card" | "list";
 }
 
 export interface ErrorDto {

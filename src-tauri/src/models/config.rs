@@ -34,6 +34,9 @@ pub struct AppConfig {
     /// Auto-kill Patcher.exe when launching the game (default: true).
     #[serde(default = "default_true")]
     pub auto_kill_patcher: bool,
+    /// Account grid view mode (default: card).
+    #[serde(default)]
+    pub account_view_mode: AccountViewMode,
 }
 
 fn default_true() -> bool {
@@ -65,6 +68,7 @@ impl Default for AppConfig {
             font_size: FontSize::Medium,
             traditional_login: true,
             auto_kill_patcher: true,
+            account_view_mode: AccountViewMode::Card,
         }
     }
 }
@@ -105,4 +109,13 @@ pub enum FontSize {
     Medium,
     Large,
     ExtraLarge,
+}
+
+/// Account grid view mode.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AccountViewMode {
+    #[default]
+    Card,
+    List,
 }
