@@ -382,7 +382,9 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
           ref={menuRef}
           role="menu"
           className="fixed z-50 min-w-[170px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-          style={clampedPos ? { left: clampedPos.x, top: clampedPos.y } : { left: -9999, top: -9999 }}
+          style={
+            clampedPos ? { left: clampedPos.x, top: clampedPos.y } : { left: -9999, top: -9999 }
+          }
         >
           <MenuItem icon="📋" onClick={handleCopyAccount}>
             {t("launcher.context.copy_account")}
