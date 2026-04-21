@@ -42,7 +42,7 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" => (350.0, 580.0),
+        "login" => (350.0, 620.0),
         "login-enlarged" => (540.0, 780.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
@@ -768,26 +768,17 @@ pub async fn open_auth_popup(
         crate::models::session::Region::HK => "bfweb.hk.beanfun.com",
         crate::models::session::Region::TW => "tw.beanfun.com",
     };
-    let region_path = match config.region {
-        crate::models::session::Region::HK => "HK",
-        crate::models::session::Region::TW => "TW",
-    };
     drop(config);
 
-    // Build auth URL with web_token — same pattern as member/gash popups
-    let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
-    let encoded_page = urlencoding::encode(&url);
-    let auth_url = format!(
-        "https://{host}/{region_path}/auth.aspx?channel=auth&page_and_query={encoded_page}&web_token={}",
-        urlencoding::encode(&token)
-    );
-
+    // Seed cookies from the session jar — covers all beanfun domains
     let seed_cookies = cookie_native::cookies_from_jar(
         &ss.cookie_jar,
         &[
             &format!("https://{host}/"),
             "https://beanfun.com/",
             "https://event.beanfun.com/",
+            "https://m.beanfun.com/",
+            "https://login.beanfun.com/",
         ],
     );
 
@@ -829,9 +820,11 @@ pub async fn open_auth_popup(
     }
 
     let nav_rx = cookie_native::on_navigation_completed(&win).ok();
-    let _ = win.eval(format!("window.location.href = '{}';", auth_url));
+    let _ = win.eval(format!("window.location.href = '{}';", url));
 
     let win_clone = win.clone();
+    let url_log = url.clone();
+    let title_log = title.clone();
     tauri::async_runtime::spawn(async move {
         if let Some(rx) = nav_rx {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await;
@@ -841,7 +834,7 @@ pub async fn open_auth_popup(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let _ = win_clone.show();
         let _ = win_clone.set_focus();
-        tracing::info!("auth popup opened: {auth_url} ({title})");
+        tracing::info!("auth popup opened: {url_log} ({title_log})");
     });
 
     Ok(())
