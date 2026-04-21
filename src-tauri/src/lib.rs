@@ -156,6 +156,7 @@ pub fn run() {
             commands::system::resize_gash_popup,
             commands::system::open_member_popup,
             commands::system::open_customer_service,
+            commands::system::open_auth_popup,
             commands::system::get_web_token,
             commands::system::cleanup_game_cache,
             commands::auth::open_gamepass_login,
@@ -278,6 +279,9 @@ pub fn run() {
             if update_service::should_check_on_startup(auto_update_enabled) {
                 let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    // Small delay to ensure frontend listener is registered
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
                     let version = update_service::current_version();
                     let include_prerelease =
                         update_channel == models::config::UpdateChannel::PreRelease;
@@ -363,6 +367,24 @@ pub fn run() {
         })
         // -- Window lifecycle -----------------------------------------------
         .on_window_event(|window, event| {
+            // Remove Windows 11 DWM border on every focus gain.
+            // Must be re-applied because Windows can restore it.
+            #[cfg(target_os = "windows")]
+            if let tauri::WindowEvent::Focused(true) = event {
+                if let Ok(hwnd) = window.hwnd() {
+                    unsafe {
+                        const DWMWA_BORDER_COLOR: u32 = 34;
+                        let color: u32 = 0xFFFFFFFE; // DWMWCP_NONE
+                        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+                            hwnd.0,
+                            DWMWA_BORDER_COLOR,
+                            &color as *const _ as *const _,
+                            std::mem::size_of::<u32>() as u32,
+                        );
+                    }
+                }
+            }
+
             if let tauri::WindowEvent::Destroyed = event {
                 let label = window.label().to_string();
                 let app_handle = window.app_handle().clone();

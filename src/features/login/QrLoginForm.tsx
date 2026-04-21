@@ -19,6 +19,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   );
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [enlarged, setEnlarged] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
@@ -125,22 +126,22 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
   return (
     <div className="flex w-full flex-col items-center">
-      {/* Header — hide when enlarged */}
-      {!enlarged && (
-        <div className="mb-5 flex flex-col items-center">
-          <img
-            src="/app-icon.png"
-            alt="MapleLink"
-            className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
-          />
-          <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
-            {t("login.qr.title")}
-          </div>
+      {/* Header */}
+      <div className={`flex flex-col items-center ${enlarged ? "mb-3" : "mb-5"}`}>
+        <img
+          src="/app-icon.png"
+          alt="MapleLink"
+          className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+        />
+        <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
+          {t("login.qr.title")}
+        </div>
+        {!enlarged && (
           <div className="mt-1.5 text-[12px] tracking-[0.5px] text-text-faint">
             {t("login.qr.instruction")}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] p-5">
         <div
@@ -166,7 +167,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
         {/* Copy & Enlarge buttons */}
         {qrData?.qrImageUrl && status !== "loading" && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={async () => {
@@ -262,6 +263,38 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               </svg>
               {enlarged ? t("login.qr.shrink") : t("login.qr.enlarge")}
             </button>
+            {qrData?.deeplink && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!qrData?.deeplink) return;
+                  await navigator.clipboard.writeText(qrData.deeplink);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 1500);
+                }}
+                title={t("login.qr.copy_deeplink")}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                  linkCopied
+                    ? "text-green-400"
+                    : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-accent"
+                }`}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                {linkCopied ? t("common.copied") : t("login.qr.copy_deeplink")}
+              </button>
+            )}
           </div>
         )}
 
@@ -276,7 +309,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
       </div>
 
-      {!enlarged && status === "expired" && (
+      {status === "expired" && (
         <button
           type="button"
           onClick={handleRefresh}
@@ -286,17 +319,19 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         </button>
       )}
 
-      {!enlarged && (
-        <button
-          type="button"
-          onClick={() => {
-            onBack();
-          }}
-          className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
-        >
-          {t("login.back_normal")}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (enlarged) {
+            commands.resizeWindow("login").catch(() => {});
+            setEnlarged(false);
+          }
+          onBack();
+        }}
+        className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+      >
+        {t("login.back_normal")}
+      </button>
     </div>
   );
 }

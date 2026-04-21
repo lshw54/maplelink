@@ -37,6 +37,8 @@ pub struct QrCodeData {
     /// Cached `__RequestVerificationToken` from the login page.
     /// Used for subsequent `CheckLoginStatus` POST requests.
     pub verification_token: String,
+    /// Beanfun app deeplink URL for mobile QR scanning.
+    pub deeplink: String,
 }
 
 /// Polling result for an in-progress QR-code login.
@@ -1307,6 +1309,19 @@ async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
         .as_str()
         .unwrap_or_default();
 
+    let deeplink = init_json["ResultData"]["DeepLink"]
+        .as_str()
+        .or_else(|| init_json["ResultData"]["strUrl"].as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    tracing::debug!(
+        "InitLogin ResultData keys: {:?}",
+        init_json["ResultData"]
+            .as_object()
+            .map(|o| o.keys().collect::<Vec<_>>())
+    );
+
     if qr_image.is_empty() {
         return Err(parse_error_str("no QR image in InitLogin response"));
     }
@@ -1323,6 +1338,7 @@ async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
         session_key: skey,
         qr_image_url,
         verification_token,
+        deeplink,
     })
 }
 

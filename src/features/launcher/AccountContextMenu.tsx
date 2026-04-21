@@ -212,6 +212,27 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   const [modalView, setModalView] = useState<ModalView | null>(null);
   const [editError, setEditError] = useState(false);
   const modalViewRef = useRef<ModalView | null>(null);
+  const [clampedPos, setClampedPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Clamp menu position to stay within window bounds.
+  // Uses rAF to ensure the menu is fully painted before measuring.
+  useEffect(() => {
+    if (!position) return;
+
+    const raf = requestAnimationFrame(() => {
+      const el = menuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const pad = 8;
+      const menuW = rect.width || 170;
+      const menuH = rect.height || 300;
+      const x = Math.min(position.x, window.innerWidth - menuW - pad);
+      const y = Math.min(position.y, window.innerHeight - menuH - pad);
+      setClampedPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [position]);
 
   // Keep ref in sync
   useEffect(() => {
@@ -361,7 +382,9 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
           ref={menuRef}
           role="menu"
           className="fixed z-50 min-w-[170px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-          style={{ left: position.x, top: position.y }}
+          style={
+            clampedPos ? { left: clampedPos.x, top: clampedPos.y } : { left: -9999, top: -9999 }
+          }
         >
           <MenuItem icon="📋" onClick={handleCopyAccount}>
             {t("launcher.context.copy_account")}

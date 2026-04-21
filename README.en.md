@@ -191,12 +191,15 @@ cargo tauri build          # production build
 
 ```bash
 # Rust
-cargo fmt --all            # format
-cargo clippy -- -D warnings  # lint
+cargo fmt --all --check        # format check
+cargo clippy --all-targets -- -D warnings  # lint
+cargo test                     # unit + property tests
 
 # TypeScript
-npm run lint               # ESLint
-npm run format             # Prettier
+npm run lint                   # ESLint
+npx prettier --check "src/**/*.{ts,tsx,css,json}"  # format check
+npx tsc -b                    # type check
+npm run format                 # Prettier format
 
 # Git commits follow Conventional Commits
 # feat: / fix: / refactor: / chore: ...

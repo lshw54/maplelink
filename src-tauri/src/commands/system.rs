@@ -42,8 +42,8 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" => (350.0, 580.0),
-        "login-enlarged" => (500.0, 560.0),
+        "login" => (350.0, 620.0),
+        "login-enlarged" => (540.0, 780.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
         _ => {
@@ -719,9 +719,10 @@ pub async fn open_member_popup(
 
 /// Open customer service page in system browser.
 ///
-/// Customer service pages don't require auth — just open the URL directly.
+/// Customer service pages don't require auth — open in internal WebView popup.
 #[tauri::command]
 pub async fn open_customer_service(
+    app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     let config = state.config.read().await;
@@ -733,16 +734,109 @@ pub async fn open_customer_service(
             "https://tw.beanfun.com/customerservice/www/main.aspx"
         }
     };
+    let url = url.to_string();
     drop(config);
 
-    open::that(url).map_err(|e| ErrorDto {
-        code: "SYS_OPEN_FAILED".to_string(),
-        message: format!("Failed to open: {e}"),
+    open_web_popup(url, "客服中心".to_string(), app, state).await
+}
+
+/// Open an authenticated WebView popup with cookie seeding.
+///
+/// Used for pages that require beanfun login cookies (e.g. report pages).
+/// Reuses the same native COM cookie seeding pattern as member/gash popups.
+#[tauri::command]
+pub async fn open_auth_popup(
+    session_id: String,
+    url: String,
+    title: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<(), ErrorDto> {
+    use crate::services::cookie_native;
+    use tauri::WebviewWindowBuilder;
+
+    let ss = state.require_session(&session_id).await?;
+    let label = "auth-popup";
+
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+
+    let config = state.config.read().await;
+    let host = match config.region {
+        crate::models::session::Region::HK => "bfweb.hk.beanfun.com",
+        crate::models::session::Region::TW => "tw.beanfun.com",
+    };
+    drop(config);
+
+    // Seed cookies from the session jar — covers all beanfun domains
+    let seed_cookies = cookie_native::cookies_from_jar(
+        &ss.cookie_jar,
+        &[
+            &format!("https://{host}/"),
+            "https://beanfun.com/",
+            "https://event.beanfun.com/",
+            "https://m.beanfun.com/",
+            "https://login.beanfun.com/",
+        ],
+    );
+
+    let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get app data dir: {e}"),
         category: ErrorCategory::Process,
         details: None,
     })?;
 
-    tracing::info!("customer service opened: {url}");
+    let win = WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+    )
+    .title(&title)
+    .inner_size(1024.0, 720.0)
+    .min_inner_size(400.0, 300.0)
+    .decorations(true)
+    .resizable(true)
+    .center()
+    .visible(false)
+    .data_directory(data_dir)
+    .user_agent(WEBVIEW_USER_AGENT)
+    .build()
+    .map_err(|e| ErrorDto {
+        code: "SYS_POPUP_FAILED".to_string(),
+        message: format!("Failed to open auth popup: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+
+    if let Err(e) = cookie_native::register_new_window_handler(&win) {
+        tracing::warn!("auth popup: NewWindowRequested handler failed: {e}");
+    }
+
+    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+        tracing::warn!("auth popup: native cookie seeding failed: {e}");
+    }
+
+    let nav_rx = cookie_native::on_navigation_completed(&win).ok();
+    let _ = win.eval(format!("window.location.href = '{}';", url));
+
+    let win_clone = win.clone();
+    let url_log = url.clone();
+    let title_log = title.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(rx) = nav_rx {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await;
+        } else {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let _ = win_clone.show();
+        let _ = win_clone.set_focus();
+        tracing::info!("auth popup opened: {url_log} ({title_log})");
+    });
+
     Ok(())
 }
 

@@ -41,6 +41,7 @@ winreg = "0.56"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Globalization",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Security_Cryptography",
     "Win32_System_Diagnostics_ToolHelp",

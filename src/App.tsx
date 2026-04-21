@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "./lib/i18n";
 import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
@@ -77,8 +78,34 @@ function SplashScreen() {
 export function App() {
   useThemeEffect();
   const configLoading = useInitialConfigSync();
+  const { t } = useTranslation();
   const ready = !configLoading;
   const [pendingUpdate, setPendingUpdate] = useState<UpdateInfoDto | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const availableUpdate = useUpdateStore((s) => s.availableUpdate);
+  // Show banner on all pages when update available and dialog dismissed
+  const showBanner = !pendingUpdate && availableUpdate && !bannerDismissed;
+
+  // Adjust window height when update banner appears or disappears
+  const bannerHeight = 28;
+  useEffect(() => {
+    // Small delay to let the DOM render before measuring
+    const timer = setTimeout(async () => {
+      try {
+        const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        const size = await win.innerSize();
+        const scaleFactor = await win.scaleFactor();
+        const logicalW = size.width / scaleFactor;
+        const logicalH = size.height / scaleFactor;
+        const newH = showBanner ? logicalH + bannerHeight : logicalH - bannerHeight;
+        await win.setSize(new LogicalSize(logicalW, newH));
+      } catch {
+        /* non-critical */
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [showBanner]);
 
   // Global listener for download progress events (works even when UpdateDialog is closed)
   useEffect(() => {
@@ -96,37 +123,68 @@ export function App() {
     };
   }, []);
 
-  // Check for updates after app is ready
+  // Listen for backend update-available event + fallback frontend check.
+  // listen() is async so the backend event may fire before the listener
+  // is registered. The delayed checkUpdate() catches that race.
   useEffect(() => {
-    if (!ready) return;
+    function onUpdate(info: UpdateInfoDto) {
+      setPendingUpdate(info);
+      useUpdateStore.getState().setAvailableUpdate(info);
+    }
 
     const unlisten = listen<UpdateInfoDto>("update-available", (event) => {
-      setPendingUpdate(event.payload);
+      onUpdate(event.payload);
     });
 
-    // Small delay to ensure UI is rendered before showing update dialog
+    // Fallback: if backend event was missed, check after a short delay
     const timer = setTimeout(() => {
+      if (useUpdateStore.getState().availableUpdate) return; // already got it
       commands
         .checkUpdate()
         .then((info) => {
-          if (info) setPendingUpdate(info);
+          if (info) onUpdate(info);
         })
-        .catch((e) => {
-          commands.logFrontendError("warn", "App", `update check failed: ${e}`);
-        });
-    }, 1500);
+        .catch(() => {});
+    }, 3000);
 
     return () => {
       clearTimeout(timer);
       unlisten.then((f) => f());
     };
-  }, [ready]);
+  }, []);
 
   if (!ready) return <SplashScreen />;
 
   return (
     <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
+      {showBanner && (
+        <div className="flex shrink-0 items-center justify-between bg-[rgba(232,162,58,0.12)] px-3 py-1.5 backdrop-blur-sm">
+          <button
+            onClick={() => setPendingUpdate(availableUpdate)}
+            className="flex-1 text-left text-[11px] text-accent transition-opacity hover:opacity-80"
+          >
+            🔔 {t("app.update_banner").replace("{{version}}", availableUpdate.version)}
+          </button>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            className="ml-2 shrink-0 rounded p-0.5 text-text-faint transition-colors hover:text-[var(--text)]"
+            aria-label="Dismiss"
+          >
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
+              <path d="M3 3L9 9M9 3L3 9" />
+            </svg>
+          </button>
+        </div>
+      )}
       <main className="relative flex-1 overflow-hidden">
         <PageRouter />
       </main>

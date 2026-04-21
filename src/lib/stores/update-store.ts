@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { UpdateInfoDto } from "../types";
 
 export type DownloadStatus = "idle" | "downloading" | "done" | "error";
 
@@ -12,7 +13,10 @@ export interface UpdateDownloadState {
   version: string;
   downloadUrl: string;
   isPrerelease: boolean;
+  /** Cached update info from startup check — survives dialog dismiss */
+  availableUpdate: UpdateInfoDto | null;
 
+  setAvailableUpdate: (info: UpdateInfoDto | null) => void;
   startDownload: (
     version: string,
     downloadUrl: string,
@@ -35,7 +39,9 @@ export const useUpdateStore = create<UpdateDownloadState>((set) => ({
   version: "",
   downloadUrl: "",
   isPrerelease: false,
+  availableUpdate: null,
 
+  setAvailableUpdate: (info) => set({ availableUpdate: info }),
   startDownload: (version, downloadUrl, isPrerelease, method) =>
     set({
       status: "downloading",
