@@ -11,6 +11,7 @@ export function TotpForm({ onBack }: TotpFormProps) {
   const { t } = useTranslation();
   const totp = useTotpVerify();
   const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [autoSubmit, setAutoSubmit] = useState(true);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const setRef = useCallback((el: HTMLInputElement | null, idx: number) => {
@@ -23,7 +24,23 @@ export function TotpForm({ onBack }: TotpFormProps) {
     const next = [...digits];
     next[idx] = cleaned[0] ?? "";
     setDigits(next);
-    if (idx < 5) inputRefs.current[idx + 1]?.focus();
+    if (idx < 5) {
+      inputRefs.current[idx + 1]?.focus();
+    } else if (autoSubmit && next.every((d) => d !== "")) {
+      // All 6 digits filled + auto-submit enabled → verify immediately
+      const code = next.join("");
+      const pending = useAuthStore.getState().pendingCredentials;
+      const sessionId = pending?.sessionId ?? "";
+      totp.mutate(
+        { sessionId, code },
+        {
+          onError: () => {
+            setDigits(["", "", "", "", "", ""]);
+            inputRefs.current[0]?.focus();
+          },
+        },
+      );
+    }
   }
 
   function handleKeyDown(idx: number, e: KeyboardEvent<HTMLInputElement>) {
@@ -55,6 +72,21 @@ export function TotpForm({ onBack }: TotpFormProps) {
     setDigits(next);
     const focusIdx = Math.min(text.length, 5);
     inputRefs.current[focusIdx]?.focus();
+
+    if (autoSubmit && next.every((d) => d !== "")) {
+      const code = next.join("");
+      const pending = useAuthStore.getState().pendingCredentials;
+      const sessionId = pending?.sessionId ?? "";
+      totp.mutate(
+        { sessionId, code },
+        {
+          onError: () => {
+            setDigits(["", "", "", "", "", ""]);
+            inputRefs.current[0]?.focus();
+          },
+        },
+      );
+    }
   }
 
   function handleSubmit() {
@@ -112,6 +144,17 @@ export function TotpForm({ onBack }: TotpFormProps) {
       </div>
 
       {totp.error && <p className="mb-3 text-[12px] text-[var(--danger)]">{totp.error.message}</p>}
+
+      {/* Auto-submit toggle */}
+      <label className="mb-4 flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]">
+        <input
+          type="checkbox"
+          checked={autoSubmit}
+          onChange={(e) => setAutoSubmit(e.target.checked)}
+          className="h-3.5 w-3.5 accent-accent"
+        />
+        {t("login.totp.auto_submit")}
+      </label>
 
       {/* Verify button */}
       <button
