@@ -64,6 +64,7 @@ export function useLogin() {
           typeof err === "object" && err !== null && "message" in err
             ? String((err as Record<string, unknown>).message)
             : String(err),
+          { cause: err },
         );
       }
     },

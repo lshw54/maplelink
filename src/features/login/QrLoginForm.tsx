@@ -118,6 +118,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: initializing QR session on mount
     startQr();
     return stopPolling;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -132,7 +133,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             alt="MapleLink"
             className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
           />
-          <div className="text-[12px] uppercase tracking-[4px] text-text-dim">
+          <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
             {t("login.qr.title")}
           </div>
           <div className="mt-1.5 text-[12px] tracking-[0.5px] text-text-faint">
@@ -279,7 +280,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         <button
           type="button"
           onClick={handleRefresh}
-          className="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[1.5px] text-white hover:opacity-90"
+          className="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase hover:opacity-90"
         >
           {t("login.qr.refresh")}
         </button>

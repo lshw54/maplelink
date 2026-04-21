@@ -78,7 +78,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
     <div className="mx-3 mb-3 shrink-0 rounded-xl border border-border bg-[var(--surface)] p-3.5 shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm">
       {/* Header */}
       <div className="mb-2.5 flex items-center justify-between">
-        <span className="text-[12px] font-semibold uppercase tracking-[2px] text-text-dim">
+        <span className="text-[12px] font-semibold tracking-[2px] text-text-dim uppercase">
           🔐 {t("launcher.otp")}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
@@ -118,7 +118,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           {credentials?.otp ?? "••••••••••"}
           {/* Copy / Check icon — always visible */}
           <span
-            className={`absolute right-2.5 top-1/2 -translate-y-1/2 transition-colors ${
+            className={`absolute top-1/2 right-2.5 -translate-y-1/2 transition-colors ${
               copied ? "text-green-400" : "text-text-faint"
             }`}
           >

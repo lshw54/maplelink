@@ -37,12 +37,10 @@ export function NormalLoginForm({
   const showQr = region === "TW";
 
   // Auto-fill from last saved account on mount and when region changes.
+  const prevRegionRef = useRef(region);
   useEffect(() => {
-    // Clear fields first when region changes
-    setAccount("");
-    setPassword("");
-    setRemember(true);
-    setSavedAccounts([]);
+    const regionChanged = prevRegionRef.current !== region;
+    prevRegionRef.current = region;
 
     let cancelled = false;
     async function loadSaved() {
@@ -53,7 +51,7 @@ export function NormalLoginForm({
         ]);
         if (cancelled) return;
         setSavedAccounts(accounts);
-        if (last) {
+        if (!regionChanged && last) {
           setAccount(last.account);
           if (last.password) {
             setPassword(last.password);
@@ -141,7 +139,7 @@ export function NormalLoginForm({
       <div className="mb-3">
         <label
           htmlFor="login-account"
-          className="mb-1 block text-[12px] uppercase tracking-[1.5px] text-text-dim"
+          className="mb-1 block text-[12px] tracking-[1.5px] text-text-dim uppercase"
         >
           {t("login.username")}
         </label>
@@ -164,7 +162,7 @@ export function NormalLoginForm({
               type="button"
               onClick={() => setShowDropdown((v) => !v)}
               tabIndex={-1}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-dim transition-colors hover:text-[var(--text)]"
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-text-dim transition-colors hover:text-[var(--text)]"
               aria-label="Show saved accounts"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -179,7 +177,7 @@ export function NormalLoginForm({
             </button>
           )}
           {showDropdown && savedAccounts.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-[10px] border border-border bg-[var(--bg)] py-1 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
+            <div className="absolute top-full right-0 left-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-[10px] border border-border bg-[var(--bg)] py-1 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
               {savedAccounts.map((saved) => (
                 <div
                   key={saved.account}
@@ -198,7 +196,7 @@ export function NormalLoginForm({
                       e.stopPropagation();
                       handleDeleteAccount(saved);
                     }}
-                    className="shrink-0 rounded p-0.5 text-text-faint opacity-0 transition-all hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400 group-hover:opacity-100"
+                    className="shrink-0 rounded p-0.5 text-text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400"
                     title="Delete"
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -221,7 +219,7 @@ export function NormalLoginForm({
       <div className="mb-3">
         <label
           htmlFor="login-password"
-          className="mb-1 block text-[12px] uppercase tracking-[1.5px] text-text-dim"
+          className="mb-1 block text-[12px] tracking-[1.5px] text-text-dim uppercase"
         >
           {t("login.password")}
         </label>
@@ -273,7 +271,7 @@ export function NormalLoginForm({
         <button
           type="submit"
           disabled={isLoading || !account.trim() || !password.trim()}
-          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold uppercase tracking-[1.5px] text-white shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isLoading ? t("login.logging_in") : t("login.submit")}
         </button>

@@ -46,7 +46,7 @@ export function ToolboxPage() {
         {/* Back button */}
         <button
           onClick={() => goBack()}
-          className="mx-3 rounded-lg border border-[var(--tb-border)] bg-transparent px-3 py-2 text-center text-[12px] font-semibold uppercase tracking-[1px] text-text-dim transition-all hover:translate-y-[-2px] hover:border-accent hover:text-accent active:scale-95"
+          className="mx-3 rounded-lg border border-[var(--tb-border)] bg-transparent px-3 py-2 text-center text-[12px] font-semibold tracking-[1px] text-text-dim uppercase transition-all hover:translate-y-[-2px] hover:border-accent hover:text-accent active:scale-95"
         >
           {t("shared.titlebar.back")}
         </button>
