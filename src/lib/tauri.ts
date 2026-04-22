@@ -67,6 +67,10 @@ export const commands = {
     invoke<boolean>("auto_paste_otp", { sessionId, accountId }),
   changeAccountDisplayName: (sessionId: string, accountId: string, newName: string) =>
     invoke<boolean>("change_account_display_name", { sessionId, accountId, newName }),
+  setDisplayOverride: (accountId: string, displayName: string) =>
+    invoke("set_display_override", { accountId, displayName }),
+  getDisplayOverrides: () => invoke<Record<string, string>>("get_display_overrides"),
+  setAccountOrder: (order: string[]) => invoke("set_account_order", { order }),
   getAuthEmail: (sessionId: string) => invoke<string>("get_auth_email", { sessionId }),
 
   // Launcher

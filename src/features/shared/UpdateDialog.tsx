@@ -161,6 +161,7 @@ export function UpdateDialog({ update, onClose }: Props) {
           <label className="flex items-center gap-2 text-[11px] text-text-dim">
             <input
               type="checkbox"
+              name="use-proxy"
               checked={useProxy}
               onChange={(e) => setUseProxy(e.target.checked)}
               className="h-3.5 w-3.5 accent-accent"

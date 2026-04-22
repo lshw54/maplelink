@@ -139,6 +139,9 @@ export function SessionTabs() {
             {isEditing ? (
               <input
                 ref={inputRef}
+                name="tab-rename"
+                autoComplete="off"
+                data-form-type="other"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onBlur={commitRename}

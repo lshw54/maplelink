@@ -3,7 +3,9 @@ import { useTranslation } from "../../lib/i18n";
 import { open } from "@tauri-apps/plugin-shell";
 import { commands } from "../../lib/tauri";
 import { useRefreshAccounts } from "../../lib/hooks/use-accounts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 import { Modal } from "../shared/Modal";
 import type { GameAccountDto } from "../../lib/types";
 
@@ -127,15 +129,19 @@ function AccountDetailView({
 function EditAccountView({
   account,
   t,
+  region,
   onSave,
   onCancel,
 }: {
   account: GameAccountDto;
   t: (key: string) => string;
-  onSave: (name: string) => void;
+  region: string;
+  onSave: (name: string, syncToServer: boolean) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(account.displayName);
+  const [syncToServer, setSyncToServer] = useState(false);
+  const isTW = region === "TW";
 
   return (
     <div className="flex flex-col gap-4">
@@ -144,13 +150,30 @@ function EditAccountView({
       </label>
       <input
         autoFocus
+        name="edit-display-name"
+        autoComplete="off"
+        data-form-type="other"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && name) onSave(name);
+          if (e.key === "Enter" && name) onSave(name, syncToServer);
         }}
         className="rounded-lg border border-[var(--tb-border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text)] transition-colors outline-none focus:border-accent"
       />
+      {isTW ? (
+        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim">
+          <input
+            type="checkbox"
+            name="sync-to-server"
+            checked={syncToServer}
+            onChange={(e) => setSyncToServer(e.target.checked)}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+          {t("launcher.context.edit_sync")}
+        </label>
+      ) : (
+        <span className="text-[11px] text-text-faint">{t("launcher.context.edit_local_only")}</span>
+      )}
       <div className="flex justify-end gap-2">
         <button
           onClick={onCancel}
@@ -159,7 +182,7 @@ function EditAccountView({
           {t("common.cancel")}
         </button>
         <button
-          onClick={() => name && onSave(name)}
+          onClick={() => name && onSave(name, syncToServer)}
           className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
         >
           {t("common.ok")}
@@ -209,6 +232,8 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const refreshAccounts = useRefreshAccounts();
+  const queryClient = useQueryClient();
+  const region = useConfigStore((s) => s.config?.region ?? "HK");
   const [modalView, setModalView] = useState<ModalView | null>(null);
   const [editError, setEditError] = useState(false);
   const modalViewRef = useRef<ModalView | null>(null);
@@ -316,26 +341,39 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     setModalView({ kind: "edit" });
   }
 
-  async function handleEditSave(newName: string) {
+  async function handleEditSave(newName: string, syncToServer: boolean) {
     if (!account || newName === account.displayName) {
       closeModal();
       return;
     }
-    try {
-      const success = await commands.changeAccountDisplayName(
-        useAuthStore.getState().activeSessionId ?? "",
-        account.id,
-        newName,
-      );
-      if (success) {
-        refreshAccounts();
-        closeModal();
-      } else {
-        setEditError(true);
+
+    let serverUpdated = false;
+    if (syncToServer) {
+      try {
+        serverUpdated = await commands.changeAccountDisplayName(
+          useAuthStore.getState().activeSessionId ?? "",
+          account.id,
+          newName,
+        );
+      } catch {
+        // API failed
       }
-    } catch {
-      setEditError(true);
+      if (!serverUpdated) {
+        setEditError(true);
+        return;
+      }
     }
+
+    if (serverUpdated) {
+      // Server updated — refresh from server
+      refreshAccounts();
+    } else {
+      // Local-only update — save to display_overrides.json, then refresh
+      await commands.setDisplayOverride(account.id, newName);
+      // Invalidate query so useGameAccounts re-fetches + merges overrides
+      await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+    }
+    closeModal();
   }
 
   function handleAccountDetail() {
@@ -422,6 +460,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
             <EditAccountView
               account={account}
               t={t}
+              region={region}
               onSave={handleEditSave}
               onCancel={closeModal}
             />

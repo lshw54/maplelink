@@ -225,8 +225,9 @@ pub async fn launch_game(
     // 9. Auto-kill Patcher.exe (respects config toggle)
     if config.auto_kill_patcher {
         let game_dir = launch_cmd.working_dir.clone();
+        let app_for_patcher = app.clone();
         tauri::async_runtime::spawn(async move {
-            kill_patcher_loop(&game_dir).await;
+            kill_patcher_loop(&game_dir, &app_for_patcher).await;
         });
     }
 
@@ -373,8 +374,9 @@ pub async fn launch_game_direct(
     // Auto-kill patcher
     if config.auto_kill_patcher {
         let game_dir = launch_cmd.working_dir.clone();
+        let app_for_patcher = app.clone();
         tauri::async_runtime::spawn(async move {
-            kill_patcher_loop(&game_dir).await;
+            kill_patcher_loop(&game_dir, &app_for_patcher).await;
         });
     }
 
@@ -398,7 +400,7 @@ pub async fn launch_game_direct(
 /// Uses native Windows Toolhelp32 APIs to enumerate processes in-process,
 /// avoiding the `wmic.exe` console window popup that the previous
 /// implementation caused (wmic spawns a visible console every 100ms).
-async fn kill_patcher_loop(game_dir: &str) {
+async fn kill_patcher_loop(game_dir: &str, app: &tauri::AppHandle) {
     #[cfg(target_os = "windows")]
     {
         let patcher_path = std::path::Path::new(game_dir)
@@ -418,6 +420,17 @@ async fn kill_patcher_loop(game_dir: &str) {
                 .unwrap_or(false);
 
             if found {
+                // Get client version from game exe
+                use tauri::Emitter;
+                let game_exe = std::path::Path::new(game_dir).join("MapleStory.exe");
+                let client_version = get_exe_version(&game_exe);
+                // Try to get server version from MapleStory login server
+                let server_version = get_server_version().await;
+                let payload = serde_json::json!({
+                    "clientVersion": client_version,
+                    "serverVersion": server_version,
+                });
+                let _ = app.emit("patcher-killed", payload);
                 return;
             }
         }
@@ -426,6 +439,117 @@ async fn kill_patcher_loop(game_dir: &str) {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = game_dir;
+        let _ = app;
+    }
+}
+
+/// Get the product version string from a Windows PE executable.
+/// Returns something like "1.2.437.1" or empty string on failure.
+fn get_exe_version(path: &std::path::Path) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let wide: Vec<u16> = OsStr::new(path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let size = windows_sys::Win32::Storage::FileSystem::GetFileVersionInfoSizeW(
+                wide.as_ptr(),
+                std::ptr::null_mut(),
+            );
+            if size == 0 {
+                return String::new();
+            }
+            let mut buf = vec![0u8; size as usize];
+            if windows_sys::Win32::Storage::FileSystem::GetFileVersionInfoW(
+                wide.as_ptr(),
+                0,
+                size,
+                buf.as_mut_ptr() as *mut _,
+            ) == 0
+            {
+                return String::new();
+            }
+            let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+            let mut len: u32 = 0;
+            let sub: Vec<u16> = OsStr::new("\\")
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            if windows_sys::Win32::Storage::FileSystem::VerQueryValueW(
+                buf.as_ptr() as *const _,
+                sub.as_ptr(),
+                &mut ptr,
+                &mut len,
+            ) == 0
+            {
+                return String::new();
+            }
+            let info = &*(ptr as *const windows_sys::Win32::Storage::FileSystem::VS_FIXEDFILEINFO);
+            let major = info.dwProductVersionMS & 0xFFFF; // ProductMinorPart
+            let minor = (info.dwProductVersionLS >> 16) & 0xFFFF; // FileBuildPart
+            format!("{major}.{minor}")
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        String::new()
+    }
+}
+
+/// Get MapleStory server version by connecting to the login server.
+/// Reads the handshake packet: skip 2 bytes, read u16 major, read maple string minor.
+async fn get_server_version() -> String {
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpStream;
+
+    let result: Result<String, Box<dyn std::error::Error + Send + Sync>> = async {
+        let mut stream = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            TcpStream::connect("tw.login.maplestory.beanfun.com:8484"),
+        )
+        .await??;
+
+        let mut buf = [0u8; 256];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(3), stream.read(&mut buf))
+            .await??;
+
+        if n < 6 {
+            return Ok(String::new());
+        }
+
+        // Handshake: [u16 packet_len] [u16 major_version] [u16 str_len] [str minor] ...
+        let major = u16::from_le_bytes([buf[2], buf[3]]);
+        let str_len = u16::from_le_bytes([buf[4], buf[5]]) as usize;
+        let minor = if n >= 6 + str_len {
+            String::from_utf8_lossy(&buf[6..6 + str_len]).to_string()
+        } else {
+            String::new()
+        };
+
+        let minor_clean = minor.split(':').next().unwrap_or("").to_string();
+        if minor_clean.is_empty() {
+            Ok(format!("{major}"))
+        } else {
+            Ok(format!("{major}.{minor_clean}"))
+        }
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tracing::info!("MapleStory server version: {v}");
+            v
+        }
+        Err(e) => {
+            tracing::warn!("failed to get server version: {e}");
+            String::new()
+        }
     }
 }
 

@@ -136,6 +136,9 @@ pub fn run() {
             commands::account::get_remain_point,
             commands::account::auto_paste_otp,
             commands::account::change_account_display_name,
+            commands::account::set_display_override,
+            commands::account::set_account_order,
+            commands::account::get_display_overrides,
             commands::account::get_auth_email,
             commands::launcher::launch_game,
             commands::launcher::launch_game_direct,
@@ -229,6 +232,16 @@ pub fn run() {
                 accounts_path.display()
             );
 
+            let overrides_path = config_dir.join("display_overrides.json");
+            let display_overrides = tauri::async_runtime::block_on(async {
+                account_storage::load_display_overrides(&overrides_path).await
+            });
+            tracing::info!(
+                "loaded {} display overrides from {}",
+                display_overrides.names.len(),
+                overrides_path.display()
+            );
+
             // 4. Initialise AppState with loaded config.
             let auto_update_enabled = config.auto_update;
             let update_channel = config.update_channel.clone();
@@ -244,6 +257,8 @@ pub fn run() {
                 config_path,
                 saved_accounts: tokio::sync::RwLock::new(saved_accounts),
                 accounts_path,
+                overrides_path,
+                display_overrides: tokio::sync::RwLock::new(display_overrides),
                 http_client,
             };
 

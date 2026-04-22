@@ -40,12 +40,19 @@ function maskSensitive(msg: string): string {
 }
 
 function parseLogLine(line: string): LogEntry | null {
-  const m = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+(.+)$/);
+  // Match tracing format: "2026-04-22T04:48:19.089+08:00  INFO module::path: message"
+  // Also matches UTC "Z" suffix and optional span fields like "[]"
+  const m = line.match(
+    /^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2}))\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+(.+)$/,
+  );
   if (m) {
+    let msg = m[3] ?? "";
+    // Strip leading "[] " span markers and module path prefix
+    msg = msg.replace(/^(\[\S*\]\s*)*/, "").replace(/^\S+::\S+:\s*/, "");
     return {
-      ts: (m[1] ?? "").replace("T", " ").replace(/Z$/, "").slice(11, 19),
+      ts: (m[1] ?? "").replace("T", " ").slice(11, 19),
       level: (m[2] ?? "info").toLowerCase() as LogLevel,
-      msg: maskSensitive(m[3] ?? ""),
+      msg: maskSensitive(msg),
     };
   }
   if (line.trim()) return { ts: "", level: "info", msg: maskSensitive(line) };
@@ -64,17 +71,23 @@ export function DebugConsole() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [logs, autoScroll]);
 
+  // Initial load + periodic refresh
   useEffect(() => {
-    invoke<string>("get_recent_logs")
-      .then((text) => {
-        setLogs(
-          text
-            .split("\n")
-            .map(parseLogLine)
-            .filter((e): e is LogEntry => e !== null),
-        );
-      })
-      .catch(() => {});
+    function fetchLogs() {
+      invoke<string>("get_recent_logs")
+        .then((text) => {
+          setLogs(
+            text
+              .split("\n")
+              .map(parseLogLine)
+              .filter((e): e is LogEntry => e !== null),
+          );
+        })
+        .catch(() => {});
+    }
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -178,6 +191,7 @@ export function DebugConsole() {
         }}
       >
         <select
+          name="log-level-filter"
           value={filter}
           onChange={(e) => setFilter(e.target.value as LogLevel)}
           style={{
@@ -197,6 +211,9 @@ export function DebugConsole() {
           ))}
         </select>
         <input
+          name="log-search"
+          autoComplete="off"
+          data-form-type="other"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Filter..."

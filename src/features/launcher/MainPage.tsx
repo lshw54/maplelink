@@ -47,6 +47,7 @@ export function MainPage() {
     }, 3000);
     return () => clearInterval(interval);
   }, [gamePid, gameRunning, setGamePid, setGameRunning]);
+
   const [remainPoint, setRemainPoint] = useState<number>(0);
   const [showRelaunchConfirm, setShowRelaunchConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);

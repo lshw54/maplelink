@@ -209,6 +209,7 @@ export function VerifyForm({
       <div className="mb-2">
         <input
           type="text"
+          name="auth-info"
           value={authInfo}
           onChange={(e) => setAuthInfo(e.target.value)}
           placeholder={hintLabel || t("login.verify.auth_info_placeholder")}
@@ -224,6 +225,7 @@ export function VerifyForm({
       <div className="mb-2">
         <input
           type="text"
+          name="captcha-code"
           value={captchaCode}
           onChange={(e) => setCaptchaCode(e.target.value)}
           onKeyDown={(e) => {

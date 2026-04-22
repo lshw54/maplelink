@@ -304,11 +304,18 @@ pub async fn get_remain_point(client: &Client, region: &Region) -> Result<i32, L
 /// Returns `true` if the server responds with `intResult: 1`.
 pub async fn change_display_name(
     client: &Client,
+    region: &Region,
     game_code: &str,
     account_id: &str,
     new_name: &str,
 ) -> Result<bool, LoginError> {
-    let url = "https://bfweb.hk.beanfun.com/generic_handlers/gamezone.ashx";
+    // Only TW region has a server-side rename API
+    if *region != Region::TW {
+        // HK: no API, return false so caller saves locally
+        return Ok(false);
+    }
+
+    let url = "https://tw.beanfun.com/generic_handlers/gamezone.ashx";
 
     let form = [
         ("strFunction", "ChangeServiceAccountDisplayName"),

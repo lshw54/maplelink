@@ -187,3 +187,96 @@ pub fn remove_account(accounts: &mut Vec<SavedAccount>, region: &str, account: &
     accounts.retain(|a| !(a.region == region && a.account == account));
     accounts.len() < before
 }
+
+// ---------------------------------------------------------------------------
+// Display name overrides (local-only renames, DPAPI encrypted)
+// ---------------------------------------------------------------------------
+
+/// Local account customizations: display name overrides + sort order.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct DisplayOverrides {
+    /// account_id → custom display name
+    #[serde(default)]
+    pub names: std::collections::HashMap<String, String>,
+    /// Custom account sort order (list of account IDs)
+    #[serde(default)]
+    pub order: Vec<String>,
+}
+
+/// Load display overrides from DPAPI-encrypted .dat + .key files.
+pub async fn load_display_overrides(path: &Path) -> DisplayOverrides {
+    let dat_path = path.with_extension("dat");
+    let key_path = path.with_extension("key");
+
+    if dat_path.exists() && key_path.exists() {
+        let ciphertext = match tokio::fs::read(&dat_path).await {
+            Ok(d) => d,
+            Err(_) => return DisplayOverrides::default(),
+        };
+        let entropy = match tokio::fs::read(&key_path).await {
+            Ok(k) => k,
+            Err(_) => return DisplayOverrides::default(),
+        };
+        return match dpapi::unprotect(&ciphertext, &entropy) {
+            Ok(plaintext) => {
+                let json = String::from_utf8_lossy(&plaintext);
+                serde_json::from_str(&json).unwrap_or_default()
+            }
+            Err(e) => {
+                tracing::warn!("failed to decrypt display overrides: {e}");
+                DisplayOverrides::default()
+            }
+        };
+    }
+
+    // Legacy plaintext fallback + auto-migrate
+    if path.exists() {
+        if let Ok(json) = tokio::fs::read_to_string(path).await {
+            if let Ok(o) = serde_json::from_str::<DisplayOverrides>(&json) {
+                let _ = save_display_overrides(path, &o).await;
+                let _ = tokio::fs::remove_file(path).await;
+                return o;
+            }
+            if let Ok(map) =
+                serde_json::from_str::<std::collections::HashMap<String, String>>(&json)
+            {
+                let o = DisplayOverrides {
+                    names: map,
+                    order: Vec::new(),
+                };
+                let _ = save_display_overrides(path, &o).await;
+                let _ = tokio::fs::remove_file(path).await;
+                return o;
+            }
+        }
+    }
+
+    DisplayOverrides::default()
+}
+
+/// Save display overrides encrypted with DPAPI.
+pub async fn save_display_overrides(
+    path: &Path,
+    overrides: &DisplayOverrides,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("failed to create dir: {e}"))?;
+    }
+    let json = serde_json::to_string(overrides)
+        .map_err(|e| format!("failed to serialize overrides: {e}"))?;
+
+    let (ciphertext, entropy) =
+        dpapi::protect(json.as_bytes()).map_err(|e| format!("DPAPI encrypt failed: {e}"))?;
+
+    let dat_path = path.with_extension("dat");
+    let key_path = path.with_extension("key");
+
+    tokio::fs::write(&dat_path, &ciphertext)
+        .await
+        .map_err(|e| format!("failed to write overrides.dat: {e}"))?;
+    tokio::fs::write(&key_path, &entropy)
+        .await
+        .map_err(|e| format!("failed to write overrides.key: {e}"))
+}

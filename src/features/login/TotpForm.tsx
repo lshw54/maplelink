@@ -130,6 +130,9 @@ export function TotpForm({ onBack }: TotpFormProps) {
             <input
               ref={(el) => setRef(el, i)}
               type="text"
+              name={`totp-digit-${i}`}
+              autoComplete="off"
+              data-form-type="other"
               inputMode="numeric"
               maxLength={1}
               value={d}
@@ -149,6 +152,7 @@ export function TotpForm({ onBack }: TotpFormProps) {
       <label className="mb-4 flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]">
         <input
           type="checkbox"
+          name="totp-auto-submit"
           checked={autoSubmit}
           onChange={(e) => setAutoSubmit(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"

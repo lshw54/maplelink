@@ -249,6 +249,7 @@ export function NormalLoginForm({
         <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]">
           <input
             type="checkbox"
+            name="remember-password"
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
             className="h-3.5 w-3.5 accent-accent"
