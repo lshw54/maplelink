@@ -8,6 +8,7 @@ import { useConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
+import { Modal } from "./features/shared/Modal";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -86,6 +87,23 @@ export function App() {
   // Show banner on all pages when update available and dialog dismissed
   const showBanner = !pendingUpdate && availableUpdate && !bannerDismissed;
 
+  // Patcher killed notification
+  const [patcherInfo, setPatcherInfo] = useState<{
+    clientVersion: string;
+    serverVersion: string;
+  } | null>(null);
+  useEffect(() => {
+    const unlisten = listen<{ clientVersion: string; serverVersion: string }>(
+      "patcher-killed",
+      (ev) => {
+        setPatcherInfo(ev.payload);
+      },
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   // Adjust window height when update banner appears or disappears
   const bannerHeight = 28;
   useEffect(() => {
@@ -145,7 +163,7 @@ export function App() {
           if (info) onUpdate(info);
         })
         .catch(() => {});
-    }, 3000);
+    }, 6000);
 
     return () => {
       clearTimeout(timer);
@@ -191,6 +209,49 @@ export function App() {
       <ErrorToastContainer />
       {pendingUpdate && (
         <UpdateDialog update={pendingUpdate} onClose={() => setPendingUpdate(null)} />
+      )}
+      {patcherInfo && (
+        <Modal isOpen onClose={() => setPatcherInfo(null)} title={t("launcher.patcher_title")}>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-text-dim">{t("launcher.patcher_killed")}</p>
+            {patcherInfo.clientVersion && (
+              <p className="text-xs text-[var(--text)]">
+                {t("launcher.patcher_client_ver")}:{" "}
+                <span className="font-mono font-semibold text-accent">
+                  {patcherInfo.clientVersion}
+                </span>
+              </p>
+            )}
+            {patcherInfo.serverVersion && (
+              <p className="text-xs text-[var(--text)]">
+                {t("launcher.patcher_server_ver")}:{" "}
+                <span className="font-mono font-semibold text-accent">
+                  {patcherInfo.serverVersion}
+                </span>
+              </p>
+            )}
+            <p className="text-[11px] text-text-faint">{t("launcher.patcher_hint")}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setPatcherInfo(null)}
+                className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("common.ok")}
+              </button>
+              <button
+                onClick={() => {
+                  import("@tauri-apps/plugin-shell").then(({ open }) =>
+                    open("https://maplestory.beanfun.com/download"),
+                  );
+                  setPatcherInfo(null);
+                }}
+                className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                {t("launcher.patcher_download")}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
