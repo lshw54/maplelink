@@ -35,17 +35,25 @@ export function StatusBar() {
     };
   }, []);
 
+  const dotColor = !online
+    ? "bg-[var(--danger)]"
+    : ms !== null && ms > 3000
+      ? "bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.4)]"
+      : ms !== null && ms > 1000
+        ? "bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]"
+        : "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]";
+
   return (
     <div className="flex shrink-0 flex-col">
       <DownloadProgressBar />
-      <div className="flex items-center justify-center gap-1.5 px-2 py-0.5 font-mono text-[12px] text-text-dim">
+      <div className="flex items-center justify-center gap-1.5 px-2 py-0.5 font-mono text-[11px] text-text-dim">
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
-            online ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]" : "bg-[var(--danger)]"
-          } ${beat ? "animate-[hbeat_0.4s_ease]" : ""}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dotColor} ${beat ? "animate-[hbeat_0.4s_ease]" : ""}`}
         />
-        <span className="text-[11px] font-semibold tracking-[2px]">{online ? "ONLINE" : "OFFLINE"}</span>
-        <span className="text-[12px] text-text-faint">{ms !== null ? `${ms}ms` : "--"}</span>
+        <span className="font-semibold tracking-[2px]">
+          {online ? "ONLINE" : "OFFLINE"}
+        </span>
+        <span className="text-text-faint">{ms !== null ? `${ms}ms` : "--"}</span>
       </div>
     </div>
   );
