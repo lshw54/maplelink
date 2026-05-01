@@ -91,21 +91,25 @@ export function NormalLoginForm({
 
   // Auto-login: only fires once per app launch when enabled and credentials exist.
   // Does NOT fire on logout, session switch, or re-mount.
+  // Delayed slightly to ensure WebView2 is fully rendered before navigating.
   useEffect(() => {
     if (autoLogin && !hasAutoLoginFired() && account.trim() && password.trim() && !isLoading) {
       markAutoLoginFired();
-      login.mutate(
-        { account: account.trim(), password, rememberPassword: remember },
-        {
-          onError: (err) => {
-            if (err.message === "TOTP_REQUIRED" || err.name === "TotpRequired") {
-              onTotpRequired();
-            } else if (err.message === "ADVANCE_CHECK" || err.name === "AdvanceCheck") {
-              onAdvanceCheck((err as { advanceUrl?: string }).advanceUrl);
-            }
+      const timer = setTimeout(() => {
+        login.mutate(
+          { account: account.trim(), password, rememberPassword: remember },
+          {
+            onError: (err) => {
+              if (err.message === "TOTP_REQUIRED" || err.name === "TotpRequired") {
+                onTotpRequired();
+              } else if (err.message === "ADVANCE_CHECK" || err.name === "AdvanceCheck") {
+                onAdvanceCheck((err as { advanceUrl?: string }).advanceUrl);
+              }
+            },
           },
-        },
-      );
+        );
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [autoLogin, account, password]); // eslint-disable-line react-hooks/exhaustive-deps
 

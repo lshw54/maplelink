@@ -56,24 +56,36 @@ pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), Er
         }
     };
 
-    // We use --force-device-scale-factor={dpi} to bypass text-size scaling.
-    // Because the forced scale equals the DPI factor, we must set the window
-    // in physical pixels (design_size × dpi) so that WebView2's CSS layout
-    // matches the window dimensions exactly.
+    // When text-size scaling is active we forced WebView2's scale to the
+    // pure DPI value, so we must size the window in physical pixels.
+    // Otherwise let Tauri handle it natively with LogicalSize.
     #[cfg(target_os = "windows")]
     {
-        let dpi = crate::get_dpi_scale();
-        let pw = (width * dpi).round() as u32;
-        let ph = (height * dpi).round() as u32;
-        window
-            .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)))
-            .map_err(|e| ErrorDto {
-                code: "SYS_RESIZE_FAILED".to_string(),
-                message: format!("Failed to resize window: {e}"),
-                category: ErrorCategory::Process,
-                details: None,
-            })?;
-        tracing::debug!("window {pw}×{ph} (physical, dpi={dpi}) page='{page}'");
+        let text_scale = crate::get_text_scale_factor();
+        if text_scale != 100 {
+            let dpi = crate::get_dpi_scale();
+            let pw = (width * dpi).round() as u32;
+            let ph = (height * dpi).round() as u32;
+            window
+                .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)))
+                .map_err(|e| ErrorDto {
+                    code: "SYS_RESIZE_FAILED".to_string(),
+                    message: format!("Failed to resize window: {e}"),
+                    category: ErrorCategory::Process,
+                    details: None,
+                })?;
+            tracing::debug!("window {pw}×{ph} (physical, dpi={dpi}) page='{page}'");
+        } else {
+            window
+                .set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)))
+                .map_err(|e| ErrorDto {
+                    code: "SYS_RESIZE_FAILED".to_string(),
+                    message: format!("Failed to resize window: {e}"),
+                    category: ErrorCategory::Process,
+                    details: None,
+                })?;
+            tracing::debug!("window {width}×{height} page='{page}'");
+        }
     }
 
     #[cfg(not(target_os = "windows"))]

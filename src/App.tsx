@@ -68,17 +68,16 @@ function useInitialConfigSync() {
 }
 
 /**
- * On Windows, the Rust backend forces WebView2's device-scale-factor to the
- * pure DPI value (excluding text-size scaling).  Window sizes are set in
- * physical pixels in resize_window.  We call it on every page change to
- * ensure the window is always correctly sized (the initial size from
- * tauri.conf.json5 uses logical pixels which may not match).
+ * On Windows, when text-size scaling is active, the backend forces WebView2's
+ * device-scale-factor and uses PhysicalSize for windows.  We call resizeWindow
+ * once on mount to correct the initial window (tauri.conf.json5 uses logical).
+ * Subsequent page transitions are handled by setPage() in ui-store.
  */
 function useTextScaleCompensation() {
-  const currentPage = useUiStore((s) => s.currentPage);
   useEffect(() => {
-    commands.resizeWindow(currentPage).catch(() => {});
-  }, [currentPage]);
+    const page = useUiStore.getState().currentPage;
+    commands.resizeWindow(page).catch(() => {});
+  }, []);
 }
 
 function SplashScreen() {
@@ -177,7 +176,7 @@ export function App() {
           if (info) onUpdate(info);
         })
         .catch(() => {});
-    }, 6000);
+    }, 10000);
 
     return () => {
       clearTimeout(timer);

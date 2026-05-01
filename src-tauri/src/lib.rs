@@ -105,27 +105,34 @@ pub fn run() {
     // regardless of the text-size slider.
     #[cfg(target_os = "windows")]
     {
-        // Must declare DPI awareness BEFORE reading DPI, otherwise Windows
-        // may virtualise the value to 96.
-        unsafe {
-            windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
-                windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
-            );
-        }
-
-        let dpi_scale = get_dpi_scale();
-        let arg = format!("--force-device-scale-factor={dpi_scale}");
-        match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
-            Ok(existing) if !existing.contains("--force-device-scale-factor") => {
-                std::env::set_var(
-                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-                    format!("{existing} {arg}"),
+        // Only force the device scale factor when the user has changed the
+        // Windows Accessibility text-size slider (> 100%).  When text scale
+        // is at the default 100%, Tauri + WebView2 handle DPI natively and
+        // we must not interfere.
+        let text_scale = get_text_scale_factor();
+        if text_scale != 100 {
+            // Must declare DPI awareness BEFORE reading DPI, otherwise Windows
+            // may virtualise the value to 96.
+            unsafe {
+                windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+                    windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
                 );
             }
-            Err(_) => {
-                std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", &arg);
+
+            let dpi_scale = get_dpi_scale();
+            let arg = format!("--force-device-scale-factor={dpi_scale}");
+            match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+                Ok(existing) if !existing.contains("--force-device-scale-factor") => {
+                    std::env::set_var(
+                        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                        format!("{existing} {arg}"),
+                    );
+                }
+                Err(_) => {
+                    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", &arg);
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -360,8 +367,10 @@ pub fn run() {
             if update_service::should_check_on_startup(auto_update_enabled) {
                 let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    // Small delay to ensure frontend listener is registered
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    // Delay to ensure WebView2 is fully rendered before
+                    // making network requests that may contend with the
+                    // TLS/network stack during initial page load.
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
                     let version = update_service::current_version();
                     let include_prerelease =
@@ -442,19 +451,24 @@ pub fn run() {
                 }
             });
 
-            // Resize the initial window to match our forced scale factor.
-            // tauri.conf.json5 sets 350×620 as logical, but since we force
-            // the device-scale-factor to the DPI value, we must set the
-            // physical size = design_size × dpi.
+            // Only resize the initial window when text-scale compensation
+            // is active (force-device-scale-factor was set).  Otherwise
+            // tauri.conf.json5's logical 350×620 is correct as-is.
             #[cfg(target_os = "windows")]
             {
-                let dpi = get_dpi_scale();
-                let pw = (350.0 * dpi).round() as u32;
-                let ph = (620.0 * dpi).round() as u32;
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)));
-                    let _ = win.center();
-                    tracing::info!("initial window {pw}×{ph} physical (dpi={dpi})");
+                let text_scale = get_text_scale_factor();
+                if text_scale != 100 {
+                    let dpi = get_dpi_scale();
+                    let pw = (350.0 * dpi).round() as u32;
+                    let ph = (620.0 * dpi).round() as u32;
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ =
+                            win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)));
+                        let _ = win.center();
+                        tracing::info!(
+                            "initial window {pw}×{ph} physical (dpi={dpi}, text_scale={text_scale}%)"
+                        );
+                    }
                 }
             }
 
