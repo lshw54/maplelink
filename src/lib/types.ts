@@ -45,6 +45,7 @@ export interface AppConfigDto {
   traditionalLogin: boolean;
   autoKillPatcher: boolean;
   accountViewMode: "card" | "list";
+  autoLogin: boolean;
 }
 
 export interface ErrorDto {

@@ -174,6 +174,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
                 _ => AccountViewMode::Card,
             };
         }
+        "autoLogin" | "auto_login" => {
+            config.auto_login = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

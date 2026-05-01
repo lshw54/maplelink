@@ -14,6 +14,7 @@
   "login.submit": "Sign In",
   "login.logging_in": "Signing in...",
   "login.remember": "Remember password",
+  "login.auto_login": "Auto login",
   "login.forgot": "Forgot password",
   "login.gamepass": "GamePass",
   "login.gamepass_waiting": "Waiting for GamePass Login",

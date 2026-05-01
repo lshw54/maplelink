@@ -37,6 +37,9 @@ pub struct AppConfig {
     /// Account grid view mode (default: card).
     #[serde(default)]
     pub account_view_mode: AccountViewMode,
+    /// Auto-login on startup when saved credentials are available (default: false).
+    #[serde(default)]
+    pub auto_login: bool,
 }
 
 fn default_true() -> bool {
@@ -69,6 +72,7 @@ impl Default for AppConfig {
             traditional_login: true,
             auto_kill_patcher: true,
             account_view_mode: AccountViewMode::Card,
+            auto_login: false,
         }
     }
 }

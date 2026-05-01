@@ -23,5 +23,6 @@
     }
   },
   "include": ["src"],
+  "exclude": ["src-tauri"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

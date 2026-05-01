@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type SyntheticEvent } from "react";
 import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
@@ -9,6 +9,16 @@ const FORGOT_PWD_URLS: Record<string, string> = {
   TW: "https://tw.beanfun.com/member/forgot_pwd.aspx",
   HK: "https://bfweb.hk.beanfun.com/member/forgot_pwd.aspx",
 };
+
+// Global flag — auto-login only fires once per app launch, not on re-mount.
+// Uses window property to survive HMR in dev mode.
+const AUTO_LOGIN_KEY = "__maplelink_auto_login_fired__";
+function hasAutoLoginFired(): boolean {
+  return (window as unknown as Record<string, unknown>)[AUTO_LOGIN_KEY] === true;
+}
+function markAutoLoginFired(): void {
+  (window as unknown as Record<string, unknown>)[AUTO_LOGIN_KEY] = true;
+}
 
 interface NormalLoginFormProps {
   onShowQr: () => void;
@@ -36,6 +46,7 @@ export function NormalLoginForm({
 
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
+  const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const showQr = region === "TW";
 
   // Auto-fill from last saved account on mount and when region changes.
@@ -77,6 +88,26 @@ export function NormalLoginForm({
       cancelled = true;
     };
   }, [region]);
+
+  // Auto-login: only fires once per app launch when enabled and credentials exist.
+  // Does NOT fire on logout, session switch, or re-mount.
+  useEffect(() => {
+    if (autoLogin && !hasAutoLoginFired() && account.trim() && password.trim() && !isLoading) {
+      markAutoLoginFired();
+      login.mutate(
+        { account: account.trim(), password, rememberPassword: remember },
+        {
+          onError: (err) => {
+            if (err.message === "TOTP_REQUIRED" || err.name === "TotpRequired") {
+              onTotpRequired();
+            } else if (err.message === "ADVANCE_CHECK" || err.name === "AdvanceCheck") {
+              onAdvanceCheck((err as { advanceUrl?: string }).advanceUrl);
+            }
+          },
+        },
+      );
+    }
+  }, [autoLogin, account, password]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close dropdown when clicking outside.
   useEffect(() => {
@@ -170,7 +201,7 @@ export function NormalLoginForm({
     return () => el.removeEventListener("wheel", onWheel);
   }, [savedAccounts, account, handleSelectAccount]);
 
-  function handleSubmit(e: FormEvent) {
+  function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!account.trim() || !password.trim()) return;
     login.mutate(
@@ -312,6 +343,22 @@ export function NormalLoginForm({
             className="h-3.5 w-3.5 accent-accent"
           />
           {t("login.remember")}
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]">
+          <input
+            type="checkbox"
+            name="auto-login"
+            checked={useConfigStore.getState().config?.autoLogin ?? false}
+            onChange={(e) => {
+              commands.setConfig("auto_login", String(e.target.checked)).catch(() => {});
+              const cfg = useConfigStore.getState().config;
+              if (cfg) {
+                useConfigStore.setState({ config: { ...cfg, autoLogin: e.target.checked } });
+              }
+            }}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+          {t("login.auto_login")}
         </label>
         <button
           type="button"

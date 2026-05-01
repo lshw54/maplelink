@@ -14,6 +14,7 @@
   "login.submit": "登入",
   "login.logging_in": "登入中...",
   "login.remember": "記住密碼",
+  "login.auto_login": "自動登入",
   "login.forgot": "忘記密碼",
   "login.gamepass": "GamePass 登入",
   "login.gamepass_waiting": "等待 GamePass 登入",

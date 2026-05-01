@@ -533,7 +533,7 @@ function BeansPopupMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute top-full left-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
+      className="absolute top-full right-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
     >
       <button
         onClick={onRefresh}

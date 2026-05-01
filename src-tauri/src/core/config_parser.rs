@@ -88,6 +88,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.auto_kill_patcher =
                 parse_bool(v, "auto_kill_patcher", defaults.auto_kill_patcher);
         }
+        if let Some(v) = general.get("auto_login") {
+            config.auto_login = parse_bool(v, "auto_login", defaults.auto_login);
+        }
     }
 
     // --- [game] ---
@@ -166,6 +169,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         "auto_kill_patcher = {}\n",
         config.auto_kill_patcher
     ));
+    out.push_str(&format!("auto_login = {}\n", config.auto_login));
     out.push('\n');
 
     // [game]
@@ -457,6 +461,7 @@ x = not_a_number
             traditional_login: false,
             auto_kill_patcher: false,
             account_view_mode: crate::models::config::AccountViewMode::List,
+            auto_login: false,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

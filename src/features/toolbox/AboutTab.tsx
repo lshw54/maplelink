@@ -31,8 +31,14 @@ export function AboutTab() {
         : null;
 
   useEffect(() => {
-    commands.getAppVersion().then(setAppVersion).catch(() => {});
-    commands.getPlatformInfo().then(setPlatform).catch(() => setPlatform("Windows"));
+    commands
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+    commands
+      .getPlatformInfo()
+      .then(setPlatform)
+      .catch(() => setPlatform("Windows"));
   }, []);
 
   async function handleCheckUpdate() {
