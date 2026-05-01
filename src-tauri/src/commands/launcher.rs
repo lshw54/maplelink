@@ -114,13 +114,29 @@ pub async fn launch_game(
         .map_err(proc_err_to_dto)?
     } else {
         tracing::info!("system locale is Traditional Chinese, launching directly");
-        process_service::spawn_process(
-            &launch_cmd.executable,
-            &launch_cmd.working_dir,
-            &launch_cmd.args,
-        )
-        .await
-        .map_err(proc_err_to_dto)?
+        // When not in traditional mode and credentials are available,
+        // pass the full command line (server/port/account/otp) just like LR mode.
+        let args = if !config.traditional_login
+            && !credentials.account_id.is_empty()
+            && !credentials.otp.is_empty()
+        {
+            let template = credentials
+                .command_line_template
+                .as_deref()
+                .unwrap_or("tw.login.maplestory.beanfun.com 8484 BeanFun %s %s");
+            let cmd_line = template
+                .replacen("%s", &credentials.account_id, 1)
+                .replacen("%s", &credentials.otp, 1);
+            cmd_line
+                .split_whitespace()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        process_service::spawn_process(&launch_cmd.executable, &launch_cmd.working_dir, &args)
+            .await
+            .map_err(proc_err_to_dto)?
     };
 
     // 8. Record initial PID in active processes.
@@ -761,22 +777,32 @@ async fn launch_with_lr(
     app: &tauri::AppHandle,
     launch_cmd: &game_launcher::LaunchCommand,
     traditional_login: bool,
-    region: &crate::models::session::Region,
+    _region: &crate::models::session::Region,
     credentials: &crate::models::game_account::GameCredentials,
 ) -> Result<u32, ProcessError> {
     let lr_proc = lr_service::ensure_lr_files(app).await?;
     let lr_path = lr_proc.to_string_lossy().to_string();
 
-    let use_cmd_args = !traditional_login && matches!(region, crate::models::session::Region::TW);
+    let use_cmd_args =
+        !traditional_login && !credentials.account_id.is_empty() && !credentials.otp.is_empty();
 
     // Build LR arguments: GUID + game path (+ optional server/port/account/otp)
     let lr_args = if use_cmd_args {
+        // Use the command line template from the beanfun service if available,
+        // replacing %s placeholders with account_id and otp (matching original
+        // Beanfun behavior).  Only supported for TW region.
+        let template = credentials
+            .command_line_template
+            .as_deref()
+            .unwrap_or("tw.login.maplestory.beanfun.com 8484 BeanFun %s %s");
+        let cmd_line = template
+            .replacen("%s", &credentials.account_id, 1)
+            .replacen("%s", &credentials.otp, 1);
         format!(
-            "{} \"{}\" tw.login.maplestory.beanfun.com 8484 BeanFun {} {}",
+            "{} \"{}\" {}",
             lr_service::LR_PROFILE_GUID,
             launch_cmd.executable,
-            credentials.account_id,
-            credentials.otp,
+            cmd_line,
         )
     } else {
         format!(

@@ -198,6 +198,7 @@
   "launcher.refresh": "重新整理",
   "launcher.refreshing": "重新整理中...",
   "launcher.otp": "一次性密碼",
+  "launcher.traditional_mode": "傳統模式可用",
   "launcher.otp_placeholder": "選擇帳號以取得 OTP",
   "launcher.get_otp": "取得 OTP",
   "launcher.otp_error": "取得密碼失敗",

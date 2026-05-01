@@ -851,7 +851,7 @@ async fn hk_get_otp(
         otp,
         retrieved_at: chrono::Utc::now(),
         command_line_template: Some(
-            "hk.login.maplestory.beanfun.com 8484 BeanFun %s %s".to_string(),
+            "tw.login.maplestory.beanfun.com 8484 BeanFun %s %s".to_string(),
         ),
     })
 }
