@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -108,6 +108,19 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }
+
+  // Enter key → quick-copy selected account ID
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Enter" && selectedAccountId) {
+        navigator.clipboard.writeText(selectedAccountId);
+        setCopiedId(selectedAccountId);
+        setTimeout(() => setCopiedId(null), 1500);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [selectedAccountId]);
 
   return (
     <div className="flex flex-1 flex-col gap-2 overflow-hidden">

@@ -6,6 +6,7 @@ import { useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { Modal } from "../shared/Modal";
 import type { GameAccountDto } from "../../lib/types";
 
@@ -300,6 +301,8 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     };
   }, [position, onClose]);
 
+  const addToast = useErrorToastStore((s) => s.addToast);
+
   if (!position && !modalView) return null;
   if (!account) return null;
 
@@ -319,22 +322,37 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   }
 
   function handleCopyAccount() {
-    if (account) navigator.clipboard.writeText(account.id);
+    if (account) {
+      navigator.clipboard.writeText(account.id);
+      addToast({ message: t("launcher.context.copied"), category: "success", critical: false });
+    }
     onClose();
   }
 
   async function handleCopyCredentials() {
     if (!account) return;
+    const accountId = account.id;
+    onClose();
+    const loadingId = addToast({
+      message: t("launcher.context.credentials_loading"),
+      category: "loading",
+      critical: false,
+    });
     try {
       const creds = await commands.getGameCredentials(
         useAuthStore.getState().activeSessionId ?? "",
-        account.id,
+        accountId,
       );
       await navigator.clipboard.writeText(`${creds.accountId}\n${creds.otp}`);
+      useErrorToastStore.getState().removeToast(loadingId);
+      addToast({
+        message: t("launcher.context.credentials_copied"),
+        category: "success",
+        critical: false,
+      });
     } catch {
-      /* ignore */
+      useErrorToastStore.getState().removeToast(loadingId);
     }
-    onClose();
   }
 
   function handleEditAccount() {

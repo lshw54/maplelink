@@ -34,19 +34,27 @@
 
 ## 功能特色
 
-- 登入方式：帳號密碼、TOTP、QR Code、GamePass、進階驗證
-- 多帳號管理，依地區記住密碼
-- 多 Session 同時登入 — 同一視窗內可同時登入多個帳號（支援跨地區）
-- OTP 一鍵取得、自動貼入遊戲視窗
-- 免登入啟動遊戲 — 登入頁面直接啟動，無需先登入帳號
-- 完整支援 HK + TW 地區
-- 深色 / 淺色 / 跟隨系統主題，三語介面（EN、繁中、简中）
-- 自動更新 — 透過 GitHub Releases 檢查更新，自動偵測 GitHub 連線並 fallback 至鏡像加速（ghproxy.vip / ghproxy.net / ghfast.top）
-- 下載進度條 — 顯示速度、百分比、下載方式，支援背景下載與稍後重啟
-- 阻止遊戲自動更新 — 可選擇自動關閉 Patcher.exe
-- 除錯主控台 — 即時查看 log，敏感資料自動遮蔽，支援篩選/搜尋/複製
-- 相容遊戲加速器（UU 等）— 輸出檔名為 Beanfun.exe，SSL 容錯
-- 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動進行區域模擬啟動
+| 分類 | 功能 | 說明 |
+|------|------|------|
+| 🔐 登入 | 帳號密碼登入 | 支援記住密碼，依地區分別儲存 |
+| | TOTP 驗證 | HK 地區雙重驗證 |
+| | QR Code 登入 | TW 地區掃碼登入 |
+| | GamePass 登入 | TW 地區 GamePass 驗證 |
+| | 進階驗證 | 圖形驗證碼自動處理 |
+| 👥 帳號 | 多帳號管理 | 帳號列表、右鍵選單、拖曳排序、自訂名稱 |
+| | 多 Session 登入 | 同一視窗內同時登入多個帳號，支援跨地區 |
+| | 免登入啟動 | 登入頁面直接啟動遊戲，無需先登入帳號 |
+| 🎮 啟動 | OTP 一鍵取得 | 取得後自動複製或貼入遊戲視窗 |
+| | 區域模擬 | 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動注入 |
+| | 阻止自動更新 | 可選擇自動關閉 Patcher.exe |
+| 🌍 地區 | HK + TW | 完整支援兩個地區 |
+| 🎨 介面 | 主題切換 | 深色 / 淺色 / 跟隨系統 |
+| | 多語言 | English、繁體中文、简体中文 |
+| | DPI 適配 | 不受 Windows 文字大小設定影響 |
+| 🔄 更新 | 自動更新 | 透過 GitHub Releases，自動偵測代理並 fallback |
+| | 下載進度 | 顯示速度、百分比，支援背景下載與稍後重啟 |
+| 🛠 工具 | 除錯主控台 | 即時 log、敏感資料遮蔽、篩選 / 搜尋 / 複製 |
+| | 加速器相容 | 支援 UU 等遊戲加速器，SSL 容錯 |
 
 ## 使用方式
 
@@ -173,9 +181,9 @@ src/
 
 | 頁面 | 尺寸（邏輯像素） | 說明 |
 |------|-----------------|------|
-| Login | 340 × 520 | 登入表單 |
-| Main | 750 × 520 | 帳號列表、OTP、啟動按鈕 |
-| Toolbox | 740 × 480 | 工具、設定、帳號管理、關於 |
+| Login | 350 × 620 | 登入表單 |
+| Main | 760 × 530 | 帳號列表、OTP、啟動按鈕 |
+| Toolbox | 750 × 490 | 工具、設定、帳號管理、關於 |
 
 </details>
 
@@ -191,15 +199,15 @@ cargo tauri build          # 正式建置
 
 ```bash
 # Rust
-cargo fmt --all --check        # 格式檢查
+cargo fmt --all --check                    # 格式檢查
 cargo clippy --all-targets -- -D warnings  # 靜態分析
-cargo test                     # 單元測試 + 屬性測試
+cargo test                                 # 單元測試 + 屬性測試
 
 # TypeScript
-npm run lint                   # ESLint 檢查
+npm run lint                                       # ESLint 檢查
 npx prettier --check "src/**/*.{ts,tsx,css,json}"  # 格式檢查
-npx tsc -b                    # 型別檢查
-npm run format                 # Prettier 格式化
+npx tsc -b                                         # 型別檢查
+npm run format                                     # Prettier 格式化
 
 # Git commit 遵循 Conventional Commits
 # feat: / fix: / refactor: / chore: ...

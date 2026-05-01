@@ -23,6 +23,31 @@ use models::app_state::AppState;
 use models::config::AppConfig;
 use services::{account_storage, config_service, update_service};
 
+/// Read the Windows Accessibility "Text size" percentage from the registry.
+/// Returns 100 when the user has not changed it (the default).
+#[cfg(target_os = "windows")]
+fn get_text_scale_factor() -> u32 {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    hkcu.open_subkey("SOFTWARE\\Microsoft\\Accessibility")
+        .and_then(|key| key.get_value::<u32, _>("TextScaleFactor"))
+        .unwrap_or(100)
+}
+
+/// Return the primary monitor's DPI scale factor (e.g. 1.0, 1.25, 1.5, 2.0).
+/// This is the *display* DPI only — it does NOT include the text-size multiplier.
+#[cfg(target_os = "windows")]
+fn get_dpi_scale() -> f64 {
+    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() };
+    if dpi == 0 {
+        1.0
+    } else {
+        dpi as f64 / 96.0
+    }
+}
+
 /// Check if the current process is running with admin privileges.
 #[cfg(target_os = "windows")]
 fn is_elevated() -> bool {
@@ -65,6 +90,45 @@ fn is_elevated() -> bool {
 ///    d. Check for auto-update (non-blocking, respects config toggle)
 /// 4. Window starts at login size (340×520) — defined in `tauri.conf.json5`
 pub fn run() {
+    // Neutralise Windows Accessibility "Text size" setting.
+    //
+    // Windows has two independent scaling knobs:
+    //   1. Display scale / DPI  (e.g. 150%) — scales everything uniformly.
+    //   2. Accessibility → Text size (e.g. 120%) — scales *only* text.
+    //
+    // WebView2 honours both.  (2) breaks our fixed layout because only text
+    // grows while containers stay the same size.
+    //
+    // Fix: force WebView2's device-scale-factor to the pure DPI value,
+    // which excludes the text-size multiplier.  Combined with PhysicalSize
+    // window sizing (DPI × design size), the app renders identically
+    // regardless of the text-size slider.
+    #[cfg(target_os = "windows")]
+    {
+        // Must declare DPI awareness BEFORE reading DPI, otherwise Windows
+        // may virtualise the value to 96.
+        unsafe {
+            windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+                windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            );
+        }
+
+        let dpi_scale = get_dpi_scale();
+        let arg = format!("--force-device-scale-factor={dpi_scale}");
+        match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+            Ok(existing) if !existing.contains("--force-device-scale-factor") => {
+                std::env::set_var(
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                    format!("{existing} {arg}"),
+                );
+            }
+            Err(_) => {
+                std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", &arg);
+            }
+            _ => {}
+        }
+    }
+
     // Self-elevate to admin if not already elevated.
     // Required for auto-paste (PostMessage to game window) and LR DLL injection.
     #[cfg(target_os = "windows")]
@@ -150,6 +214,7 @@ pub fn run() {
             commands::system::resize_window,
             commands::system::open_file_dialog,
             commands::system::get_app_version,
+            commands::system::get_text_scale_factor,
             commands::system::detect_game_path,
             commands::system::toggle_debug_window,
             commands::system::open_log_folder,
@@ -376,7 +441,22 @@ pub fn run() {
                 }
             });
 
-            // Window starts at login page size (340×520) per tauri.conf.json5.
+            // Resize the initial window to match our forced scale factor.
+            // tauri.conf.json5 sets 350×620 as logical, but since we force
+            // the device-scale-factor to the DPI value, we must set the
+            // physical size = design_size × dpi.
+            #[cfg(target_os = "windows")]
+            {
+                let dpi = get_dpi_scale();
+                let pw = (350.0 * dpi).round() as u32;
+                let ph = (620.0 * dpi).round() as u32;
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)));
+                    let _ = win.center();
+                    tracing::info!("initial window {pw}×{ph} physical (dpi={dpi})");
+                }
+            }
+
             tracing::info!("startup complete — showing login page");
             Ok(())
         })

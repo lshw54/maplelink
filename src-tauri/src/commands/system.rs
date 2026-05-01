@@ -56,16 +56,39 @@ pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), Er
         }
     };
 
-    window
-        .set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)))
-        .map_err(|e| ErrorDto {
-            code: "SYS_RESIZE_FAILED".to_string(),
-            message: format!("Failed to resize window: {e}"),
-            category: ErrorCategory::Process,
-            details: None,
-        })?;
+    // We use --force-device-scale-factor={dpi} to bypass text-size scaling.
+    // Because the forced scale equals the DPI factor, we must set the window
+    // in physical pixels (design_size × dpi) so that WebView2's CSS layout
+    // matches the window dimensions exactly.
+    #[cfg(target_os = "windows")]
+    {
+        let dpi = crate::get_dpi_scale();
+        let pw = (width * dpi).round() as u32;
+        let ph = (height * dpi).round() as u32;
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)))
+            .map_err(|e| ErrorDto {
+                code: "SYS_RESIZE_FAILED".to_string(),
+                message: format!("Failed to resize window: {e}"),
+                category: ErrorCategory::Process,
+                details: None,
+            })?;
+        tracing::debug!("window {pw}×{ph} (physical, dpi={dpi}) page='{page}'");
+    }
 
-    tracing::debug!("window {width}×{height} page='{page}'");
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)))
+            .map_err(|e| ErrorDto {
+                code: "SYS_RESIZE_FAILED".to_string(),
+                message: format!("Failed to resize window: {e}"),
+                category: ErrorCategory::Process,
+                details: None,
+            })?;
+        tracing::debug!("window {width}×{height} page='{page}'");
+    }
+
     Ok(())
 }
 
@@ -111,6 +134,21 @@ pub async fn open_file_dialog(
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Return the Windows Accessibility "Text size" percentage (default 100).
+/// The frontend uses this to apply an inverse CSS zoom so layout is not
+/// broken by text-size scaling.
+#[tauri::command]
+pub fn get_text_scale_factor() -> u32 {
+    #[cfg(target_os = "windows")]
+    {
+        crate::get_text_scale_factor()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        100
+    }
 }
 
 /// Auto-detect the MapleStory game path from the Windows Registry.

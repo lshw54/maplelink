@@ -8,6 +8,7 @@ import { useUiStore } from "../../lib/stores/ui-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
 import { SessionTabs } from "./SessionTabs";
+import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../shared/Modal";
 import type { GameAccountDto } from "../../lib/types";
@@ -22,6 +23,7 @@ export function MainPage() {
   const logout = useLogout();
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [autoSelected, setAutoSelected] = useState(false);
   const [launching, setLaunching] = useState(false);
   const gamePid = useUiStore((s) => s.gamePid);
   const gameRunning = useUiStore((s) => s.gameRunning);
@@ -29,6 +31,16 @@ export function MainPage() {
   const setGameRunning = useUiStore((s) => s.setGameRunning);
   // Latest OTP fetched by OtpPanel — used to skip HTTP round-trip on launch.
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
+  const { data: accounts } = useGameAccounts();
+
+  // Auto-select first account when accounts load and nothing is selected.
+  if (!autoSelected && accounts?.length && !selectedAccountId) {
+    const first = accounts[0];
+    if (first) {
+      setSelectedAccountId(first.id);
+      setAutoSelected(true);
+    }
+  }
 
   // Poll game running status and update PID from backend's active_processes.
   useEffect(() => {
@@ -53,7 +65,9 @@ export function MainPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingLaunchId, setPendingLaunchId] = useState<string | null>(null);
   const [beansMenuOpen, setBeansMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const beansRef = useRef<HTMLSpanElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
 
   // Redirect to login if all sessions are cleared (e.g. expired server-side)
   useEffect(() => {
@@ -324,58 +338,66 @@ export function MainPage() {
         <div className="flex flex-1 flex-col border-l border-border">
           {/* Top bar */}
           <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
-            <div className="flex shrink-0 items-center gap-1.5 text-[12px] text-text-dim">
+            <div className="flex items-center gap-1.5 text-[12px] text-text-dim">
               <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white">
                 {session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
               </div>
-              <span className="max-w-[160px] truncate">{session?.accountName ?? ""}</span>
+              <span className="max-w-[200px] truncate">{session?.accountName ?? ""}</span>
             </div>
             <div className="flex-1" />
-            <div className="flex items-center gap-1.5">
-              <div className="relative">
-                <span
-                  ref={beansRef}
-                  onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.14)]"
-                >
-                  <span className="font-semibold text-accent">
-                    {t("launcher.beans")}: <b>{remainPoint}</b>
-                  </span>
-                  {remainPoint > 0 && (
-                    <>
-                      <span className="text-text-faint">·</span>
-                      <span className="text-text-dim">
-                        {t("launcher.game_points")}: <b>{Math.floor(remainPoint / 2.5)}</b>
-                      </span>
-                    </>
-                  )}
+            <div className="relative">
+              <span
+                ref={beansRef}
+                onClick={() => setBeansMenuOpen(!beansMenuOpen)}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.14)]"
+              >
+                <span className="font-semibold text-accent">
+                  {t("launcher.beans")}: <b>{remainPoint}</b>
                 </span>
-                {beansMenuOpen && (
-                  <BeansPopupMenu
-                    t={t}
-                    region={region}
-                    onRefresh={async () => {
-                      const pts = await commands.getRemainPoint(activeSessionId ?? "");
-                      setRemainPoint(pts);
-                      setBeansMenuOpen(false);
-                    }}
-                    onClose={() => setBeansMenuOpen(false)}
-                    sessionId={activeSessionId ?? ""}
-                  />
+                {remainPoint > 0 && (
+                  <>
+                    <span className="text-text-faint">·</span>
+                    <span className="text-text-dim">
+                      {t("launcher.game_points")}: <b>{Math.floor(remainPoint / 2.5)}</b>
+                    </span>
+                  </>
                 )}
-              </div>
-              <span
-                onClick={() => commands.openMemberPopup(activeSessionId ?? "").catch(() => {})}
-                className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
-              >
-                {t("launcher.member_center")}
               </span>
-              <span
-                onClick={() => commands.openCustomerService().catch(() => {})}
-                className="cursor-pointer truncate text-[12px] text-text-dim transition-colors hover:text-accent"
+              {beansMenuOpen && (
+                <BeansPopupMenu
+                  t={t}
+                  region={region}
+                  onRefresh={async () => {
+                    const pts = await commands.getRemainPoint(activeSessionId ?? "");
+                    setRemainPoint(pts);
+                    setBeansMenuOpen(false);
+                  }}
+                  onClose={() => setBeansMenuOpen(false)}
+                  sessionId={activeSessionId ?? ""}
+                />
+              )}
+            </div>
+            {/* More menu (⋯) */}
+            <div className="relative">
+              <button
+                ref={moreRef}
+                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+                title="More"
               >
-                {t("launcher.support")}
-              </span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <circle cx="3" cy="8" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+              {moreMenuOpen && (
+                <MorePopupMenu
+                  t={t}
+                  sessionId={activeSessionId ?? ""}
+                  onClose={() => setMoreMenuOpen(false)}
+                />
+              )}
             </div>
           </div>
 
@@ -534,6 +556,61 @@ function BeansPopupMenu({
           {t("launcher.beans_exchange")}
         </button>
       )}
+    </div>
+  );
+}
+
+function MorePopupMenu({
+  t,
+  sessionId,
+  onClose,
+}: {
+  t: (key: string) => string;
+  sessionId: string;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 16);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute top-full right-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
+    >
+      <button
+        onClick={() => {
+          commands.openMemberPopup(sessionId).catch(() => {});
+          onClose();
+        }}
+        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
+      >
+        <span className="w-4 text-center text-xs">👤</span>
+        {t("launcher.member_center")}
+      </button>
+      <button
+        onClick={() => {
+          commands.openCustomerService().catch(() => {});
+          onClose();
+        }}
+        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
+      >
+        <span className="w-4 text-center text-xs">💬</span>
+        {t("launcher.support")}
+      </button>
     </div>
   );
 }

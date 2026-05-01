@@ -34,19 +34,27 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 
 ## Features
 
-- Login: account/password, TOTP, QR Code, GamePass, Advance Check verification
-- Multi-account management with per-region password saving
-- Multi-session support — log into multiple accounts simultaneously in one window (cross-region)
-- OTP: one-click retrieve, auto-paste into MapleStory window
-- Direct game launch — start the game from the login page without logging in
-- Full HK + TW region support
-- Dark / Light / System theme, three languages (EN, 繁中, 简中)
-- Auto-update via GitHub Releases with automatic proxy detection and fallback (ghproxy.vip / ghproxy.net / ghfast.top)
-- Download progress bar — speed, percentage, method display with background download and restart-later option
-- Block game auto-update — optionally kill Patcher.exe on launch
-- Debug console — real-time log viewer with sensitive data masking, filter/search/copy
-- Accelerator-friendly — output binary named Beanfun.exe for UU etc., SSL tolerance
-- Locale emulation via [Locale Remulator](https://github.com/InWILL/Locale_Remulator)
+| Category | Feature | Details |
+|----------|---------|---------|
+| 🔐 Auth | Account/password | Per-region password saving |
+| | TOTP verification | Two-factor auth for HK region |
+| | QR Code login | Scan-to-login for TW region |
+| | GamePass login | TW region GamePass authentication |
+| | Advance Check | Automatic CAPTCHA handling |
+| 👥 Accounts | Multi-account | Account list, context menu, drag reorder, custom names |
+| | Multi-session | Log into multiple accounts simultaneously, cross-region |
+| | Direct launch | Start the game from login page without signing in |
+| 🎮 Launch | One-click OTP | Auto-copy or auto-paste into game window |
+| | Locale emulation | Auto-inject via [Locale Remulator](https://github.com/InWILL/Locale_Remulator) |
+| | Block auto-update | Optionally kill Patcher.exe on launch |
+| 🌍 Region | HK + TW | Full support for both regions |
+| 🎨 UI | Themes | Dark / Light / System |
+| | Languages | English, 繁體中文, 简体中文 |
+| | DPI-aware | Unaffected by Windows text size settings |
+| 🔄 Update | Auto-update | Via GitHub Releases with proxy detection and fallback |
+| | Download progress | Speed, percentage, background download, restart later |
+| 🛠 Tools | Debug console | Real-time logs, sensitive data masking, filter/search/copy |
+| | Accelerator-friendly | Compatible with UU and other game accelerators, SSL tolerance |
 
 ## Getting Started
 
@@ -173,9 +181,9 @@ src/
 
 | Page | Size (logical) | Description |
 |------|---------------|-------------|
-| Login | 340 × 520 | Login forms |
-| Main | 750 × 520 | Account grid, OTP, launch button |
-| Toolbox | 740 × 480 | Tools, settings, account manager, about |
+| Login | 350 × 620 | Login forms |
+| Main | 760 × 530 | Account grid, OTP, launch button |
+| Toolbox | 750 × 490 | Tools, settings, account manager, about |
 
 </details>
 
@@ -191,15 +199,15 @@ cargo tauri build          # production build
 
 ```bash
 # Rust
-cargo fmt --all --check        # format check
+cargo fmt --all --check                    # format check
 cargo clippy --all-targets -- -D warnings  # lint
-cargo test                     # unit + property tests
+cargo test                                 # unit + property tests
 
 # TypeScript
-npm run lint                   # ESLint
+npm run lint                                       # ESLint
 npx prettier --check "src/**/*.{ts,tsx,css,json}"  # format check
-npx tsc -b                    # type check
-npm run format                 # Prettier format
+npx tsc -b                                         # type check
+npm run format                                     # Prettier format
 
 # Git commits follow Conventional Commits
 # feat: / fix: / refactor: / chore: ...

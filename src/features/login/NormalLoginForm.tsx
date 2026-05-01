@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
 import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
@@ -31,6 +31,8 @@ export function NormalLoginForm({
   const [savedAccounts, setSavedAccounts] = useState<SavedAccountDto[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const accountInputRef = useRef<HTMLInputElement>(null);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
 
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -81,13 +83,14 @@ export function NormalLoginForm({
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
+        setHighlightIdx(-1);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleSelectAccount(saved: SavedAccountDto) {
+  const handleSelectAccount = useCallback((saved: SavedAccountDto) => {
     setAccount(saved.account);
     setRemember(saved.rememberPassword);
     // Fetch the specific account's saved password from the backend.
@@ -108,8 +111,8 @@ export function NormalLoginForm({
     } else {
       setPassword("");
     }
-    setShowDropdown(false);
-  }
+    closeDropdown();
+  }, []);
 
   async function handleDeleteAccount(acct: SavedAccountDto) {
     try {
@@ -123,6 +126,49 @@ export function NormalLoginForm({
       /* non-critical */
     }
   }
+
+  function closeDropdown() {
+    setShowDropdown(false);
+    setHighlightIdx(-1);
+  }
+
+  function handleAccountKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (savedAccounts.length === 0) return;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      // Directly cycle through saved accounts like mouse wheel
+      const currentIdx = savedAccounts.findIndex((s) => s.account === account);
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      let nextIdx = currentIdx + dir;
+      if (nextIdx < 0) nextIdx = savedAccounts.length - 1;
+      if (nextIdx >= savedAccounts.length) nextIdx = 0;
+      const next = savedAccounts[nextIdx];
+      if (next) handleSelectAccount(next);
+    } else if (e.key === "Escape" && showDropdown) {
+      e.preventDefault();
+      closeDropdown();
+    }
+  }
+
+  // Native wheel listener with { passive: false } so preventDefault works.
+  useEffect(() => {
+    const el = accountInputRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (savedAccounts.length === 0) return;
+      e.preventDefault();
+      const currentIdx = savedAccounts.findIndex((s) => s.account === account);
+      const dir = e.deltaY > 0 ? 1 : -1;
+      let nextIdx = currentIdx + dir;
+      if (nextIdx < 0) nextIdx = savedAccounts.length - 1;
+      if (nextIdx >= savedAccounts.length) nextIdx = 0;
+      const next = savedAccounts[nextIdx];
+      if (next) handleSelectAccount(next);
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [savedAccounts, account, handleSelectAccount]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -154,9 +200,11 @@ export function NormalLoginForm({
         <div className="relative" ref={dropdownRef}>
           <input
             id="login-account"
+            ref={accountInputRef}
             type="text"
             value={account}
             onChange={(e) => setAccount(e.target.value)}
+            onKeyDown={handleAccountKeyDown}
             disabled={isLoading}
             placeholder={t("login.username_placeholder")}
             autoComplete="off"
@@ -186,10 +234,19 @@ export function NormalLoginForm({
           )}
           {showDropdown && savedAccounts.length > 0 && (
             <div className="absolute top-full right-0 left-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-[10px] border border-border bg-[var(--bg)] py-1 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
-              {savedAccounts.map((saved) => (
+              {savedAccounts.map((saved, idx) => (
                 <div
                   key={saved.account}
-                  className="group flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)]"
+                  ref={(el) => {
+                    if (idx === highlightIdx && el) {
+                      el.scrollIntoView({ block: "nearest" });
+                    }
+                  }}
+                  className={`group flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--text)] transition-colors ${
+                    idx === highlightIdx
+                      ? "bg-[rgba(232,162,58,0.12)]"
+                      : "hover:bg-[rgba(232,162,58,0.08)]"
+                  }`}
                 >
                   <button
                     type="button"

@@ -67,6 +67,20 @@ function useInitialConfigSync() {
   return isLoading;
 }
 
+/**
+ * On Windows, the Rust backend forces WebView2's device-scale-factor to the
+ * pure DPI value (excluding text-size scaling).  Window sizes are set in
+ * physical pixels in resize_window.  We call it on every page change to
+ * ensure the window is always correctly sized (the initial size from
+ * tauri.conf.json5 uses logical pixels which may not match).
+ */
+function useTextScaleCompensation() {
+  const currentPage = useUiStore((s) => s.currentPage);
+  useEffect(() => {
+    commands.resizeWindow(currentPage).catch(() => {});
+  }, [currentPage]);
+}
+
 function SplashScreen() {
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-[var(--bg)]">
@@ -78,6 +92,7 @@ function SplashScreen() {
 
 export function App() {
   useThemeEffect();
+  useTextScaleCompensation();
   const configLoading = useInitialConfigSync();
   const { t } = useTranslation();
   const ready = !configLoading;
@@ -107,17 +122,16 @@ export function App() {
   // Adjust window height when update banner appears or disappears
   const bannerHeight = 28;
   useEffect(() => {
-    // Small delay to let the DOM render before measuring
     const timer = setTimeout(async () => {
       try {
-        const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+        const { getCurrentWindow, PhysicalSize } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
-        const size = await win.innerSize();
+        const size = await win.innerSize(); // physical pixels
         const scaleFactor = await win.scaleFactor();
-        const logicalW = size.width / scaleFactor;
-        const logicalH = size.height / scaleFactor;
-        const newH = showBanner ? logicalH + bannerHeight : logicalH - bannerHeight;
-        await win.setSize(new LogicalSize(logicalW, newH));
+        // bannerHeight is in CSS px; convert to physical px
+        const physicalBannerH = Math.round(bannerHeight * scaleFactor);
+        const newH = showBanner ? size.height + physicalBannerH : size.height - physicalBannerH;
+        await win.setSize(new PhysicalSize(size.width, newH));
       } catch {
         /* non-critical */
       }

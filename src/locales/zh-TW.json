@@ -237,6 +237,9 @@
   "launcher.context.detail_tag": "標籤",
   "launcher.context.email_result": "認證信箱",
   "launcher.context.email_unavailable": "此地區不支援查詢認證信箱",
+  "launcher.context.copied": "已複製到剪貼簿",
+  "launcher.context.credentials_copied": "帳密已複製到剪貼簿",
+  "launcher.context.credentials_loading": "正在取得帳密...",
 
   "errors.AUTH_INVALID_CREDENTIALS": "帳號或密碼錯誤",
   "errors.AUTH_SESSION_EXPIRED": "登入階段已過期，請重新登入。",

@@ -231,6 +231,9 @@
   "launcher.context.detail_tag": "标签",
   "launcher.context.email_result": "认证信箱",
   "launcher.context.email_unavailable": "此地区不支持查询认证信箱",
+  "launcher.context.copied": "已复制到剪贴板",
+  "launcher.context.credentials_copied": "账密已复制到剪贴板",
+  "launcher.context.credentials_loading": "正在获取账密...",
 
   "errors.AUTH_INVALID_CREDENTIALS": "账号或密码错误",
   "errors.AUTH_SESSION_EXPIRED": "登录会话已过期，请重新登录。",

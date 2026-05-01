@@ -143,9 +143,55 @@ jobs:
           $repoUrl = "${{ github.server_url }}/${{ github.repository }}"
           $lastRelease = gh api repos/${{ github.repository }}/releases --paginate 2>$null | ConvertFrom-Json | Sort-Object created_at -Descending | Select-Object -First 1
           $range = if ($lastRelease) { "$($lastRelease.tag_name)..HEAD" } else { "-n 30" }
-          $commits = git log $range --pretty=format:"- [%h]($repoUrl/commit/%H) %s — %an, %as" --no-merges 2>$null
-          $commitCount = if ($commits) { ($commits -split "`n").Count } else { 0 }
-          $commitsText = if ($commits) { $commits -join "`n" } else { "Initial release" }
+
+          # Get raw commits with author login via GitHub-style format
+          $rawCommits = git log $range --pretty=format:"%h|%H|%s|%an|%ae|%as" --no-merges 2>$null
+
+          # Build a cache of GitHub username -> display name
+          $nameCache = @{}
+          function Get-DisplayName($authorName, $authorEmail) {
+            # Try to extract GitHub username from noreply email
+            $ghUser = $null
+            if ($authorEmail -match '(\d+\+)?(.+)@users\.noreply\.github\.com') {
+              $ghUser = $matches[2]
+            }
+            if (-not $ghUser) {
+              # Fallback: use author name as-is
+              return $authorName
+            }
+            if ($nameCache.ContainsKey($ghUser)) {
+              return $nameCache[$ghUser]
+            }
+            try {
+              $user = gh api users/$ghUser 2>$null | ConvertFrom-Json
+              $displayName = if ($user.name) { $user.name } else { $ghUser }
+              $nameCache[$ghUser] = $displayName
+              return $displayName
+            } catch {
+              $nameCache[$ghUser] = $authorName
+              return $authorName
+            }
+          }
+
+          $commitLines = @()
+          if ($rawCommits) {
+            foreach ($line in ($rawCommits -split "`n")) {
+              $parts = $line -split '\|', 6
+              if ($parts.Count -ge 6) {
+                $shortHash = $parts[0]
+                $fullHash = $parts[1]
+                $subject = $parts[2]
+                $authorName = $parts[3]
+                $authorEmail = $parts[4]
+                $date = $parts[5]
+                $displayName = Get-DisplayName $authorName $authorEmail
+                $commitLines += "- [$shortHash]($repoUrl/commit/$fullHash) $subject — $displayName, $date"
+              }
+            }
+          }
+
+          $commitCount = $commitLines.Count
+          $commitsText = if ($commitCount -gt 0) { $commitLines -join "`n" } else { "Initial release" }
 
           $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
           "commits<<$delimiter" >> $env:GITHUB_OUTPUT

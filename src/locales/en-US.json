@@ -231,6 +231,9 @@
   "launcher.context.detail_tag": "Tag",
   "launcher.context.email_result": "Auth Email",
   "launcher.context.email_unavailable": "Auth email is not available for this region",
+  "launcher.context.copied": "Copied to clipboard",
+  "launcher.context.credentials_copied": "Credentials copied to clipboard",
+  "launcher.context.credentials_loading": "Fetching credentials...",
 
   "errors.AUTH_INVALID_CREDENTIALS": "Invalid username or password",
   "errors.AUTH_SESSION_EXPIRED": "Session expired. Please sign in again.",
