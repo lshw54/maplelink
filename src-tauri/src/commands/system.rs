@@ -171,7 +171,11 @@ pub fn get_platform_info() -> String {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        let win_ver = if build >= 22000 { "Windows 11" } else { "Windows 10" };
+        let win_ver = if build >= 22000 {
+            "Windows 11"
+        } else {
+            "Windows 10"
+        };
 
         let arch = if std::mem::size_of::<usize>() == 8 {
             "x64"
