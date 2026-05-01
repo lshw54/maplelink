@@ -99,6 +99,7 @@ export const commands = {
   openFileDialog: () => invoke<string | null>("open_file_dialog"),
   getAppVersion: () => invoke<string>("get_app_version"),
   getTextScaleFactor: () => invoke<number>("get_text_scale_factor"),
+  getPlatformInfo: () => invoke<string>("get_platform_info"),
   logFrontendError: (level: string, module: string, message: string) =>
     invoke("log_frontend_error", { level, module, message }),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),

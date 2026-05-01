@@ -50,9 +50,7 @@ export function StatusBar() {
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dotColor} ${beat ? "animate-[hbeat_0.4s_ease]" : ""}`}
         />
-        <span className="font-semibold tracking-[2px]">
-          {online ? "ONLINE" : "OFFLINE"}
-        </span>
+        <span className="font-semibold tracking-[2px]">{online ? "ONLINE" : "OFFLINE"}</span>
         <span className="text-text-faint">{ms !== null ? `${ms}ms` : "--"}</span>
       </div>
     </div>

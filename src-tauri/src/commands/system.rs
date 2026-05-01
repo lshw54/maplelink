@@ -151,6 +151,42 @@ pub fn get_text_scale_factor() -> u32 {
     }
 }
 
+/// Return a human-readable platform string, e.g. "Windows 11 (x64)".
+/// Reads the actual OS build from the registry for accurate Win10/11 detection.
+#[tauri::command]
+pub fn get_platform_info() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_LOCAL_MACHINE;
+        use winreg::RegKey;
+
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let key = hklm
+            .open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion")
+            .ok();
+
+        let build: u32 = key
+            .as_ref()
+            .and_then(|k| k.get_value::<String, _>("CurrentBuildNumber").ok())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        let win_ver = if build >= 22000 { "Windows 11" } else { "Windows 10" };
+
+        let arch = if std::mem::size_of::<usize>() == 8 {
+            "x64"
+        } else {
+            "x86"
+        };
+
+        format!("{win_ver} ({arch})")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "Unknown".to_string()
+    }
+}
+
 /// Auto-detect the MapleStory game path from the Windows Registry.
 /// Inner function for detect_game_path, callable from both the command and startup.
 pub async fn detect_game_path_inner(

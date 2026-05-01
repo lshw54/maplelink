@@ -295,7 +295,9 @@ export function MainPage() {
             <div className="text-center text-base font-extrabold tracking-[1px] text-[var(--text)]">
               {t("launcher.game_info")}
             </div>
-            <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">Gamania · MMORPG</div>
+            <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">
+              Gamania · MMORPG
+            </div>
 
             {/* Circular PLAY button */}
             <button

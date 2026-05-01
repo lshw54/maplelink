@@ -215,6 +215,7 @@ pub fn run() {
             commands::system::open_file_dialog,
             commands::system::get_app_version,
             commands::system::get_text_scale_factor,
+            commands::system::get_platform_info,
             commands::system::detect_game_path,
             commands::system::toggle_debug_window,
             commands::system::open_log_folder,
