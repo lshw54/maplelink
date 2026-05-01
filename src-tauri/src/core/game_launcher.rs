@@ -257,6 +257,7 @@ mod tests {
                         auto_kill_patcher: true,
                         account_view_mode: crate::models::config::AccountViewMode::Card,
                         auto_login: false,
+                        auto_launch_game: false,
                     }
                 },
             )

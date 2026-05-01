@@ -177,6 +177,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "autoLogin" | "auto_login" => {
             config.auto_login = parse_bool(value)?;
         }
+        "autoLaunchGame" | "auto_launch_game" => {
+            config.auto_launch_game = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

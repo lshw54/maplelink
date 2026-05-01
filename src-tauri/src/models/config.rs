@@ -40,6 +40,9 @@ pub struct AppConfig {
     /// Auto-login on startup when saved credentials are available (default: false).
     #[serde(default)]
     pub auto_login: bool,
+    /// Auto-launch game after successful login (default: false).
+    #[serde(default)]
+    pub auto_launch_game: bool,
 }
 
 fn default_true() -> bool {
@@ -73,6 +76,7 @@ impl Default for AppConfig {
             auto_kill_patcher: true,
             account_view_mode: AccountViewMode::Card,
             auto_login: false,
+            auto_launch_game: false,
         }
     }
 }

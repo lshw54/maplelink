@@ -46,6 +46,7 @@ export interface AppConfigDto {
   autoKillPatcher: boolean;
   accountViewMode: "card" | "list";
   autoLogin: boolean;
+  autoLaunchGame: boolean;
 }
 
 export interface ErrorDto {

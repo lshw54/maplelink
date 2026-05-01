@@ -87,6 +87,8 @@
   "settings.skip_play_confirm_desc": "自动关闭游戏的 Play 按钮窗口，并跳过重启确认",
   "settings.traditional_login": "传统模式登录",
   "settings.traditional_login_desc": "启动游戏时不传送服务器连接参数。关闭此选项会将服务器/端口/账号/OTP 直接传给游戏。",
+  "settings.auto_launch_game": "登录成功后自动启动游戏",
+  "settings.auto_launch_game_desc": "登录成功后自动启动游戏。",
   "settings.auto_kill_patcher": "阻止游戏自动更新",
   "settings.auto_kill_patcher_desc": "启动游戏时自动关闭 Patcher.exe，防止游戏强制更新。",
 

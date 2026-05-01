@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
+import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
 import type { SessionDto, QrPollResult } from "../types";
 
@@ -80,6 +81,31 @@ export function useLogin() {
       // Clear addingSession flag, reset login view, and navigate to main
       useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
+
+      // Auto-launch game if enabled
+      const cfg = useConfigStore.getState().config;
+      if (cfg?.autoLaunchGame) {
+        setTimeout(async () => {
+          try {
+            let pid = 0;
+            if (cfg.traditionalLogin) {
+              pid = await commands.launchGameDirect();
+            } else {
+              const entry = useAuthStore.getState().sessions.get(session.sessionId);
+              const first = entry?.gameAccounts?.[0];
+              if (first) {
+                pid = await commands.launchGame(session.sessionId, first.id);
+              }
+            }
+            if (pid > 0) {
+              useUiStore.getState().setGamePid(pid);
+              useUiStore.getState().setGameRunning(true);
+            }
+          } catch {
+            /* auto-launch failure is non-critical */
+          }
+        }, 500);
+      }
     },
   });
 }

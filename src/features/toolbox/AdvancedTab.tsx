@@ -62,6 +62,20 @@ export function AdvancedTab() {
         />
       </SettingRow>
 
+      {/* Auto-launch game after login */}
+      <SettingRow label={t("settings.auto_launch_game")}>
+        <Toggle
+          checked={config?.autoLaunchGame ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "auto_launch_game",
+              value: String(!config.autoLaunchGame),
+            });
+          }}
+        />
+      </SettingRow>
+
       {/* Auto-kill Patcher.exe */}
       <SettingRow label={t("settings.auto_kill_patcher")}>
         <Toggle

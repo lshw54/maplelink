@@ -87,6 +87,8 @@
   "settings.skip_play_confirm_desc": "Auto-close the game's Play button window and skip relaunch confirmation",
   "settings.traditional_login": "Traditional Login Mode",
   "settings.traditional_login_desc": "Launch the game without passing server connection args. Disable this to pass server/port/account/OTP directly to the game.",
+  "settings.auto_launch_game": "Auto-launch game after login",
+  "settings.auto_launch_game_desc": "Automatically start the game after a successful login.",
   "settings.auto_kill_patcher": "Block Game Auto-Update",
   "settings.auto_kill_patcher_desc": "Automatically kill Patcher.exe when launching the game to prevent forced updates.",
 
