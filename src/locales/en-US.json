@@ -194,7 +194,6 @@
   "launcher.refresh": "Refresh",
   "launcher.refreshing": "Refreshing...",
   "launcher.otp": "One-Time Password",
-  "launcher.traditional_mode": "Only for Traditional",
   "launcher.otp_placeholder": "Select an account to get OTP",
   "launcher.get_otp": "Get OTP",
   "launcher.otp_error": "Failed to retrieve OTP",

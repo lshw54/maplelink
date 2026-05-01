@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameCredentials } from "../../lib/hooks/use-accounts";
 import { useAuthStore } from "../../lib/stores/auth-store";
-import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { commands } from "../../lib/tauri";
 import type { GameCredentialsDto } from "../../lib/types";
@@ -20,7 +19,6 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   const [pasting, setPasting] = useState(false);
   const { t } = useTranslation();
   const addToast = useErrorToastStore((s) => s.addToast);
-  const traditionalLogin = useConfigStore((s) => s.config?.traditionalLogin ?? true);
 
   function handleOtpError(error: Error) {
     const msg = error.message || t("launcher.otp_error");
@@ -115,11 +113,6 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           <span className="text-[11px] font-bold tracking-[2.5px] text-text-dim uppercase">
             🔐 {t("launcher.otp")}
           </span>
-          {traditionalLogin && (
-            <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-medium text-accent">
-              {t("launcher.traditional_mode")}
-            </span>
-          )}
         </div>
         <label className="flex cursor-pointer items-center gap-1.5">
           <span className="text-[12px] tracking-[0.5px] text-text-faint">

@@ -194,7 +194,6 @@
   "launcher.refresh": "刷新",
   "launcher.refreshing": "刷新中...",
   "launcher.otp": "一次性密码",
-  "launcher.traditional_mode": "传统模式可用",
   "launcher.otp_placeholder": "选择账号以获取 OTP",
   "launcher.get_otp": "获取 OTP",
   "launcher.otp_error": "获取密码失败",
