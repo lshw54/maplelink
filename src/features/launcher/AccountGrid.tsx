@@ -126,7 +126,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
     <div className="flex flex-1 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-text-dim">{t("launcher.accounts")}</span>
+          <span className="text-[11px] font-semibold tracking-[1px] text-text-dim">{t("launcher.accounts")}</span>
           {/* View toggle */}
           <button
             onClick={toggleViewMode}

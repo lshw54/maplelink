@@ -44,7 +44,7 @@ export function StatusBar() {
             online ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]" : "bg-[var(--danger)]"
           } ${beat ? "animate-[hbeat_0.4s_ease]" : ""}`}
         />
-        <span>{online ? "ONLINE" : "OFFLINE"}</span>
+        <span className="text-[11px] font-semibold tracking-[2px]">{online ? "ONLINE" : "OFFLINE"}</span>
         <span className="text-[12px] text-text-faint">{ms !== null ? `${ms}ms` : "--"}</span>
       </div>
     </div>

@@ -40,7 +40,7 @@ export function Titlebar() {
       style={{ zIndex: 10, position: "relative" }}
     >
       {/* Drag region — app name */}
-      <div className="pointer-events-none flex flex-1 items-center pl-4 text-[12px] font-semibold tracking-[2px] text-text-dim">
+      <div className="pointer-events-none flex flex-1 items-center pl-4 text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
         MAPLELINK
       </div>
 

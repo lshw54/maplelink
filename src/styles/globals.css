@@ -18,20 +18,20 @@
     --accent-glow: rgba(232, 162, 58, 0.35);
     --danger: #e81123;
     --radius: 10px;
-    --bg: #0d0f13;
+    --bg: #090b0f;
     --surface: rgba(255, 255, 255, 0.04);
     --surface-hover: rgba(255, 255, 255, 0.07);
     --border: rgba(255, 255, 255, 0.08);
-    --text: #c8cad0;
-    --text-dim: #555a65;
-    --text-faint: #333740;
+    --text: rgba(255, 255, 255, 0.88);
+    --text-dim: rgba(255, 255, 255, 0.45);
+    --text-faint: rgba(255, 255, 255, 0.22);
     --glow-bg: rgba(232, 162, 58, 0.06);
     --input-focus-ring: rgba(232, 162, 58, 0.08);
-    --tb-bg: #0d0f13;
-    --tb-nav-bg: #0e0e0e;
-    --tb-card: #1e1e1e;
-    --tb-border: #333;
-    --tb-input-bg: #161616;
+    --tb-bg: #090b0f;
+    --tb-nav-bg: #0a0c10;
+    --tb-card: #141619;
+    --tb-border: rgba(255, 255, 255, 0.1);
+    --tb-input-bg: #0f1114;
   }
 
   .light {
@@ -78,6 +78,8 @@
       color 0.3s,
       border-color 0.3s;
     -webkit-user-drag: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body::before {

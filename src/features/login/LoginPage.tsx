@@ -117,7 +117,7 @@ export function LoginPage() {
                 alt="MapleLink"
                 className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
               />
-              <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
+              <div className="text-[11px] font-bold tracking-[5px] text-text-dim uppercase">
                 {t("app.name")}
               </div>
             </div>
@@ -203,7 +203,7 @@ export function LoginPage() {
           ▶ {t("login.launch_game_direct")}
         </button>
         <GameRunningIndicator />
-        <div className="font-mono text-[12px] text-text-faint">MapleLink v{appVersion}</div>
+        <div className="font-mono text-[10px] font-medium tracking-[1px] text-text-faint">MapleLink v{appVersion}</div>
       </div>
 
       <Modal

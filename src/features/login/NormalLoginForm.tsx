@@ -193,7 +193,7 @@ export function NormalLoginForm({
       <div className="mb-3">
         <label
           htmlFor="login-account"
-          className="mb-1 block text-[12px] tracking-[1.5px] text-text-dim uppercase"
+          className="mb-1 block text-[11px] font-semibold tracking-[2px] text-text-dim uppercase"
         >
           {t("login.username")}
         </label>
@@ -284,7 +284,7 @@ export function NormalLoginForm({
       <div className="mb-3">
         <label
           htmlFor="login-password"
-          className="mb-1 block text-[12px] tracking-[1.5px] text-text-dim uppercase"
+          className="mb-1 block text-[11px] font-semibold tracking-[2px] text-text-dim uppercase"
         >
           {t("login.password")}
         </label>
@@ -337,7 +337,7 @@ export function NormalLoginForm({
         <button
           type="submit"
           disabled={isLoading || !account.trim() || !password.trim()}
-          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[11px] font-bold tracking-[2px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isLoading ? t("login.logging_in") : t("login.submit")}
         </button>

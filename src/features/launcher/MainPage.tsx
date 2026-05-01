@@ -292,10 +292,10 @@ export function MainPage() {
                 draggable={false}
               />
             </div>
-            <div className="text-center text-base font-extrabold tracking-[0.5px] text-[var(--text)]">
+            <div className="text-center text-base font-extrabold tracking-[1px] text-[var(--text)]">
               {t("launcher.game_info")}
             </div>
-            <div className="text-[12px] tracking-[1px] text-text-dim">Gamania · MMORPG</div>
+            <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">Gamania · MMORPG</div>
 
             {/* Circular PLAY button */}
             <button
@@ -318,7 +318,7 @@ export function MainPage() {
               <button
                 onClick={() => setShowLogoutConfirm(true)}
                 disabled={logout.isPending}
-                className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[12px] font-semibold tracking-[1px] text-text-dim uppercase transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
+                className="rounded-md bg-[var(--surface)] px-2.5 py-1 text-[11px] font-bold tracking-[2px] text-text-dim uppercase transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.93]"
               >
                 {t("launcher.logout")}
               </button>
@@ -328,7 +328,7 @@ export function MainPage() {
           {/* Bottom status */}
           <div className="absolute right-0 bottom-0 left-0">
             <StatusBar />
-            <div className="shrink-0 pb-2 text-center font-mono text-[12px] text-text-faint">
+            <div className="shrink-0 pb-2 text-center font-mono text-[10px] font-medium tracking-[1px] text-text-faint">
               MapleLink v{appVersion}
             </div>
           </div>
