@@ -1,19 +1,21 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { useUiStore } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Modal } from "../shared/Modal";
 
+const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WEEKDAYS_ZH = ["日", "一", "二", "三", "四", "五", "六"];
 
-function getMaintenanceInfo() {
+function getMaintenanceInfo(lang: string) {
   const now = new Date();
   const day = now.getDay();
-  const weekday = WEEKDAYS_ZH[day];
+  const weekdays = lang.startsWith("en") ? WEEKDAYS_EN : WEEKDAYS_ZH;
+  const weekday = weekdays[day] ?? "";
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   const date = `${yyyy}/${mm}/${dd}`;
-  // MapleStory version maintenance: Wednesday 00:00 – 12:00
   const isMaintenanceDay = day === 3;
   return { weekday, date, isMaintenanceDay };
 }
@@ -48,7 +50,8 @@ function ToolCardItem({ card }: { card: ToolCard }) {
 
 export function ToolsTab() {
   const { t } = useTranslation();
-  const { weekday, date, isMaintenanceDay } = getMaintenanceInfo();
+  const language = useUiStore((s) => s.language);
+  const { weekday, date, isMaintenanceDay } = getMaintenanceInfo(language);
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
