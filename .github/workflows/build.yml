@@ -119,7 +119,7 @@ jobs:
           "build_time=$buildTime" >> $env:GITHUB_OUTPUT
 
       - name: Build Tauri app
-        run: npx @tauri-apps/cli build
+        run: npx @tauri-apps/cli@2.11.1 build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
