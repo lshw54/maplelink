@@ -44,6 +44,22 @@ impl SessionState {
         let http_client = reqwest::Client::builder()
             .cookie_provider(cookie_jar.clone())
             .danger_accept_invalid_certs(true)
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                let should_capture_bflogin_redirect = attempt
+                    .previous()
+                    .last()
+                    .map(|url| {
+                        url.path()
+                            .eq_ignore_ascii_case("/beanfun_block/bflogin/default.aspx")
+                    })
+                    .unwrap_or(false);
+
+                if should_capture_bflogin_redirect {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()
             .expect("failed to build HTTP client");
 

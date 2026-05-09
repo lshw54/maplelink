@@ -960,26 +960,47 @@ async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
     let resp = client
         .get(url)
         .header("User-Agent", USER_AGENT)
+        .header("Accept", "text/html")
+        .header("Accept-Encoding", "identity")
         .send()
         .await
         .map_err(|e| map_reqwest_error(url, e))?;
 
     let final_url = resp.url().to_string();
-    tracing::debug!("TW session key redirect URL: {final_url}");
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+    tracing::debug!("TW session key redirect URL: final={final_url}, location={location}");
 
-    // Extract pSKey or SessionKey from the final URL
-    let re = Regex::new(r"[pP]?[sS][Kk]ey=([^&]+)")
-        .map_err(|_| parse_error_str("failed to compile skey regex"))?;
+    // Beanfun places the session key in the first redirect.  Following the
+    // whole check-in chain can end on a block/check page with no key.
+    extract_tw_session_key(location)
+        .or_else(|| extract_tw_session_key(&final_url))
+        .ok_or_else(|| {
+            let target = if location.is_empty() {
+                final_url.as_str()
+            } else {
+                location
+            };
+            tracing::error!("no pSKey found in TW redirect target: {target}");
 
-    re.captures(&final_url)
+            let reason = if target.contains("BlockIPMessage") {
+                "Beanfun blocked the QR login request before issuing a session key".into()
+            } else {
+                "failed to extract TW session key".into()
+            };
+
+            LoginError::Auth(AuthError::InvalidCredentials { reason })
+        })
+}
+
+fn extract_tw_session_key(url: &str) -> Option<String> {
+    let re = Regex::new(r"[pP]?[sS][Kk]ey=([^&\s]+)").ok()?;
+    re.captures(url)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
-        .ok_or_else(|| {
-            tracing::error!("no pSKey found in TW redirect URL: {final_url}");
-            LoginError::Auth(AuthError::InvalidCredentials {
-                reason: "failed to extract TW session key".into(),
-            })
-        })
 }
 
 /// Full TW regular login flow using the new JSON API.
@@ -2200,6 +2221,27 @@ mod tests {
     fn extract_akey_missing_returns_error() {
         let result = extract_akey_from_url_or_body("https://example.com/", "<html>no akey</html>");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_tw_session_key_from_redirect_location() {
+        let url =
+            "https://tw.newlogin.beanfun.com/checkin.aspx?skey=2026059cc9e9a0c63141&display_mode=0";
+        assert_eq!(
+            extract_tw_session_key(url).as_deref(),
+            Some("2026059cc9e9a0c63141")
+        );
+    }
+
+    #[test]
+    fn extract_tw_session_key_from_login_index_url() {
+        let url = "https://login.beanfun.com/Login/Index?pSKey=ABC123xyz";
+        assert_eq!(extract_tw_session_key(url).as_deref(), Some("ABC123xyz"));
+    }
+
+    #[test]
+    fn extract_tw_session_key_missing_on_block_page() {
+        assert!(extract_tw_session_key("https://tw.beanfun.com/TW/BlockIPMessage.htm").is_none());
     }
 
     #[test]
