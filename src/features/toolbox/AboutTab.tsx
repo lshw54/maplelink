@@ -132,7 +132,7 @@ export function AboutTab() {
 
       {/* Copyright */}
       <p className="text-center text-[10px] text-text-faint">
-        © 2025 MapleLink Contributors · MIT License
+        © 2026 MapleLink Contributors · MIT License
       </p>
 
       {showUpdateDialog && effectiveResult && (
