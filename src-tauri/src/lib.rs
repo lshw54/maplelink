@@ -197,6 +197,7 @@ pub fn run() {
             commands::auth::get_saved_account_detail,
             commands::auth::delete_saved_account,
             commands::auth::save_login_credentials,
+            commands::auth::session_key_webview_done,
             commands::config::get_config,
             commands::config::set_config,
             commands::config::reset_config,
