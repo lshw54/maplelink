@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, USER_AGENT};
 use tokio::sync::{Mutex, RwLock};
 
 use super::game_account::GameAccount;
@@ -41,8 +43,19 @@ impl SessionState {
     /// Create a new session state with a fresh HTTP client and cookie jar.
     pub fn new() -> Self {
         let cookie_jar = Arc::new(reqwest::cookie::Jar::default());
+        let mut default_headers = HeaderMap::new();
+        default_headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static(
+                "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
+            ),
+        );
+        default_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
         let http_client = reqwest::Client::builder()
             .cookie_provider(cookie_jar.clone())
+            .default_headers(default_headers)
+            .http1_only()
+            .timeout(Duration::from_secs(30))
             .danger_accept_invalid_certs(true)
             .build()
             .expect("failed to build HTTP client");
