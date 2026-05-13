@@ -13,11 +13,7 @@ use crate::models::update::UpdateInfo;
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
 
 /// Proxy mirrors to try when direct GitHub access fails.
-const PROXY_MIRRORS: &[&str] = &[
-    "https://ghproxy.vip/",
-    "https://ghproxy.net/",
-    "https://ghfast.top/",
-];
+const PROXY_MIRRORS: &[&str] = &["https://ghproxy.net/", "https://ghfast.top/"];
 
 /// Cached connectivity probe result.
 /// - `None` inside the Option = direct GitHub works (no proxy needed)
