@@ -100,29 +100,67 @@ impl AppState {
 
     /// Check if any session has a running game process.
     pub async fn is_any_game_running(&self) -> bool {
-        let sessions = self.sessions.read().await;
-        for ss in sessions.values() {
-            let active = ss.active_processes.read().await;
-            for &pid in active.keys() {
-                if pid > 0 && crate::services::process_service::is_process_running(pid) {
+        let session_states: Vec<Arc<SessionState>> =
+            self.sessions.read().await.values().cloned().collect();
+
+        for ss in session_states {
+            let pids: Vec<u32> = ss.active_processes.read().await.keys().copied().collect();
+            let mut dead_pids = Vec::new();
+
+            for pid in pids {
+                if pid == 0 {
+                    dead_pids.push(pid);
+                    continue;
+                }
+
+                if crate::services::process_service::is_process_running(pid) {
                     return true;
+                }
+
+                dead_pids.push(pid);
+            }
+
+            if !dead_pids.is_empty() {
+                let mut active = ss.active_processes.write().await;
+                for pid in dead_pids {
+                    active.remove(&pid);
                 }
             }
         }
-        crate::services::process_service::is_process_name_running("MapleStory.exe")
+
+        false
     }
 
     /// Get the PID of any running game across all sessions.
     pub async fn get_any_game_pid(&self) -> u32 {
-        let sessions = self.sessions.read().await;
-        for ss in sessions.values() {
-            let active = ss.active_processes.read().await;
-            for &pid in active.keys() {
-                if pid > 0 && crate::services::process_service::is_process_running(pid) {
+        let session_states: Vec<Arc<SessionState>> =
+            self.sessions.read().await.values().cloned().collect();
+
+        for ss in session_states {
+            let pids: Vec<u32> = ss.active_processes.read().await.keys().copied().collect();
+            let mut dead_pids = Vec::new();
+
+            for pid in pids {
+                if pid == 0 {
+                    dead_pids.push(pid);
+                    continue;
+                }
+
+                if crate::services::process_service::is_process_running(pid) {
                     return pid;
+                }
+
+                dead_pids.push(pid);
+            }
+
+            if !dead_pids.is_empty() {
+                let mut active = ss.active_processes.write().await;
+                for pid in dead_pids {
+                    active.remove(&pid);
                 }
             }
         }
+
         0
     }
 }
