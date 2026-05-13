@@ -2,6 +2,10 @@
 //!
 //! Thin wrappers: validate inputs, delegate to core/service, map errors to [`ErrorDto`].
 
+use base64::Engine;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use tauri::Manager;
 use tauri::State;
 
@@ -11,6 +15,17 @@ use crate::models::app_state::{AppState, SessionInfo};
 use crate::models::error::ErrorDto;
 use crate::models::session::Session;
 use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
+
+type SessionKeyFallbackSender = tokio::sync::oneshot::Sender<WebviewFetchResult>;
+
+static SESSION_KEY_WEBVIEW_RESULTS: OnceLock<Mutex<HashMap<String, SessionKeyFallbackSender>>> =
+    OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct WebviewFetchResult {
+    url: String,
+    html: String,
+}
 
 // ---------------------------------------------------------------------------
 // DTOs returned to the frontend
@@ -67,6 +82,7 @@ pub async fn login(
     session_id: String,
     account: String,
     password: String,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SessionDto, ErrorDto> {
     // Input validation
@@ -76,7 +92,8 @@ pub async fn login(
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    let login_result = beanfun_service::login(
+    let login_result = login_with_native_fallback(
+        &app,
         &ss.http_client,
         &account,
         &password,
@@ -134,12 +151,13 @@ pub async fn login(
 #[tauri::command]
 pub async fn qr_login_start(
     session_id: String,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<QrCodeData, ErrorDto> {
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    beanfun_service::qr_login_start(&ss.http_client, &region)
+    qr_login_start_with_native_fallback(&app, &ss.http_client, &region)
         .await
         .map_err(login_err_to_dto)
 }
@@ -582,6 +600,325 @@ fn login_err_to_dto(err: beanfun_service::LoginError) -> ErrorDto {
             ErrorDto::from(app_err)
         }
     }
+}
+
+async fn login_with_native_fallback(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    account: &str,
+    password: &str,
+    region: &crate::models::session::Region,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<Session, beanfun_service::LoginError> {
+    match beanfun_service::login(client, account, password, region, cookie_jar).await {
+        Ok(session) => Ok(session),
+        Err(err) if should_try_session_key_fallback(&err) => {
+            tracing::warn!(
+                region = ?region,
+                account = %account,
+                "Primary login path failed before session key bootstrap; trying native fallbacks"
+            );
+            let session_key = fetch_session_key_with_fallback(app, region).await?;
+            beanfun_service::login_with_session_key(
+                client,
+                account,
+                password,
+                region,
+                cookie_jar,
+                &session_key,
+            )
+            .await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn qr_login_start_with_native_fallback(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    region: &crate::models::session::Region,
+) -> Result<QrCodeData, beanfun_service::LoginError> {
+    match beanfun_service::qr_login_start(client, region).await {
+        Ok(data) => Ok(data),
+        Err(err) if should_try_session_key_fallback(&err) => {
+            tracing::warn!(region = ?region, "QR start failed before session key bootstrap; trying native fallbacks");
+            let session_key = fetch_session_key_with_fallback(app, region).await?;
+            beanfun_service::qr_login_start_with_session_key(client, region, &session_key).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn should_try_session_key_fallback(err: &beanfun_service::LoginError) -> bool {
+    matches!(
+        err,
+        beanfun_service::LoginError::Network(
+            crate::core::error::NetworkError::ConnectionFailed { .. }
+        ) | beanfun_service::LoginError::Network(crate::core::error::NetworkError::Timeout { .. })
+    )
+}
+
+async fn fetch_session_key_with_fallback(
+    app: &tauri::AppHandle,
+    region: &crate::models::session::Region,
+) -> Result<String, beanfun_service::LoginError> {
+    if let Some(session_key) = fetch_session_key_via_powershell(region).await? {
+        tracing::info!(region = ?region, session_key_len = session_key.len(), "Session key obtained via PowerShell/.NET fallback");
+        return Ok(session_key);
+    }
+
+    let webview = fetch_session_key_via_webview2(app, region).await?;
+    let session_key = match region {
+        crate::models::session::Region::HK => {
+            beanfun_service::parse_hk_session_key_html(&webview.html)?
+        }
+        crate::models::session::Region::TW => {
+            beanfun_service::parse_tw_session_key_url(&webview.url)?
+        }
+    };
+    tracing::info!(region = ?region, session_key_len = session_key.len(), "Session key obtained via WebView2 fallback");
+    Ok(session_key)
+}
+
+async fn fetch_session_key_via_powershell(
+    region: &crate::models::session::Region,
+) -> Result<Option<String>, beanfun_service::LoginError> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = match region {
+            crate::models::session::Region::HK => format!(
+                r#"$ProgressPreference='SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+$req = [System.Net.HttpWebRequest]::Create('{0}')
+$req.Method = 'GET'
+$req.UserAgent = '{1}'
+$req.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+$req.Headers['Accept-Encoding'] = 'identity'
+$resp = $req.GetResponse()
+$reader = New-Object System.IO.StreamReader($resp.GetResponseStream(), [System.Text.Encoding]::UTF8)
+$body = $reader.ReadToEnd()
+$reader.Close()
+$resp.Close()
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Write-Output $body"#,
+                "https://bfweb.hk.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0",
+                WEBVIEW_USER_AGENT
+            ),
+            crate::models::session::Region::TW => format!(
+                r#"$ProgressPreference='SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+$req = [System.Net.HttpWebRequest]::Create('{0}')
+$req.Method = 'GET'
+$req.UserAgent = '{1}'
+$req.AllowAutoRedirect = $true
+$req.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+$req.Headers['Accept-Encoding'] = 'identity'
+$resp = $req.GetResponse()
+$finalUrl = $resp.ResponseUri.AbsoluteUri
+$resp.Close()
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Write-Output $finalUrl"#,
+                "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0",
+                WEBVIEW_USER_AGENT
+            ),
+        };
+
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(encode_powershell_script(&script));
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+                .output()
+        })
+        .await
+        .map_err(|e| {
+            beanfun_service::LoginError::Network(
+                crate::core::error::NetworkError::ConnectionFailed {
+                    url: format!("powershell session-key fallback task failed ({e})"),
+                },
+            )
+        })?
+        .map_err(|e| {
+            beanfun_service::LoginError::Network(
+                crate::core::error::NetworkError::ConnectionFailed {
+                    url: format!("powershell session-key fallback failed to launch ({e})"),
+                },
+            )
+        })?;
+
+        if !output.status.success() {
+            tracing::warn!(
+                region = ?region,
+                status = ?output.status.code(),
+                stderr = %String::from_utf8_lossy(&output.stderr),
+                "PowerShell/.NET session-key fallback failed"
+            );
+            return Ok(None);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout.is_empty() {
+            tracing::warn!(region = ?region, "PowerShell/.NET session-key fallback returned empty output");
+            return Ok(None);
+        }
+
+        let session_key = match region {
+            crate::models::session::Region::HK => {
+                beanfun_service::parse_hk_session_key_html(&stdout)?
+            }
+            crate::models::session::Region::TW => {
+                beanfun_service::parse_tw_session_key_url(&stdout)?
+            }
+        };
+
+        Ok(Some(session_key))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = region;
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn encode_powershell_script(script: &str) -> Vec<u8> {
+    script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect()
+}
+
+async fn fetch_session_key_via_webview2(
+    app: &tauri::AppHandle,
+    region: &crate::models::session::Region,
+) -> Result<WebviewFetchResult, beanfun_service::LoginError> {
+    let request_id = format!("session-key-{}", uuid::Uuid::new_v4());
+    let label = format!("session-key-webview-{}", uuid::Uuid::new_v4());
+    let results = SESSION_KEY_WEBVIEW_RESULTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    results.lock().unwrap().insert(request_id.clone(), tx);
+
+    let start_url = match region {
+        crate::models::session::Region::HK => {
+            "https://bfweb.hk.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0"
+        }
+        crate::models::session::Region::TW => {
+            "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0"
+        }
+    };
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| {
+            beanfun_service::LoginError::Network(
+                crate::core::error::NetworkError::ConnectionFailed {
+                    url: format!("failed to get app data dir for session-key webview ({e})"),
+                },
+            )
+        })?
+        .join("session-key-fallback");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let init_script = format!(
+        r#"
+(() => {{
+  const REQUEST_ID = "{}";
+  const START_URL = "{}";
+  if (window.location.href === 'about:blank') {{
+    setTimeout(() => {{ window.location.href = START_URL; }}, 50);
+    return;
+  }}
+  const send = () => {{
+    const html = document.documentElement ? document.documentElement.outerHTML : document.body?.outerHTML || '';
+    if (window.__TAURI_INTERNALS__) {{
+      window.__TAURI_INTERNALS__.invoke('session_key_webview_done', {{
+        requestId: REQUEST_ID,
+        url: window.location.href,
+        html
+      }}).catch(err => console.error('[SessionKeyFallback] invoke failed', err));
+    }}
+  }};
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+    setTimeout(send, 50);
+  }} else {{
+    window.addEventListener('DOMContentLoaded', () => setTimeout(send, 50), {{ once: true }});
+  }}
+}})();
+"#,
+        request_id, start_url
+    );
+
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        &label,
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+    )
+    .title("Session Key Fallback")
+    .visible(false)
+    .focused(false)
+    .resizable(false)
+    .inner_size(320.0, 240.0)
+    .data_directory(data_dir)
+    .user_agent(WEBVIEW_USER_AGENT)
+    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .initialization_script(&init_script)
+    .build()
+    .map_err(|e| {
+        beanfun_service::LoginError::Network(crate::core::error::NetworkError::ConnectionFailed {
+            url: format!("failed to create session-key fallback webview ({e})"),
+        })
+    })?;
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(20), rx)
+        .await
+        .map_err(|_| {
+            beanfun_service::LoginError::Network(crate::core::error::NetworkError::Timeout {
+                url: "session-key webview fallback timed out".to_string(),
+            })
+        })?
+        .map_err(|_| {
+            beanfun_service::LoginError::Network(
+                crate::core::error::NetworkError::ConnectionFailed {
+                    url: "session-key webview fallback channel closed".to_string(),
+                },
+            )
+        })?;
+
+    let _ = window.destroy();
+    SESSION_KEY_WEBVIEW_RESULTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .remove(&request_id);
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn session_key_webview_done(
+    request_id: String,
+    url: String,
+    html: String,
+) -> Result<(), ErrorDto> {
+    tracing::info!(
+        request_id = %request_id,
+        final_url = %url,
+        html_len = html.len(),
+        "Session-key WebView2 fallback captured page"
+    );
+
+    if let Some(sender) = SESSION_KEY_WEBVIEW_RESULTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .remove(&request_id)
+    {
+        let _ = sender.send(WebviewFetchResult { url, html });
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
