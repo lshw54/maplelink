@@ -10,6 +10,7 @@
 use regex::Regex;
 use reqwest::cookie::CookieStore;
 use reqwest::Client;
+use tokio::time::{sleep, Duration};
 
 use crate::core::error::{AuthError, NetworkError};
 use crate::models::game_account::{GameAccount, GameCredentials};
@@ -82,6 +83,23 @@ pub async fn login(
     }
 }
 
+/// Authenticate using a pre-fetched session key.
+pub async fn login_with_session_key(
+    client: &Client,
+    account: &str,
+    password: &str,
+    region: &Region,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    session_key: &str,
+) -> Result<Session, LoginError> {
+    match region {
+        Region::HK => hk_login_with_session_key(client, account, password, session_key).await,
+        Region::TW => {
+            tw_login_with_session_key(client, account, password, cookie_jar, session_key).await
+        }
+    }
+}
+
 /// Start a QR-code login flow (TW region only).
 ///
 /// Gets a session key, then fetches the QR code image from the TW login API.
@@ -92,6 +110,42 @@ pub async fn qr_login_start(client: &Client, region: &Region) -> Result<QrCodeDa
             reason: "QR login is only available for TW region".into(),
         })),
     }
+}
+
+/// Start a QR-code login flow using a pre-fetched TW session key.
+pub async fn qr_login_start_with_session_key(
+    client: &Client,
+    region: &Region,
+    session_key: &str,
+) -> Result<QrCodeData, LoginError> {
+    match region {
+        Region::TW => tw_qr_start_with_session_key(client, session_key).await,
+        Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
+            reason: "QR login is only available for TW region".into(),
+        })),
+    }
+}
+
+pub fn parse_hk_session_key_html(html: &str) -> Result<String, LoginError> {
+    let re = Regex::new(r#"<span id="ctl00_ContentPlaceHolder1_lblOtp1">(.*)</span>"#)
+        .map_err(|_| parse_error_str("failed to compile session key regex"))?;
+
+    re.captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| {
+            LoginError::Auth(AuthError::InvalidCredentials {
+                reason: "failed to extract session key (no OTP1 span)".into(),
+            })
+        })
+}
+
+pub fn parse_tw_session_key_url(url: &str) -> Result<String, LoginError> {
+    extract_tw_session_key(url).ok_or_else(|| {
+        LoginError::Auth(AuthError::InvalidCredentials {
+            reason: "failed to extract TW session key from redirect URL".into(),
+        })
+    })
 }
 
 /// Poll the status of an in-progress QR-code login.
@@ -390,21 +444,50 @@ pub enum LoginError {
     Network(#[from] NetworkError),
 }
 
+#[derive(Debug, Clone)]
+struct RegisteredDeviceContinuation {
+    login_token: String,
+}
+
 // ---------------------------------------------------------------------------
 // HK Login Implementation
 // ---------------------------------------------------------------------------
 
 /// Full HK regular login flow: GetSessionkey → HkRegularLogin → LoginCompleted.
 async fn hk_login(client: &Client, account: &str, password: &str) -> Result<Session, LoginError> {
+    tracing::info!(
+        account = %mask_account(account),
+        "HK regular login start"
+    );
+
     // Step 1: Get session key
     let skey = hk_get_session_key(client).await?;
-    tracing::debug!("HK session key obtained");
+    tracing::info!(session_key_len = skey.len(), "HK session key obtained");
+
+    hk_login_with_session_key(client, account, password, &skey).await
+}
+
+async fn hk_login_with_session_key(
+    client: &Client,
+    account: &str,
+    password: &str,
+    skey: &str,
+) -> Result<Session, LoginError> {
+    tracing::info!(
+        session_key_len = skey.len(),
+        "HK login using provided session key"
+    );
 
     // Step 2: Login form submission
     let login_url =
         format!("https://login.hk.beanfun.com/login/id-pass_form_newBF.aspx?otp1={skey}");
 
     let page_html = http_get_text(client, &login_url).await?;
+    tracing::info!(
+        response_len = page_html.len(),
+        preview = %preview_text(&page_html, 180),
+        "HK login form fetched"
+    );
 
     let viewstate = extract_html_field(&page_html, "__VIEWSTATE")?;
     let event_validation = extract_html_field(&page_html, "__EVENTVALIDATION")?;
@@ -452,7 +535,7 @@ async fn hk_login(client: &Client, account: &str, password: &str) -> Result<Sess
             expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
             region: Region::HK,
             account_name: account.to_string(),
-            session_key: Some(skey),
+            session_key: Some(skey.to_string()),
             totp_state: Some(TotpState {
                 response_html: response_body,
                 post_url: login_url,
@@ -463,11 +546,16 @@ async fn hk_login(client: &Client, account: &str, password: &str) -> Result<Sess
         }));
     }
 
-    // Check for akey in final URL (after redirect) or response body
-    let akey = extract_akey_from_url_or_body(&final_url, &response_body)?;
-
-    // Step 5: LoginCompleted
-    let web_token = hk_login_completed(client, &skey, &akey).await?;
+    // Check for device-registration continuation before treating missing
+    // `akey` as a hard failure. Legacy Beanfun keeps polling until approval.
+    let web_token =
+        if let Some(continuation) = extract_registered_device_continuation(&response_body) {
+            tracing::info!("HK login requires registered-device approval");
+            hk_wait_for_registered_device_approval(client, skey, &continuation.login_token).await?
+        } else {
+            let akey = extract_akey_from_url_or_body(&final_url, &response_body)?;
+            hk_login_completed(client, skey, &akey).await?
+        };
 
     Ok(Session {
         token: web_token,
@@ -475,7 +563,7 @@ async fn hk_login(client: &Client, account: &str, password: &str) -> Result<Sess
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::HK,
         account_name: account.to_string(),
-        session_key: Some(skey),
+        session_key: Some(skey.to_string()),
         totp_state: None,
     })
 }
@@ -577,9 +665,14 @@ pub async fn hk_totp_verify_with_session(
         &response_body[..response_body.len().min(500)]
     );
 
-    let akey = extract_akey_from_url_or_body(&final_url, &response_body)?;
-
-    let web_token = hk_login_completed(client, skey, &akey).await?;
+    let web_token =
+        if let Some(continuation) = extract_registered_device_continuation(&response_body) {
+            tracing::info!("HK TOTP verification requires registered-device approval");
+            hk_wait_for_registered_device_approval(client, skey, &continuation.login_token).await?
+        } else {
+            let akey = extract_akey_from_url_or_body(&final_url, &response_body)?;
+            hk_login_completed(client, skey, &akey).await?
+        };
 
     Ok(Session {
         token: web_token,
@@ -863,26 +956,18 @@ async fn hk_get_otp(
 /// Get the HK session key by parsing the OTP span from the default login page.
 async fn hk_get_session_key(client: &Client) -> Result<String, LoginError> {
     let url = "https://bfweb.hk.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+    tracing::info!(url, "HK session-key request start");
     let html = http_get_text(client, url).await?;
 
-    tracing::debug!(
-        "hk_get_session_key response length={}, first 500 chars: {}",
-        html.len(),
-        &html[..html.len().min(500)]
+    tracing::info!(
+        response_len = html.len(),
+        preview = %preview_text(&html, 220),
+        "HK session-key page fetched"
     );
 
-    let re = Regex::new(r#"<span id="ctl00_ContentPlaceHolder1_lblOtp1">(.*)</span>"#)
-        .map_err(|_| parse_error_str("failed to compile session key regex"))?;
-
-    re.captures(&html)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .ok_or_else(|| {
-            tracing::error!("no OTP1 span found in response. Full HTML:\n{html}");
-            LoginError::Auth(AuthError::InvalidCredentials {
-                reason: "failed to extract session key (no OTP1 span)".into(),
-            })
-        })
+    parse_hk_session_key_html(&html).inspect_err(|_err| {
+        tracing::error!("no OTP1 span found in response. Full HTML:\n{html}");
+    })
 }
 
 /// Complete HK login by POSTing session key + auth key to return.aspx,
@@ -949,6 +1034,81 @@ async fn hk_login_completed(client: &Client, skey: &str, akey: &str) -> Result<S
     Ok(web_token)
 }
 
+async fn hk_wait_for_registered_device_approval(
+    client: &Client,
+    skey: &str,
+    login_token: &str,
+) -> Result<String, LoginError> {
+    const POLL_ATTEMPTS: usize = 90;
+    const POLL_INTERVAL: Duration = Duration::from_secs(2);
+    let poll_url = "https://tw.newlogin.beanfun.com/login/bfAPPAutoLogin.ashx";
+
+    for attempt in 0..POLL_ATTEMPTS {
+        let resp = client
+            .post(poll_url)
+            .header("User-Agent", USER_AGENT)
+            .form(&[("LT", login_token)])
+            .send()
+            .await
+            .map_err(|e| map_reqwest_error(poll_url, e))?;
+
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| map_reqwest_error(poll_url, e))?;
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| parse_error_str("failed to parse bfAPPAutoLogin response"))?;
+
+        let int_result = json["IntResult"].as_str().unwrap_or_default();
+        let str_result = json["StrReslut"].as_str().unwrap_or_default();
+
+        tracing::debug!(
+            "registered-device poll attempt={} result={} str_result={}",
+            attempt + 1,
+            int_result,
+            str_result
+        );
+
+        match int_result {
+            "0" | "1" => {
+                sleep(POLL_INTERVAL).await;
+            }
+            "2" => {
+                let callback_url = normalize_registered_device_callback_url(str_result);
+                let callback_body = http_get_text(client, &callback_url).await?;
+                let akey = extract_akey_from_url_or_body(str_result, &callback_body)?;
+                return hk_login_completed(client, skey, &akey).await;
+            }
+            "-1" => {
+                return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: if str_result.is_empty() {
+                        "registered-device login failed".into()
+                    } else {
+                        str_result.to_string()
+                    },
+                }));
+            }
+            "-2" => return Err(LoginError::Auth(AuthError::SessionExpired)),
+            "-3" => {
+                return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: "registered-device login request was rejected".into(),
+                }));
+            }
+            _ => {
+                return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: if str_result.is_empty() {
+                        format!("unexpected registered-device status: {int_result}")
+                    } else {
+                        str_result.to_string()
+                    },
+                }));
+            }
+        }
+    }
+
+    Err(LoginError::Auth(AuthError::SessionExpired))
+}
+
 // ---------------------------------------------------------------------------
 // TW Login Implementation
 // ---------------------------------------------------------------------------
@@ -956,6 +1116,7 @@ async fn hk_login_completed(client: &Client, skey: &str, akey: &str) -> Result<S
 /// Get TW session key by following the redirect from bflogin/default.aspx.
 async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
     let url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+    tracing::info!(url, "TW session-key request start");
 
     let resp = client
         .get(url)
@@ -972,7 +1133,11 @@ async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
         .get(reqwest::header::LOCATION)
         .and_then(|h| h.to_str().ok())
         .unwrap_or_default();
-    tracing::debug!("TW session key redirect URL: final={final_url}, location={location}");
+    tracing::info!(
+        final_url = %final_url,
+        location = location,
+        "TW session-key redirect received"
+    );
 
     // Beanfun places the session key in the first redirect.  Following the
     // whole check-in chain can end on a block/check page with no key.
@@ -1013,6 +1178,16 @@ async fn tw_login(
     let skey = tw_get_session_key(client).await?;
     tracing::debug!("TW session key: {}", &skey[..skey.len().min(20)]);
 
+    tw_login_with_session_key(client, account, password, cookie_jar, &skey).await
+}
+
+async fn tw_login_with_session_key(
+    client: &Client,
+    account: &str,
+    password: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    skey: &str,
+) -> Result<Session, LoginError> {
     let api_base = "https://login.beanfun.com";
     let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
 
@@ -1093,14 +1268,14 @@ async fn tw_login(
                 }));
             }
             // Success — complete via SendLogin flow
-            let web_token = tw_send_login_flow(client, &skey, cookie_jar).await?;
+            let web_token = tw_send_login_flow(client, skey, cookie_jar).await?;
             Ok(Session {
                 token: web_token,
                 refresh_token: None,
                 expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
                 region: Region::TW,
                 account_name: account.to_string(),
-                session_key: Some(skey),
+                session_key: Some(skey.to_string()),
                 totp_state: None,
             })
         }
@@ -1299,6 +1474,13 @@ async fn tw_send_login_flow(
 /// Start TW QR code login flow.
 async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
     let skey = tw_get_session_key(client).await?;
+    tw_qr_start_with_session_key(client, &skey).await
+}
+
+async fn tw_qr_start_with_session_key(
+    client: &Client,
+    skey: &str,
+) -> Result<QrCodeData, LoginError> {
     let api_base = "https://login.beanfun.com";
     let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
 
@@ -1363,7 +1545,7 @@ async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
     );
 
     Ok(QrCodeData {
-        session_key: skey,
+        session_key: skey.to_string(),
         qr_image_url,
         verification_token,
         deeplink,
@@ -2014,6 +2196,24 @@ fn extract_akey_from_url_or_body(url: &str, body: &str) -> Result<String, LoginE
     }))
 }
 
+fn extract_registered_device_continuation(body: &str) -> Option<RegisteredDeviceContinuation> {
+    let re = Regex::new(r#"pollRequest\("([^"]*)","(\w+)","([^"]+)"\);"#).ok()?;
+    let caps = re.captures(body)?;
+    let login_token = caps.get(2)?.as_str().to_string();
+    Some(RegisteredDeviceContinuation { login_token })
+}
+
+fn normalize_registered_device_callback_url(raw: &str) -> String {
+    if raw.starts_with("https://") {
+        raw.to_string()
+    } else {
+        format!(
+            "https://tw.newlogin.beanfun.com/login/{}",
+            raw.trim_start_matches('/')
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // HTTP & Parsing Helpers
 // ---------------------------------------------------------------------------
@@ -2022,6 +2222,10 @@ fn extract_akey_from_url_or_body(url: &str, body: &str) -> Result<String, LoginE
 async fn http_get_text(client: &Client, url: &str) -> Result<String, LoginError> {
     assert_https(url)?;
 
+    if is_auth_url(url) {
+        tracing::info!(url, "HTTP GET start");
+    }
+
     let resp = client
         .get(url)
         .header("User-Agent", USER_AGENT)
@@ -2029,14 +2233,47 @@ async fn http_get_text(client: &Client, url: &str) -> Result<String, LoginError>
         .await
         .map_err(|e| map_reqwest_error(url, e))?;
 
-    if !resp.status().is_success() {
+    let status = resp.status();
+    let final_url = resp.url().to_string();
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::error!(
+            url,
+            %status,
+            final_url = %final_url,
+            location = %location,
+            response_len = body.len(),
+            preview = %preview_text(&body, 220),
+            "HTTP GET failed with non-success status"
+        );
         return Err(LoginError::Network(NetworkError::HttpError {
-            status: resp.status().as_u16(),
+            status: status.as_u16(),
             url: url.to_string(),
         }));
     }
 
-    resp.text().await.map_err(|e| map_reqwest_error(url, e))
+    let body = resp.text().await.map_err(|e| map_reqwest_error(url, e))?;
+
+    if is_auth_url(url) {
+        tracing::info!(
+            url,
+            %status,
+            final_url = %final_url,
+            location = %location,
+            response_len = body.len(),
+            preview = %preview_text(&body, 220),
+            "HTTP GET success"
+        );
+    }
+
+    Ok(body)
 }
 
 /// Extract an ASP.NET hidden field value from HTML.
@@ -2116,13 +2353,18 @@ fn read_bf_web_token(cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>, host: &s
 
 /// Map a `reqwest::Error` into our domain [`NetworkError`].
 fn map_reqwest_error(url: &str, err: reqwest::Error) -> LoginError {
+    tracing::error!(
+        url,
+        is_timeout = err.is_timeout(),
+        is_connect = err.is_connect(),
+        is_status = err.is_status(),
+        source = %err,
+        "HTTP request failed"
+    );
+
     if err.is_timeout() {
         LoginError::Network(NetworkError::Timeout {
-            url: url.to_string(),
-        })
-    } else if err.is_connect() {
-        LoginError::Network(NetworkError::ConnectionFailed {
-            url: url.to_string(),
+            url: format!("{url} ({err})"),
         })
     } else {
         LoginError::Network(NetworkError::ConnectionFailed {
@@ -2137,6 +2379,29 @@ fn parse_error_str(msg: &str) -> LoginError {
         status: 200,
         url: msg.to_string(),
     })
+}
+
+fn is_auth_url(url: &str) -> bool {
+    url.contains("/beanfun_block/bflogin/")
+        || url.contains("login.beanfun.com")
+        || url.contains("login.hk.beanfun.com")
+        || url.contains("tw.newlogin.beanfun.com")
+}
+
+fn preview_text(text: &str, max_chars: usize) -> String {
+    let preview: String = text.chars().take(max_chars).collect();
+    preview.replace(['\r', '\n', '\t'], " ")
+}
+
+fn mask_account(account: &str) -> String {
+    let mut chars = account.chars();
+    match (chars.next(), chars.last()) {
+        (Some(first), Some(last)) if account.chars().count() > 2 => {
+            format!("{first}***{last}")
+        }
+        _ if account.is_empty() => "<empty>".to_string(),
+        _ => "***".to_string(),
+    }
 }
 
 /// Basic HTML entity decoding.
@@ -2221,6 +2486,22 @@ mod tests {
     fn extract_akey_missing_returns_error() {
         let result = extract_akey_from_url_or_body("https://example.com/", "<html>no akey</html>");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_registered_device_continuation_parses_login_token() {
+        let body = r#"<script>pollRequest("請至手機確認","ABC123TOKEN","callback.aspx?akey=HELLO");</script>"#;
+        let continuation = extract_registered_device_continuation(body).unwrap();
+        assert_eq!(continuation.login_token, "ABC123TOKEN");
+    }
+
+    #[test]
+    fn normalize_registered_device_callback_url_supports_relative_path() {
+        let url = normalize_registered_device_callback_url("callback.aspx?akey=HELLO");
+        assert_eq!(
+            url,
+            "https://tw.newlogin.beanfun.com/login/callback.aspx?akey=HELLO"
+        );
     }
 
     #[test]
