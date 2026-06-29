@@ -1,0 +1,12 @@
+{
+  "identifier": "recaptcha-remote",
+  "description": "Allow the reCAPTCHA helper window's remote beanfun page to invoke the login-token commands (submit_login_token / close_recaptcha_window). Required because beanfun is a remote origin.",
+  "windows": ["recaptcha_window"],
+  "remote": {
+    "urls": [
+      "https://*.beanfun.com",
+      "https://login.beanfun.com"
+    ]
+  },
+  "permissions": ["core:default"]
+}
