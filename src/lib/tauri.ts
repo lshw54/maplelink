@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   SessionDto,
   SessionInfo,
@@ -22,6 +23,13 @@ export const commands = {
   // Auth (session-specific)
   login: (sessionId: string, account: string, password: string) =>
     invoke<SessionDto>("login", { sessionId, account, password }),
+  // TW Regular (帳密) two-phase reCAPTCHA login
+  twLoginCheck: (sessionId: string, account: string, recaptchaCheck: string) =>
+    invoke("tw_login_check", { sessionId, account, recaptchaCheck }),
+  twLoginSubmit: (sessionId: string, password: string, recaptchaLogin: string) =>
+    invoke<SessionDto>("tw_login_submit", { sessionId, password, recaptchaLogin }),
+  openRecaptchaWindow: (step: "check" | "login") => invoke("open_recaptcha_window", { step }),
+  closeRecaptchaWindow: () => invoke("close_recaptcha_window"),
   qrLoginStart: (sessionId: string) => invoke<QrCodeData>("qr_login_start", { sessionId }),
   qrLoginPoll: (sessionId: string, sessionKey: string, verificationToken: string) =>
     invoke<QrPollResult>("qr_login_poll", { sessionId, sessionKey, verificationToken }),
@@ -126,3 +134,50 @@ export const commands = {
   // GamePass login (TW only — creates its own session, returns sessionId)
   openGamePassLogin: () => invoke<string>("open_gamepass_login"),
 } as const;
+
+/** Payload of the `recaptcha-token` event emitted when the helper window captures a token. */
+interface RecaptchaTokenEvent {
+  token: string;
+  step: "check" | "login";
+}
+
+/**
+ * Open the external reCAPTCHA helper window for the given step and resolve with
+ * the token once the user solves the challenge. Rejects if the user closes the
+ * window first (`recaptcha-cancelled`).
+ */
+export async function solveRecaptcha(
+  step: "check" | "login",
+  timeoutMs = 180_000,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const cleanups: Array<() => void> = [];
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanups.forEach((c) => c());
+      fn();
+    };
+
+    void listen<RecaptchaTokenEvent>("recaptcha-token", (e) => {
+      if (e.payload.step !== step) return;
+      finish(() => resolve(e.payload.token));
+    }).then((un) => cleanups.push(un));
+
+    void listen("recaptcha-cancelled", () => {
+      finish(() => reject(new Error("RECAPTCHA_CANCELLED")));
+    }).then((un) => cleanups.push(un));
+
+    // Safety net: never let a stuck/blank helper window hang the login forever.
+    const timer = setTimeout(() => {
+      void commands.closeRecaptchaWindow().catch(() => {});
+      finish(() => reject(new Error("RECAPTCHA_TIMEOUT")));
+    }, timeoutMs);
+    cleanups.push(() => clearTimeout(timer));
+
+    commands
+      .openRecaptchaWindow(step)
+      .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
+  });
+}

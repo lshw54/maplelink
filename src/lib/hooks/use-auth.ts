@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { commands } from "../tauri";
+import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
@@ -30,7 +30,20 @@ export function useLogin() {
       });
 
       try {
-        const session = await commands.login(sessionId, account, password);
+        // TW Regular (帳密) login is reCAPTCHA-gated at two points: once at
+        // CheckAccountType (the "check" token) and once at AccountLogin (the
+        // "login" token). Each is solved by the human in the helper window.
+        // HK uses the advance-check captcha flow instead — keep the old path.
+        const region = useConfigStore.getState().config?.region ?? "TW";
+        let session: SessionDto;
+        if (region === "TW") {
+          const checkToken = await solveRecaptcha("check");
+          await commands.twLoginCheck(sessionId, account, checkToken);
+          const loginToken = await solveRecaptcha("login");
+          session = await commands.twLoginSubmit(sessionId, password, loginToken);
+        } else {
+          session = await commands.login(sessionId, account, password);
+        }
         try {
           await commands.saveLoginCredentials(account, password, rememberPassword);
         } catch {
@@ -40,6 +53,12 @@ export function useLogin() {
         return session;
       } catch (err: unknown) {
         const errStr = typeof err === "object" && err !== null ? JSON.stringify(err) : String(err);
+        if (errStr.includes("RECAPTCHA_CANCELLED") || errStr.includes("RECAPTCHA_TIMEOUT")) {
+          // User closed the verification window, or it never produced a token —
+          // treat as a quiet abort so the button doesn't hang on "登入中...".
+          useAuthStore.getState().setPendingCredentials(null);
+          throw new Error("人機驗證未完成,請再試一次", { cause: err });
+        }
         if (errStr.includes("TOTP") || errStr.includes("totp") || errStr.includes("Totp")) {
           const totpError = new Error("TOTP_REQUIRED") as Error & { sessionId: string };
           totpError.name = "TotpRequired";
