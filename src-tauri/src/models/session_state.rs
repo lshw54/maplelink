@@ -17,6 +17,18 @@ use super::session::Session;
 /// Unique identifier for a login session.
 pub type SessionId = String;
 
+/// In-progress TW Regular login, carried between the two reCAPTCHA phases.
+///
+/// Phase 1 (`tw_login_check`) bootstraps the session key + form token and
+/// passes the first reCAPTCHA; phase 2 (`tw_login_submit`) reuses them to
+/// submit the password with the second reCAPTCHA.
+#[derive(Debug, Clone)]
+pub struct PendingTwLogin {
+    pub skey: String,
+    pub form_token: String,
+    pub account: String,
+}
+
 /// State for a single login session.
 pub struct SessionState {
     /// Beanfun session (token, region, account name, etc.)
@@ -31,6 +43,8 @@ pub struct SessionState {
     pub bf_client_lock: Mutex<()>,
     /// Maps PID → account ID for game processes launched from this session.
     pub active_processes: RwLock<HashMap<u32, String>>,
+    /// In-progress two-phase TW login state (set by `tw_login_check`).
+    pub pending_tw_login: RwLock<Option<PendingTwLogin>>,
 }
 
 impl Default for SessionState {
@@ -67,6 +81,7 @@ impl SessionState {
             cookie_jar,
             bf_client_lock: Mutex::new(()),
             active_processes: RwLock::new(HashMap::new()),
+            pending_tw_login: RwLock::new(None),
         }
     }
 
@@ -75,5 +90,6 @@ impl SessionState {
         *self.session.write().await = None;
         self.game_accounts.write().await.clear();
         self.active_processes.write().await.clear();
+        *self.pending_tw_login.write().await = None;
     }
 }

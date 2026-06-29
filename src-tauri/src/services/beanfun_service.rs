@@ -70,16 +70,31 @@ pub enum QrPollStatus {
 /// and an `AuthError::TotpRequired` wrapped in `LoginError`.
 ///
 /// For TW region, returns a placeholder error (not yet implemented).
+/// reCAPTCHA Enterprise tokens for the two TW Regular login challenge points.
+///
+/// The TW帳密 flow is gated twice: once at `CheckAccountType` (solved after the
+/// account is entered) and once at `AccountLogin` (solved after the password).
+/// Each is a distinct, single-use, action-bound Enterprise token.
+#[derive(Debug, Clone, Default)]
+pub struct RecaptchaTokens {
+    /// Token for the `CheckAccountType` step.
+    pub check: Option<String>,
+    /// Token for the `AccountLogin` step.
+    pub login: Option<String>,
+}
+
 pub async fn login(
     client: &Client,
     account: &str,
     password: &str,
     region: &Region,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    tokens: &RecaptchaTokens,
 ) -> Result<Session, LoginError> {
     match region {
+        // HK login uses the advance-check captcha flow, not reCAPTCHA — tokens ignored.
         Region::HK => hk_login(client, account, password).await,
-        Region::TW => tw_login(client, account, password, cookie_jar).await,
+        Region::TW => tw_login(client, account, password, cookie_jar, tokens).await,
     }
 }
 
@@ -91,11 +106,13 @@ pub async fn login_with_session_key(
     region: &Region,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
     session_key: &str,
+    tokens: &RecaptchaTokens,
 ) -> Result<Session, LoginError> {
     match region {
         Region::HK => hk_login_with_session_key(client, account, password, session_key).await,
         Region::TW => {
-            tw_login_with_session_key(client, account, password, cookie_jar, session_key).await
+            tw_login_with_session_key(client, account, password, cookie_jar, session_key, tokens)
+                .await
         }
     }
 }
@@ -1174,11 +1191,12 @@ async fn tw_login(
     account: &str,
     password: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    tokens: &RecaptchaTokens,
 ) -> Result<Session, LoginError> {
     let skey = tw_get_session_key(client).await?;
     tracing::debug!("TW session key: {}", &skey[..skey.len().min(20)]);
 
-    tw_login_with_session_key(client, account, password, cookie_jar, &skey).await
+    tw_login_with_session_key(client, account, password, cookie_jar, &skey, tokens).await
 }
 
 async fn tw_login_with_session_key(
@@ -1187,6 +1205,7 @@ async fn tw_login_with_session_key(
     password: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
     skey: &str,
+    tokens: &RecaptchaTokens,
 ) -> Result<Session, LoginError> {
     let api_base = "https://login.beanfun.com";
     let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
@@ -1196,11 +1215,91 @@ async fn tw_login_with_session_key(
     let form_token = extract_request_verification_token(&index_html)?;
     tracing::debug!("TW form token obtained");
 
-    // Step 2: CheckAccountType
+    // Step 2 + 3: CheckAccountType, then AccountLogin.
+    let server_captcha =
+        tw_check_account_type(client, skey, &form_token, account, tokens.check.as_deref()).await?;
+    tw_account_login(
+        client,
+        skey,
+        &form_token,
+        account,
+        password,
+        tokens.login.as_deref(),
+        &server_captcha,
+        cookie_jar,
+    )
+    .await
+}
+
+/// Phase 1 of the two-phase TW Regular login.
+///
+/// Bootstraps a fresh session key, fetches the form token, and runs
+/// `CheckAccountType` with the first reCAPTCHA token (solved right after the
+/// account is entered — so the token is fresh and unexpired). Returns
+/// `(skey, form_token)` for the caller to stash and feed to [`tw_login_submit`].
+pub async fn tw_login_check(
+    client: &Client,
+    account: &str,
+    check_token: Option<&str>,
+) -> Result<(String, String), LoginError> {
+    let skey = tw_get_session_key(client).await?;
+    tracing::debug!("TW (phase 1) session key obtained");
+
+    let api_base = "https://login.beanfun.com";
+    let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
+    let index_html = http_get_text(client, &index_url).await?;
+    let form_token = extract_request_verification_token(&index_html)?;
+
+    // We don't need the echoed captcha here (phase 2 carries its own token),
+    // but running CheckAccountType validates the account + first reCAPTCHA.
+    let _ = tw_check_account_type(client, &skey, &form_token, account, check_token).await?;
+
+    Ok((skey, form_token))
+}
+
+/// Phase 2 of the two-phase TW Regular login.
+///
+/// Submits the password with the second reCAPTCHA token, reusing the
+/// `skey`/`form_token` produced by [`tw_login_check`].
+#[allow(clippy::too_many_arguments)]
+pub async fn tw_login_submit(
+    client: &Client,
+    skey: &str,
+    form_token: &str,
+    account: &str,
+    password: &str,
+    login_token: Option<&str>,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<Session, LoginError> {
+    tw_account_login(
+        client,
+        skey,
+        form_token,
+        account,
+        password,
+        login_token,
+        "",
+        cookie_jar,
+    )
+    .await
+}
+
+/// POST `CheckAccountType` with the first reCAPTCHA token (empty when the
+/// account needs no captcha). Returns the captcha token the server echoes back
+/// — used as the `AccountLogin` fallback in the no-reCAPTCHA case.
+async fn tw_check_account_type(
+    client: &Client,
+    skey: &str,
+    form_token: &str,
+    account: &str,
+    check_token: Option<&str>,
+) -> Result<String, LoginError> {
+    let api_base = "https://login.beanfun.com";
+    let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
     let check_url = format!("{api_base}/Login/CheckAccountType?pSKey={skey}");
     let check_body = serde_json::json!({
         "Account": account,
-        "Captcha": "",
+        "Captcha": check_token.unwrap_or(""),
         "__RequestVerificationToken": form_token,
     });
 
@@ -1209,7 +1308,7 @@ async fn tw_login_with_session_key(
         .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/json; charset=utf-8")
         .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", &form_token)
+        .header("RequestVerificationToken", form_token)
         .header("Referer", &index_url)
         .header("Origin", api_base)
         .json(&check_body)
@@ -1218,12 +1317,63 @@ async fn tw_login_with_session_key(
         .map_err(|e| map_reqwest_error(&check_url, e))?;
 
     let check_text = check_resp.text().await.unwrap_or_default();
-    let captcha_token = serde_json::from_str::<serde_json::Value>(&check_text)
-        .ok()
-        .and_then(|j| j["ResultData"]["Captcha"].as_str().map(String::from))
-        .unwrap_or_default();
+    tracing::debug!(
+        "TW CheckAccountType response: {}",
+        &check_text[..check_text.len().min(500)]
+    );
+    let check_json = serde_json::from_str::<serde_json::Value>(&check_text).ok();
 
-    // Step 3: AccountLogin
+    let result_code = check_json
+        .as_ref()
+        .and_then(|j| j["ResultCode"].as_i64())
+        .unwrap_or(1);
+    let result_msg = check_json
+        .as_ref()
+        .and_then(|j| j["ResultMessage"].as_str())
+        .unwrap_or("");
+
+    // ResultCode 1 == Success (beanfun convention). Surface anything else so a
+    // bad account or rejected first reCAPTCHA fails loudly instead of silently
+    // breaking AccountLogin later.
+    if result_code != 1 {
+        return Err(LoginError::Auth(AuthError::InvalidCredentials {
+            reason: if result_msg.is_empty() {
+                "CheckAccountType failed".to_string()
+            } else {
+                result_msg.to_string()
+            },
+        }));
+    }
+
+    Ok(check_json
+        .as_ref()
+        .and_then(|j| j["ResultData"]["Captcha"].as_str().map(String::from))
+        .unwrap_or_default())
+}
+
+/// POST `AccountLogin` with the second reCAPTCHA token, then complete via the
+/// SendLogin flow and build the [`Session`].
+#[allow(clippy::too_many_arguments)]
+async fn tw_account_login(
+    client: &Client,
+    skey: &str,
+    form_token: &str,
+    account: &str,
+    password: &str,
+    login_token: Option<&str>,
+    fallback_captcha: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<Session, LoginError> {
+    let api_base = "https://login.beanfun.com";
+    let index_url = format!("{api_base}/Login/Index?pSKey={skey}");
+
+    // The reCAPTCHA token solved after the password is what AccountLogin
+    // validates against; fall back to the server-echoed token (no-captcha case).
+    let captcha_token = match login_token {
+        Some(t) if !t.is_empty() => t.to_string(),
+        _ => fallback_captcha.to_string(),
+    };
+
     let login_url = format!("{api_base}/Login/AccountLogin?pSKey={skey}");
     let login_body = serde_json::json!({
         "Account": account,
@@ -1238,7 +1388,7 @@ async fn tw_login_with_session_key(
         .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/json; charset=utf-8")
         .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", &form_token)
+        .header("RequestVerificationToken", form_token)
         .header("Referer", &index_url)
         .header("Origin", api_base)
         .json(&login_body)
