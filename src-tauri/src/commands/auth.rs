@@ -78,10 +78,13 @@ pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo
 
 /// Normal username + password login.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn login(
     session_id: String,
     account: String,
     password: String,
+    recaptcha_check: Option<String>,
+    recaptcha_login: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SessionDto, ErrorDto> {
@@ -92,6 +95,11 @@ pub async fn login(
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
+    let tokens = beanfun_service::RecaptchaTokens {
+        check: recaptcha_check,
+        login: recaptcha_login,
+    };
+
     let login_result = login_with_native_fallback(
         &app,
         &ss.http_client,
@@ -99,6 +107,7 @@ pub async fn login(
         &password,
         &region,
         &ss.cookie_jar,
+        &tokens,
     )
     .await;
 
@@ -144,6 +153,112 @@ pub async fn login(
     *ss.game_accounts.write().await = accounts;
 
     tracing::info!("user logged in: {}", dto.account_name);
+    Ok(dto)
+}
+
+/// Phase 1 of two-phase TW Regular login: validate the account and pass the
+/// first reCAPTCHA (`recaptcha_check`), then stash the session key + form token
+/// on the session for [`tw_login_submit`].
+///
+/// Frontend flow: collect account → `open_recaptcha_window({ step: "check" })`
+/// → await `recaptcha-token` → call this → reveal password field.
+#[tauri::command]
+pub async fn tw_login_check(
+    session_id: String,
+    account: String,
+    recaptcha_check: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    auth::validate_input("account", &account).map_err(to_dto)?;
+
+    let ss = state.require_session(&session_id).await?;
+    let region = state.config.read().await.region.clone();
+    if region != crate::models::session::Region::TW {
+        return Err(ErrorDto {
+            code: "AUTH_FLOW_UNSUPPORTED".to_string(),
+            message: "two-phase reCAPTCHA login is only for TW region".to_string(),
+            category: crate::models::error::ErrorCategory::Authentication,
+            details: None,
+        });
+    }
+
+    let (skey, form_token) =
+        beanfun_service::tw_login_check(&ss.http_client, &account, recaptcha_check.as_deref())
+            .await
+            .map_err(login_err_to_dto)?;
+
+    *ss.pending_tw_login.write().await = Some(crate::models::session_state::PendingTwLogin {
+        skey,
+        form_token,
+        account,
+    });
+
+    tracing::info!("TW login phase 1 (CheckAccountType) passed");
+    Ok(())
+}
+
+/// Phase 2 of two-phase TW Regular login: submit the password with the second
+/// reCAPTCHA (`recaptcha_login`), reusing the state stashed by
+/// [`tw_login_check`]. Returns the session and fetches game accounts on success.
+#[tauri::command]
+pub async fn tw_login_submit(
+    session_id: String,
+    password: String,
+    recaptcha_login: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<SessionDto, ErrorDto> {
+    auth::validate_input("password", &password).map_err(to_dto)?;
+
+    let ss = state.require_session(&session_id).await?;
+
+    let pending = ss.pending_tw_login.read().await.clone().ok_or(ErrorDto {
+        code: "AUTH_NO_PENDING_LOGIN".to_string(),
+        message: "no pending TW login — call tw_login_check first".to_string(),
+        category: crate::models::error::ErrorCategory::Authentication,
+        details: None,
+    })?;
+
+    let login_result = beanfun_service::tw_login_submit(
+        &ss.http_client,
+        &pending.skey,
+        &pending.form_token,
+        &pending.account,
+        &password,
+        recaptcha_login.as_deref(),
+        &ss.cookie_jar,
+    )
+    .await;
+
+    let session = match login_result {
+        Ok(s) => s,
+        Err(beanfun_service::LoginError::Auth(AuthError::AdvanceCheckRequired { url })) => {
+            tracing::info!("TW login phase 2 requires advance check");
+            return Err(ErrorDto {
+                code: "AUTH_ADVANCE_CHECK".to_string(),
+                message: url.unwrap_or_default(),
+                category: crate::models::error::ErrorCategory::Authentication,
+                details: Some("advance_check_required".to_string()),
+            });
+        }
+        Err(e) => return Err(login_err_to_dto(e)),
+    };
+
+    // Consume the pending state now that the login attempt resolved.
+    *ss.pending_tw_login.write().await = None;
+
+    let dto = SessionDto::from_session(&session, &session_id);
+
+    let accounts = beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to fetch game accounts after TW login: {e}");
+            Vec::new()
+        });
+
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
+
+    tracing::info!("user logged in (two-phase TW): {}", dto.account_name);
     Ok(dto)
 }
 
@@ -609,8 +724,9 @@ async fn login_with_native_fallback(
     password: &str,
     region: &crate::models::session::Region,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    tokens: &beanfun_service::RecaptchaTokens,
 ) -> Result<Session, beanfun_service::LoginError> {
-    match beanfun_service::login(client, account, password, region, cookie_jar).await {
+    match beanfun_service::login(client, account, password, region, cookie_jar, tokens).await {
         Ok(session) => Ok(session),
         Err(err) if should_try_session_key_fallback(&err) => {
             tracing::warn!(
@@ -626,6 +742,7 @@ async fn login_with_native_fallback(
                 region,
                 cookie_jar,
                 &session_key,
+                tokens,
             )
             .await
         }
@@ -1404,4 +1521,444 @@ async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Vec<Co
 #[cfg(not(target_os = "windows"))]
 async fn extract_webview2_cookies(_app: &tauri::AppHandle, _label: &str) -> Vec<CookieTuple> {
     Vec::new()
+}
+
+// ---------------------------------------------------------------------------
+// TW Regular (帳密) login — external reCAPTCHA helper window
+// ---------------------------------------------------------------------------
+//
+// The TW "Regular" (username + password) login on `login.beanfun.com` is
+// guarded by Google reCAPTCHA. Inside a bare WebView2 the widget frequently
+// fails to render — usually because `www.google.com` is unreachable for the
+// user. This helper opens the *official* login page in a small, frameless
+// window so the human can solve their own challenge; the injected script only
+// (a) swaps the reCAPTCHA origin to the Google-supported `recaptcha.net`
+// mirror so the widget loads, (b) trims the surrounding page chrome, and
+// (c) hands the token the human produced back to the backend. The challenge
+// is solved by a person — nothing here auto-solves or bypasses it.
+
+/// Window label for the external reCAPTCHA helper window.
+const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
+
+/// Injected at document-start into the reCAPTCHA helper window.
+///
+/// No `format!` placeholders here on purpose — it's a plain raw string so the
+/// JS braces/backticks need no escaping.
+const RECAPTCHA_INIT_SCRIPT: &str = r#"
+(() => {
+  'use strict';
+  // recaptcha.net mirror — ONLY needed where www.google.com is blocked
+  // (mainland). It breaks the Enterprise load elsewhere because recaptcha.net
+  // does not reliably serve /recaptcha/enterprise.js, leaving
+  // `grecaptcha.render` undefined. Keep OFF until mainland support is wired
+  // (and verified against the enterprise endpoint).
+  const MIRROR_ENABLED = false;
+  const GOOGLE = 'www.google.com/recaptcha';
+  const MIRROR = 'www.recaptcha.net/recaptcha';
+  const swap = (s) =>
+    MIRROR_ENABLED && typeof s === 'string' ? s.split(GOOGLE).join(MIRROR) : s;
+
+  // Parity with the rest of the app's webviews.
+  try { Object.defineProperty(navigator, 'webdriver', { get: () => false }); } catch (e) {}
+
+  const origCreate = document.createElement.bind(document);
+
+  // Replace a <script> node whose src still points at google.com.
+  const rewriteScriptNode = (node) => {
+    const next = origCreate('script');
+    for (const a of node.attributes) {
+      next.setAttribute(a.name, a.name === 'src' ? swap(a.value) : a.value);
+    }
+    if (node.parentNode) node.parentNode.replaceChild(next, node);
+  };
+
+  if (MIRROR_ENABLED) {
+    // 1a. Intercept dynamically-created <script> tags and rewrite the origin.
+    document.createElement = function (tag) {
+      const el = origCreate.apply(document, arguments);
+      if (String(tag).toLowerCase() === 'script') {
+        try {
+          const proto = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+          if (proto && proto.set) {
+            Object.defineProperty(el, 'src', {
+              configurable: true,
+              enumerable: true,
+              get() { return proto.get.call(this); },
+              set(v) { proto.set.call(this, swap(v)); },
+            });
+          }
+          const origSetAttr = el.setAttribute.bind(el);
+          el.setAttribute = function (name, value) {
+            return origSetAttr(name, name === 'src' ? swap(value) : value);
+          };
+        } catch (e) {}
+      }
+      return el;
+    };
+
+    // 1b. Catch static <script> tags as the parser inserts them.
+    try {
+      const mo = new MutationObserver((muts) => {
+        for (const m of muts) {
+          for (const n of m.addedNodes) {
+            if (n.tagName === 'SCRIPT' && n.src && n.src.indexOf(GOOGLE) !== -1) {
+              rewriteScriptNode(n);
+            }
+          }
+        }
+      });
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) {}
+  }
+
+  const onReady = () => {
+    // Sweep any static google.com reCAPTCHA scripts already in the HTML.
+    if (MIRROR_ENABLED) {
+      document
+        .querySelectorAll('script[src*="www.google.com/recaptcha"]')
+        .forEach(rewriteScriptNode);
+    }
+
+    // The helper window first passes through redirect pages (default.aspx →
+    // checkin → Login/Index). Only act on the actual login form.
+    if (location.href.indexOf('Login/Index') === -1) return;
+    console.log('[reCAPTCHA] on Login/Index, watching for token');
+
+    // 2. Trim the page down to just the reCAPTCHA — but only AFTER the widget
+    //    actually renders. If we hid the page up front and beanfun's reCAPTCHA
+    //    lost its first-load render race (works after a manual refresh), the
+    //    window would be all white. So keep the real page visible until the
+    //    widget exists, then hide everything else via the `visibility` trick
+    //    (a visible descendant shows through a hidden ancestor).
+    let trimmed = false;
+    const trimPage = () => {
+      if (trimmed) return;
+      trimmed = true;
+      // Do NOT use `visibility:hidden` on an ancestor of the reCAPTCHA: Chromium
+      // suppresses hit-testing for a cross-origin (out-of-process) iframe under
+      // a hidden subtree, so the widget would render but be unclickable. Instead
+      // lay an opaque mask BELOW reCAPTCHA's z-index (~2e9) and lift the anchor
+      // checkbox above it — everything stays interactive.
+      const mask = origCreate('div');
+      mask.id = '__rc_mask__';
+      mask.style.cssText =
+        'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#fff;z-index:1000000;';
+      (document.body || document.documentElement).appendChild(mask);
+
+      // Lift the anchor checkbox above the mask. The challenge bframe popup
+      // already sits at z-index ~2e9, well above the mask, so it shows itself.
+      const style = origCreate('style');
+      style.textContent = [
+        '.g-recaptcha, iframe[src*="anchor"] {',
+        '  position: fixed !important; top: 16px !important;',
+        '  left: 50% !important; transform: translateX(-50%) !important;',
+        '  z-index: 1000001 !important;',
+        '}',
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(style);
+    };
+
+    // Reload-once guard to self-heal beanfun's first-load render race.
+    let store = null;
+    try { store = window.sessionStorage; } catch (e) {}
+    const RKEY = '__rc_reloads__';
+    const reloads = store ? (parseInt(store.getItem(RKEY) || '0', 10) || 0) : 99;
+
+    let waited = 0;
+    const renderWatch = setInterval(() => {
+      if (document.querySelector('iframe[src*="recaptcha"]')) {
+        clearInterval(renderWatch);
+        trimPage();
+        return;
+      }
+      waited += 300;
+      if (waited >= 3500) {
+        clearInterval(renderWatch);
+        if (store && reloads < 1) {
+          store.setItem(RKEY, String(reloads + 1));
+          console.warn('[reCAPTCHA] widget did not render — reloading once');
+          location.reload();
+        } else {
+          // Give up rather than leave a blank window the user must force-close.
+          // Closing fires `recaptcha-cancelled`, which unblocks the frontend.
+          console.warn('[reCAPTCHA] widget did not render (reload budget spent) — closing');
+          if (store) { try { store.removeItem(RKEY); } catch (e) {} }
+          if (window.__TAURI_INTERNALS__) {
+            window.__TAURI_INTERNALS__
+              .invoke('close_recaptcha_window')
+              .catch(() => {});
+          }
+        }
+      }
+    }, 300);
+
+    // 3 + 4. Capture the Enterprise token once the human ticks the checkbox.
+    //    Primary source is grecaptcha.enterprise.getResponse() — beanfun is an
+    //    Enterprise checkbox and reads it straight into its XHR rather than into
+    //    a stable hidden input. Fall back to the response <textarea> / beanfun's
+    //    own field. We never fire beanfun's submit, so the token stays
+    //    unconsumed and can be replayed into AccountLogin's `Captcha` field.
+    const readToken = () => {
+      try {
+        const g = window.grecaptcha;
+        if (g && g.enterprise && typeof g.enterprise.getResponse === 'function') {
+          const t = g.enterprise.getResponse();
+          if (t) return t;
+        }
+        if (g && typeof g.getResponse === 'function') {
+          const t = g.getResponse();
+          if (t) return t;
+        }
+      } catch (e) {}
+      const el = document.getElementById('recaptcha-token') ||
+        document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+      return el ? el.value : '';
+    };
+
+    const initial = readToken();
+    let done = false;
+    const timer = setInterval(() => {
+      if (done) return;
+      const val = readToken();
+      if (val && val !== initial && val.length > 50) {
+        done = true;
+        clearInterval(timer);
+        if (store) { try { store.removeItem(RKEY); } catch (e) {} }
+        const step = window.__RECAPTCHA_STEP__ || 'login';
+        // beanfun's page CSP blocks Tauri IPC (ipc.localhost → connect-src), so
+        // hand the token to the backend through a URL fragment it polls.
+        // Changing the hash isn't gated by connect-src and doesn't reload.
+        // reCAPTCHA tokens are URL-safe base64url, so '~' is a safe separator.
+        try { window.location.hash = 'mltoken=' + step + '~' + val; } catch (e) {}
+        // Best-effort IPC too, in case CSP allows it on some pages.
+        try {
+          if (window.__TAURI_INTERNALS__) {
+            window.__TAURI_INTERNALS__
+              .invoke('submit_login_token', { token: val, step })
+              .catch(() => {});
+          }
+        } catch (e) {}
+        console.log('[reCAPTCHA] token captured, handed to backend via fragment');
+      }
+    }, 500);
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onReady, { once: true });
+  } else {
+    onReady();
+  }
+})();
+"#;
+
+/// Open the external reCAPTCHA helper window for TW Regular (帳密) login.
+///
+/// Points a small, frameless, always-on-top WebView2 at the official login
+/// page and injects [`RECAPTCHA_INIT_SCRIPT`]. The human solves the challenge;
+/// the script invokes [`submit_login_token`] with the resulting token.
+///
+/// `step` distinguishes the two challenge points (`"check"` for
+/// `CheckAccountType`, `"login"` for `AccountLogin`); it is echoed back in the
+/// `recaptcha-token` event so the frontend can route each token. Defaults to
+/// `"login"`.
+#[tauri::command]
+pub async fn open_recaptcha_window(
+    step: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), ErrorDto> {
+    use tauri::WebviewWindowBuilder;
+
+    let step = step.unwrap_or_else(|| "login".to_string());
+
+    // Replace any existing helper window so we never stack two.
+    if let Some(existing) = app.get_webview_window(RECAPTCHA_WINDOW_LABEL) {
+        let _ = existing.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // Tag the window with its step (consumed by RECAPTCHA_INIT_SCRIPT). The
+    // body's braces are safe here: it's interpolated as a value, not reparsed
+    // as a format string.
+    let init_script = format!("window.__RECAPTCHA_STEP__ = {step:?};\n{RECAPTCHA_INIT_SCRIPT}");
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| ErrorDto {
+            code: "SYS_PATH_ERROR".to_string(),
+            message: format!("Failed to get app data dir: {e}"),
+            category: crate::models::error::ErrorCategory::Process,
+            details: None,
+        })?
+        .join("recaptcha");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    // Navigate to bflogin/default.aspx — the server redirects to
+    // login.beanfun.com/Login/Index?pSKey={skey} (a bare Login/Index with no
+    // pSKey renders blank). Same entry point as open_gamepass_login.
+    let url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+
+    let window = WebviewWindowBuilder::new(
+        &app,
+        RECAPTCHA_WINDOW_LABEL,
+        tauri::WebviewUrl::External(url.parse().expect("static reCAPTCHA URL is valid")),
+    )
+    .title("Beanfun 驗證")
+    .inner_size(400.0, 550.0)
+    .resizable(false)
+    // Keep the native title bar so the user can always close the window — a
+    // frameless window that fails to render leaves no way out and hangs the
+    // login. Closing fires `recaptcha-cancelled`, which unblocks the frontend.
+    .decorations(true)
+    .always_on_top(true)
+    .center()
+    .visible(true)
+    .user_agent(WEBVIEW_USER_AGENT)
+    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .data_directory(data_dir)
+    .initialization_script(&init_script)
+    .build()
+    .map_err(|e| ErrorDto {
+        code: "AUTH_RECAPTCHA_WINDOW_FAILED".to_string(),
+        message: format!("Failed to open reCAPTCHA window: {e}"),
+        category: crate::models::error::ErrorCategory::Process,
+        details: None,
+    })?;
+
+    // WebView2 Tracking Prevention blocks google.com/gstatic third-party
+    // storage, which breaks reCAPTCHA's interaction (widget renders but clicks
+    // don't verify). Turn it off for this window's profile.
+    disable_tracking_prevention(&window);
+
+    // beanfun's page CSP blocks Tauri IPC (ipc.localhost), so the injected
+    // script hands the token back via the URL fragment (#mltoken=<step>~<token>).
+    // Poll the window URL for it.
+    let poll_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // ~3 minutes at 500ms; the window-gone check ends it early on close.
+        for _ in 0..360 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let Some(win) = poll_app.get_webview_window(RECAPTCHA_WINDOW_LABEL) else {
+                return; // window closed or token already delivered
+            };
+            let Ok(u) = win.url() else { continue };
+            let Some(frag) = u.fragment() else { continue };
+            let Some(rest) = frag.strip_prefix("mltoken=") else {
+                continue;
+            };
+            if let Some((step, token)) = rest.split_once('~') {
+                if token.len() > 50 {
+                    deliver_recaptcha_token(&poll_app, token.to_string(), step.to_string());
+                    return;
+                }
+            }
+        }
+    });
+
+    tracing::info!("reCAPTCHA helper window opened");
+    Ok(())
+}
+
+/// Disable WebView2 Tracking Prevention for a window's profile.
+///
+/// reCAPTCHA needs third-party storage/cookies on `google.com` / `gstatic.com`;
+/// Edge's Tracking Prevention blocks those by default, leaving the widget
+/// visible but non-functional. This is a profile-level setting (not a Chromium
+/// switch), so it must go through the WebView2 COM API.
+#[cfg(target_os = "windows")]
+fn disable_tracking_prevention(window: &tauri::WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Profile3, ICoreWebView2_13, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE,
+    };
+    use windows_core::Interface;
+
+    let result = window.with_webview(|wv| unsafe {
+        let Ok(core) = wv.controller().CoreWebView2() else {
+            return;
+        };
+        let Ok(core13) = core.cast::<ICoreWebView2_13>() else {
+            tracing::warn!(
+                "reCAPTCHA: ICoreWebView2_13 unavailable; cannot disable tracking prevention"
+            );
+            return;
+        };
+        let Ok(profile) = core13.Profile() else {
+            return;
+        };
+        let Ok(profile3) = profile.cast::<ICoreWebView2Profile3>() else {
+            tracing::warn!(
+                "reCAPTCHA: ICoreWebView2Profile3 unavailable; cannot disable tracking prevention"
+            );
+            return;
+        };
+        // Set on the profile (persisted in data_directory). The window goes
+        // through a redirect chain (default.aspx → checkin → Login/Index)
+        // before the reCAPTCHA loads, so this takes effect well before the
+        // widget initializes — no risky Reload needed.
+        match profile3
+            .SetPreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE)
+        {
+            Ok(()) => tracing::info!("reCAPTCHA: tracking prevention disabled for helper window"),
+            Err(e) => tracing::warn!("reCAPTCHA: failed to disable tracking prevention: {e}"),
+        }
+    });
+
+    if result.is_err() {
+        tracing::warn!("reCAPTCHA: with_webview failed; tracking prevention left at default");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn disable_tracking_prevention(_window: &tauri::WebviewWindow) {}
+
+/// Close the reCAPTCHA helper window (called by its own script when the widget
+/// fails to render, or as a frontend cleanup). Destroying it fires
+/// `recaptcha-cancelled`, which unblocks any pending login.
+#[tauri::command]
+pub async fn close_recaptcha_window(app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    if let Some(win) = app.get_webview_window(RECAPTCHA_WINDOW_LABEL) {
+        let _ = win.destroy();
+    }
+    Ok(())
+}
+
+/// Payload re-emitted to the frontend when a reCAPTCHA token is captured.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecaptchaTokenEvent {
+    pub token: String,
+    /// `"check"` or `"login"` — which login step this token is for.
+    pub step: String,
+}
+
+/// Emit the captured reCAPTCHA token to the frontend and close the helper
+/// window. Shared by the fragment-poll path (primary) and the
+/// [`submit_login_token`] IPC command (fallback). Guards against double
+/// delivery by keying off the helper window still existing.
+fn deliver_recaptcha_token(app: &tauri::AppHandle, token: String, step: String) {
+    use tauri::Emitter;
+
+    // If the helper window is already gone, the token was already delivered.
+    let Some(win) = app.get_webview_window(RECAPTCHA_WINDOW_LABEL) else {
+        return;
+    };
+
+    tracing::info!(token_len = token.len(), step = %step, "reCAPTCHA token delivered");
+    if let Err(e) = app.emit("recaptcha-token", RecaptchaTokenEvent { token, step }) {
+        tracing::warn!("failed to emit recaptcha-token event: {e}");
+    }
+    let _ = win.destroy();
+}
+
+/// Fallback IPC path for receiving a reCAPTCHA token. Usually beanfun's page
+/// CSP blocks Tauri IPC, so the real delivery happens via the URL-fragment poll
+/// (see [`open_recaptcha_window`]); this remains for pages where IPC is allowed.
+#[tauri::command]
+pub async fn submit_login_token(
+    token: String,
+    step: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), ErrorDto> {
+    deliver_recaptcha_token(&app, token, step.unwrap_or_else(|| "login".to_string()));
+    Ok(())
 }

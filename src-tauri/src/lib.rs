@@ -183,6 +183,8 @@ pub fn run() {
             commands::auth::create_session,
             commands::auth::list_sessions,
             commands::auth::login,
+            commands::auth::tw_login_check,
+            commands::auth::tw_login_submit,
             commands::auth::qr_login_start,
             commands::auth::qr_login_poll,
             commands::auth::totp_verify,
@@ -238,6 +240,9 @@ pub fn run() {
             commands::system::cleanup_game_cache,
             commands::auth::open_gamepass_login,
             commands::auth::gamepass_webview_done,
+            commands::auth::open_recaptcha_window,
+            commands::auth::submit_login_token,
+            commands::auth::close_recaptcha_window,
             commands::update::check_update,
             commands::update::apply_update,
             commands::update::test_github_access,
@@ -526,6 +531,9 @@ pub fn run() {
                     } else if label == "gamepass-login" {
                         // GamePass popup closed — notify frontend
                         let _ = app_handle.emit("gamepass-login-cancelled", ());
+                    } else if label == "recaptcha_window" {
+                        // reCAPTCHA helper closed before a token arrived
+                        let _ = app_handle.emit("recaptcha-cancelled", ());
                     }
                 });
             }
