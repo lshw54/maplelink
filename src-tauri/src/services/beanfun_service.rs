@@ -781,7 +781,9 @@ async fn hk_get_accounts(
             } else {
                 "normal".to_string()
             },
-            created_at: get_create_time(client, host, sc, sr, &ssn).await,
+            // Fetched on demand from the game_start_step2 page when launching
+            // (avoids one beanfun request per account on every list load).
+            created_at: String::new(),
         });
     }
 
@@ -790,25 +792,6 @@ async fn hk_get_accounts(
 
     tracing::info!("HK: found {} game accounts", accounts.len());
     Ok(accounts)
-}
-
-/// Fetch the creation time for a single service account.
-async fn get_create_time(client: &Client, host: &str, sc: &str, sr: &str, sn: &str) -> String {
-    let timestamp = get_current_time_method2();
-    let url = format!(
-        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
-         ?service_code={sc}&service_region={sr}&sotp={sn}&dt={timestamp}"
-    );
-    match http_get_text(client, &url).await {
-        Ok(html) => {
-            let re = Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#).ok();
-            re.and_then(|r| r.captures(&html))
-                .and_then(|c| c.get(1))
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default()
-        }
-        Err(_) => String::new(),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1866,7 +1849,9 @@ async fn tw_get_accounts(
             } else {
                 "normal".to_string()
             },
-            created_at: get_create_time(client, host, sc, sr, &ssn).await,
+            // Fetched on demand from the game_start_step2 page when launching
+            // (avoids one beanfun request per account on every list load).
+            created_at: String::new(),
         });
     }
 
