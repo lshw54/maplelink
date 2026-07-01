@@ -115,6 +115,9 @@ export function VerifyForm({
               account: pending.account,
               password: pending.password,
               rememberPassword: pending.rememberPassword,
+              // Reuse the SAME session the advance check was verified on — a new
+              // session would drop the verified context and loop advance check.
+              resumeSessionId: pending.sessionId,
             },
             {
               onError: (err) => {

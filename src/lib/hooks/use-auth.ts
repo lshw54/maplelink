@@ -14,13 +14,25 @@ export function useLogin() {
       account,
       password,
       rememberPassword,
+      resumeSessionId,
     }: {
       account: string;
       password: string;
       rememberPassword: boolean;
+      /**
+       * Set when retrying after a passed advance check: reuse this session
+       * (which already holds the verified context + the pending skey/form-token)
+       * and only redo the login-step reCAPTCHA — do NOT create a new session or
+       * redo CheckAccountType, which would reset beanfun's context and re-trigger
+       * advance check in a loop.
+       */
+      resumeSessionId?: string;
     }) => {
-      // Create a new session first
-      const sessionId = await commands.createSession();
+      const region = useConfigStore.getState().config?.region ?? "TW";
+      // Resume (advance-check retry) only applies to the TW two-phase flow.
+      const resuming = resumeSessionId !== undefined && region === "TW";
+      const sessionId =
+        resuming && resumeSessionId ? resumeSessionId : await commands.createSession();
 
       useAuthStore.getState().setPendingCredentials({
         account,
@@ -34,11 +46,12 @@ export function useLogin() {
         // CheckAccountType (the "check" token) and once at AccountLogin (the
         // "login" token). Each is solved by the human in the helper window.
         // HK uses the advance-check captcha flow instead — keep the old path.
-        const region = useConfigStore.getState().config?.region ?? "TW";
         let session: SessionDto;
         if (region === "TW") {
-          const checkToken = await solveRecaptcha("check");
-          await commands.twLoginCheck(sessionId, account, checkToken);
+          if (!resuming) {
+            const checkToken = await solveRecaptcha("check");
+            await commands.twLoginCheck(sessionId, account, checkToken);
+          }
           const loginToken = await solveRecaptcha("login");
           session = await commands.twLoginSubmit(sessionId, password, loginToken);
         } else {
@@ -66,6 +79,13 @@ export function useLogin() {
           throw totpError;
         }
         if (errStr.includes("ADVANCE_CHECK") || errStr.includes("advance_check")) {
+          // B: cap the loop. If advance check is required *again* right after we
+          // already passed one (this is a resume), stop instead of re-looping —
+          // repeated attempts are what trips beanfun's IP lock.
+          if (resuming) {
+            useAuthStore.getState().setPendingCredentials(null);
+            throw new Error("beanfun 要求重複人機驗證,請稍後再試", { cause: err });
+          }
           const errObj =
             typeof err === "object" && err !== null ? (err as Record<string, unknown>) : null;
           const url = errObj?.message ? String(errObj.message) : undefined;
