@@ -165,6 +165,7 @@ pub fn run_intercept(creds: InterceptCreds, quiet: bool) {
         account = %creds.account,
         otp_len = creds.otp.len(),
         quiet,
+        raw_args = ?creds.raw_args,
         "web-launch interception: handling beanfun game start"
     );
 
@@ -244,16 +245,43 @@ fn show_creds_popup(_account: &str, _otp: &str) {}
 
 /// Read `game_path` from the on-disk config without spinning up Tauri.
 fn load_game_path() -> Option<String> {
-    let appdata = std::env::var("APPDATA").ok()?;
+    let appdata = match std::env::var("APPDATA") {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("web-launch: APPDATA not set ({e}); cannot locate config");
+            return None;
+        }
+    };
     let config_path = std::path::Path::new(&appdata)
         .join("com.maplelink.app")
         .join("config.ini");
-    let text = std::fs::read_to_string(&config_path).ok()?;
-    let config = crate::core::config_parser::parse_ini(&text).ok()?;
+    let text = match std::fs::read_to_string(&config_path) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!(
+                "web-launch: cannot read config {}: {e}",
+                config_path.display()
+            );
+            return None;
+        }
+    };
+    let config = match crate::core::config_parser::parse_ini(&text) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("web-launch: failed to parse config: {e}");
+            return None;
+        }
+    };
     let path = config.game_path.trim().to_string();
-    if path.is_empty() || !std::path::Path::new(&path).exists() {
+    if path.is_empty() {
+        tracing::warn!("web-launch: game_path is empty in config — set the game path in MapleLink");
         return None;
     }
+    if !std::path::Path::new(&path).exists() {
+        tracing::warn!("web-launch: configured game_path does not exist on disk: {path}");
+        return None;
+    }
+    tracing::info!("web-launch: resolved game_path = {path}");
     Some(path)
 }
 
@@ -275,7 +303,14 @@ fn write_creds_file(creds: &InterceptCreds, game_path: Option<&str>) {
 /// isn't Traditional Chinese, route through Locale Remulator (LRProc.exe) — the
 /// same as the normal launch path — otherwise MapleStory TW won't start.
 fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
-    let use_lr = !crate::services::lr_service::is_system_locale_chinese_traditional();
+    let zh_tw = crate::services::lr_service::is_system_locale_chinese_traditional();
+    tracing::info!(
+        system_zh_tw = zh_tw,
+        exe = game_path,
+        args = ?raw_args,
+        "web-launch: launching game"
+    );
+    let use_lr = !zh_tw;
     if use_lr {
         if let Some(lrproc) = lr_proc_path() {
             // LRProc args: <profile-guid> <game exe> <beanfun args…>
@@ -335,14 +370,25 @@ fn spawn_game(program: &std::path::Path, args: &[String], game_path: &str, how: 
 /// Poll for the MapleStory login window and auto-paste the credentials.
 /// Best effort: gives up after a fixed window so we never hang.
 fn auto_paste_when_ready(account: &str, otp: &str) {
+    tracing::info!("web-launch: waiting for game login window to auto-paste…");
     // Poll for up to ~30s (the game + anti-cheat can take a while to show the
     // login window). Stop as soon as a paste lands.
-    for _ in 0..60 {
+    for attempt in 0..60 {
         std::thread::sleep(std::time::Duration::from_millis(500));
         if crate::services::autopaste_service::auto_paste_credentials(account, otp, false) {
-            tracing::info!("web-launch: auto-pasted credentials into game window");
+            tracing::info!(
+                "web-launch: auto-pasted credentials into game window after ~{}ms",
+                (attempt + 1) * 500
+            );
             return;
         }
+        // Heartbeat every ~5s so a stuck wait is visible in the log.
+        if attempt > 0 && attempt % 10 == 0 {
+            tracing::info!(
+                "web-launch: still waiting for game login window (~{}s elapsed)",
+                (attempt + 1) / 2
+            );
+        }
     }
-    tracing::warn!("web-launch: game login window not found within timeout; auto-paste skipped");
+    tracing::warn!("web-launch: game login window not found within 30s; auto-paste skipped");
 }
