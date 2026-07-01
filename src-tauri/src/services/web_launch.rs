@@ -132,11 +132,61 @@ pub fn run_intercept(creds: InterceptCreds) {
         }
     };
 
-    // 3. Auto-paste account + OTP into the game's login window (best effort).
-    if launched {
-        auto_paste_when_ready(&creds.account, &creds.otp);
+    // 3. Auto-paste in the background so the popup can appear immediately.
+    let paste_handle = if launched {
+        let account = creds.account.clone();
+        let otp = creds.otp.clone();
+        Some(std::thread::spawn(move || {
+            auto_paste_when_ready(&account, &otp)
+        }))
+    } else {
+        None
+    };
+
+    // 4. Prompt the user with the account + OTP (copyable) so they never have
+    //    to open the credentials file.
+    show_creds_popup(&creds.account, &creds.otp);
+
+    // Let a still-running auto-paste finish (its own timeout caps this).
+    if let Some(handle) = paste_handle {
+        let _ = handle.join();
     }
 }
+
+/// Show a copyable popup with the account + OTP, so the user doesn't have to
+/// open the credentials file. Blocks until dismissed.
+#[cfg(target_os = "windows")]
+fn show_creds_popup(account: &str, otp: &str) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    let body = format!(
+        "帳號 Account:\n{account}\n\nOTP（一次性密碼 / one-time）:\n{otp}\n\n（可按 Ctrl+C 複製整個視窗內容）"
+    );
+    let title = wide("MapleLink — 網頁登入帳號 / OTP");
+    let text = wide(&body);
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn show_creds_popup(_account: &str, _otp: &str) {}
 
 /// Read `game_path` from the on-disk config without spinning up Tauri.
 fn load_game_path() -> Option<String> {
