@@ -271,21 +271,62 @@ fn write_creds_file(creds: &InterceptCreds, game_path: Option<&str>) {
     }
 }
 
-/// Spawn the real game with the beanfun-supplied args. Returns whether spawn
-/// succeeded.
+/// Launch the real game with the beanfun-supplied args. When the system locale
+/// isn't Traditional Chinese, route through Locale Remulator (LRProc.exe) — the
+/// same as the normal launch path — otherwise MapleStory TW won't start.
 fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
-    let mut cmd = std::process::Command::new(game_path);
-    cmd.args(raw_args);
+    let use_lr = !crate::services::lr_service::is_system_locale_chinese_traditional();
+    if use_lr {
+        if let Some(lrproc) = lr_proc_path() {
+            // LRProc args: <profile-guid> <game exe> <beanfun args…>
+            let mut args = vec![
+                crate::services::lr_service::LR_PROFILE_GUID.to_string(),
+                game_path.to_string(),
+            ];
+            args.extend(raw_args.iter().cloned());
+            return spawn_game(&lrproc, &args, game_path, "LR");
+        }
+        tracing::warn!(
+            "web-launch: non-zh-TW locale but LRProc.exe not found — launching directly (may fail)"
+        );
+    }
+    spawn_game(
+        std::path::Path::new(game_path),
+        raw_args,
+        game_path,
+        "direct",
+    )
+}
+
+/// Locate the extracted `LRProc.exe` without a Tauri handle (it lives under the
+/// app data dir once any normal launch has run).
+fn lr_proc_path() -> Option<std::path::PathBuf> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    let p = std::path::Path::new(&appdata)
+        .join("com.maplelink.app")
+        .join("lr")
+        .join("LRProc.exe");
+    p.exists().then_some(p)
+}
+
+/// Spawn `program` with `args`, cwd = the game folder. Returns whether spawn
+/// succeeded.
+fn spawn_game(program: &std::path::Path, args: &[String], game_path: &str, how: &str) -> bool {
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
     if let Some(dir) = std::path::Path::new(game_path).parent() {
         cmd.current_dir(dir);
     }
     match cmd.spawn() {
         Ok(child) => {
-            tracing::info!("web-launch: launched game pid={}", child.id());
+            tracing::info!("web-launch: launched game ({how}) pid={}", child.id());
             true
         }
         Err(e) => {
-            tracing::error!("web-launch: failed to launch game '{game_path}': {e}");
+            tracing::error!(
+                "web-launch: failed to launch game ({how}) '{}': {e}",
+                program.display()
+            );
             false
         }
     }
