@@ -532,8 +532,12 @@ pub fn run() {
                         // GamePass popup closed — notify frontend
                         let _ = app_handle.emit("gamepass-login-cancelled", ());
                     } else if label == "recaptcha_window" {
-                        // reCAPTCHA helper closed before a token arrived
-                        let _ = app_handle.emit("recaptcha-cancelled", ());
+                        // Only a real user/abort close signals cancellation — not
+                        // when we closed the window ourselves after capturing a
+                        // token (that would abort the next login phase).
+                        if !commands::auth::recaptcha_take_delivered() {
+                            let _ = app_handle.emit("recaptcha-cancelled", ());
+                        }
                     }
                 });
             }

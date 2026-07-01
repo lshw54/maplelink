@@ -4,6 +4,7 @@
 
 use base64::Engine;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::Manager;
@@ -1540,6 +1541,18 @@ async fn extract_webview2_cookies(_app: &tauri::AppHandle, _label: &str) -> Vec<
 /// Window label for the external reCAPTCHA helper window.
 const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
 
+/// Set right before the backend destroys the helper window after a SUCCESSFUL
+/// token capture, so the window-destroyed handler can tell that apart from a
+/// user closing the window. Without this, the destroy after phase 1 emits a
+/// spurious `recaptcha-cancelled` that can abort phase 2.
+static RECAPTCHA_DELIVERED: AtomicBool = AtomicBool::new(false);
+
+/// Consume the "token delivered" flag. `true` → the window closed because we
+/// captured a token (suppress cancel); `false` → user/close abort (emit cancel).
+pub fn recaptcha_take_delivered() -> bool {
+    RECAPTCHA_DELIVERED.swap(false, Ordering::SeqCst)
+}
+
 /// Injected at document-start into the reCAPTCHA helper window.
 ///
 /// No `format!` placeholders here on purpose — it's a plain raw string so the
@@ -1770,8 +1783,10 @@ pub async fn open_recaptcha_window(
 
     let step = step.unwrap_or_else(|| "login".to_string());
 
-    // Replace any existing helper window so we never stack two.
+    // Replace any existing helper window so we never stack two. Mark it as a
+    // backend close so its destroy doesn't emit a cancel that aborts this solve.
     if let Some(existing) = app.get_webview_window(RECAPTCHA_WINDOW_LABEL) {
+        RECAPTCHA_DELIVERED.store(true, Ordering::SeqCst);
         let _ = existing.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
@@ -1947,6 +1962,9 @@ fn deliver_recaptcha_token(app: &tauri::AppHandle, token: String, step: String) 
     if let Err(e) = app.emit("recaptcha-token", RecaptchaTokenEvent { token, step }) {
         tracing::warn!("failed to emit recaptcha-token event: {e}");
     }
+    // Mark this close as a successful delivery so on_window_event does NOT emit
+    // recaptcha-cancelled (which would abort the next phase).
+    RECAPTCHA_DELIVERED.store(true, Ordering::SeqCst);
     let _ = win.destroy();
 }
 
