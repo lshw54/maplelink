@@ -94,7 +94,13 @@ pub fn run() {
     // (HKCU\SOFTWARE\Gamania\MapleStory\PATH → MapleLink), handle it headlessly
     // and exit — never start the UI or self-elevate. See core::game_intercept.
     {
-        let params: Vec<String> = std::env::args().skip(1).collect();
+        let raw: Vec<String> = std::env::args().skip(1).collect();
+        // The helper .bat invokes us as `--web-launch <beanfun args>`; strip the
+        // tag (and remember we came from the .bat, so we stay quiet).
+        let (params, quiet) = match raw.split_first() {
+            Some((first, rest)) if first == "--web-launch" => (rest.to_vec(), true),
+            _ => (raw, false),
+        };
         if let Some(creds) = core::game_intercept::parse_intercept_args(&params) {
             // Best-effort file logging for this headless path.
             if let Ok(local) = std::env::var("LOCALAPPDATA") {
@@ -103,7 +109,7 @@ pub fn run() {
                     .join("logs");
                 let _ = services::log_service::init_logging(&log_dir);
             }
-            services::web_launch::run_intercept(creds);
+            services::web_launch::run_intercept(creds, quiet);
             return;
         }
     }

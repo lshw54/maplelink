@@ -17,50 +17,94 @@ const PATH_VALUE: &str = "PATH";
 #[cfg(target_os = "windows")]
 const BACKUP_VALUE: &str = "PATH_MapleLinkBackup";
 
-/// Filename written next to the game (and read by external scripts) holding the
-/// intercepted account + OTP.
+/// Filename written next to the game (read by external scripts) holding the
+/// intercepted account + OTP — only used when invoked directly (not via .bat).
 const CREDS_FILENAME: &str = "maplelink_launch.ini";
+
+/// Helper batch file written INTO the game folder. beanfun's launcher only
+/// reliably runs a script sitting in the game folder (a plain exe elsewhere is
+/// ignored — this matches the community `.bat`), so we drop this there and point
+/// the registry at it. It echoes the account/OTP to a console (script- and
+/// human-readable) and hands off to MapleLink for the game launch + auto-paste.
+#[cfg(target_os = "windows")]
+const HELPER_BAT: &str = "maplelink_web_launch.bat";
+
+/// Absolute path of the helper `.bat` inside the game folder (needs game_path).
+#[cfg(target_os = "windows")]
+fn helper_bat_path() -> Option<std::path::PathBuf> {
+    let game_path = load_game_path()?;
+    std::path::Path::new(&game_path)
+        .parent()
+        .map(|dir| dir.join(HELPER_BAT))
+}
 
 // ---------------------------------------------------------------------------
 // Registry toggle (opt-in)
 // ---------------------------------------------------------------------------
 
-/// Point `HKCU\SOFTWARE\Gamania\MapleStory\PATH` at MapleLink so beanfun web
-/// launches route through us. Beanfun's original value is backed up once.
+/// Write the helper `.bat` into the game folder and point
+/// `HKCU\SOFTWARE\Gamania\MapleStory\PATH` at it, so beanfun web launches route
+/// through us. Beanfun's original value is backed up once.
 #[cfg(target_os = "windows")]
 pub fn register() -> std::io::Result<()> {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    let bat = helper_bat_path().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "game path not set — set the game path first",
+        )
+    })?;
     let exe = std::env::current_exe()?.to_string_lossy().into_owned();
+
+    // beanfun passes: <server> <port> BeanFun <account> <otp> → %4/%5. We echo
+    // those (console, for scripts) and forward everything to MapleLink, tagged
+    // with --web-launch so it launches the game + auto-pastes without its own
+    // popup.
+    let script = format!(
+        "@echo off\r\n\
+         start \"\" \"{exe}\" --web-launch %*\r\n\
+         echo ===Account===\r\n\
+         echo %4\r\n\
+         echo ===Password===\r\n\
+         echo %5\r\n\
+         echo.\r\n\
+         echo MapleLink is launching the game...\r\n\
+         pause>nul\r\n"
+    );
+    std::fs::write(&bat, script)?;
+    let bat_str = bat.to_string_lossy().into_owned();
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let (key, _) = hkcu.create_subkey(GAMANIA_SUBKEY)?;
-
-    // Back up beanfun's original PATH once, so we can restore it later.
     if let Ok(current) = key.get_value::<String, _>(PATH_VALUE) {
-        if !current.eq_ignore_ascii_case(&exe) && key.get_value::<String, _>(BACKUP_VALUE).is_err()
+        if !current.eq_ignore_ascii_case(&bat_str)
+            && key.get_value::<String, _>(BACKUP_VALUE).is_err()
         {
             key.set_value(BACKUP_VALUE, &current)?;
         }
     }
-
-    key.set_value(PATH_VALUE, &exe)?;
-    tracing::info!("web-launch interception registered: {exe}");
+    key.set_value(PATH_VALUE, &bat_str)?;
+    tracing::info!("web-launch interception registered: {bat_str}");
     Ok(())
 }
 
-/// Restore beanfun's original PATH (or remove ours) and drop the backup.
+/// Restore beanfun's original PATH (or remove ours), drop the backup, and
+/// delete the helper `.bat`.
 #[cfg(target_os = "windows")]
 pub fn unregister() -> std::io::Result<()> {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    if let Some(bat) = helper_bat_path() {
+        let _ = std::fs::remove_file(bat);
+    }
+
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let Ok(key) = hkcu.open_subkey_with_flags(GAMANIA_SUBKEY, KEY_ALL_ACCESS) else {
         return Ok(());
     };
-
     if let Ok(backup) = key.get_value::<String, _>(BACKUP_VALUE) {
         key.set_value(PATH_VALUE, &backup)?;
         let _ = key.delete_value(BACKUP_VALUE);
@@ -71,21 +115,21 @@ pub fn unregister() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Whether `PATH` currently points at this MapleLink executable.
+/// Whether `PATH` currently points at our helper `.bat`.
 #[cfg(target_os = "windows")]
 pub fn is_registered() -> bool {
     use winreg::enums::*;
     use winreg::RegKey;
 
-    let Ok(exe) = std::env::current_exe() else {
+    let Some(bat) = helper_bat_path() else {
         return false;
     };
-    let exe = exe.to_string_lossy();
+    let bat_str = bat.to_string_lossy();
 
     RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(GAMANIA_SUBKEY)
         .and_then(|k| k.get_value::<String, _>(PATH_VALUE))
-        .map(|p| p.eq_ignore_ascii_case(&exe))
+        .map(|p| p.eq_ignore_ascii_case(&bat_str))
         .unwrap_or(false)
 }
 
@@ -106,33 +150,41 @@ pub fn is_registered() -> bool {
 // Interception execution (headless — runs before the Tauri UI starts)
 // ---------------------------------------------------------------------------
 
-/// Handle a beanfun web game-launch: expose the credentials for external
-/// scripts, launch the real game, and auto-paste into its login window.
+/// Handle a beanfun web game-launch: launch the real game and auto-paste into
+/// its login window.
+///
+/// `quiet` is set when we were invoked by the helper `.bat` (the normal path):
+/// the .bat already shows the account/OTP in a console, so we skip our own
+/// popup + credentials file and just do the launch + auto-paste. When invoked
+/// directly (no .bat) we also write the file and show the copyable popup.
 ///
 /// Runs synchronously and returns; the caller then exits without starting the
 /// normal UI.
-pub fn run_intercept(creds: InterceptCreds) {
+pub fn run_intercept(creds: InterceptCreds, quiet: bool) {
     tracing::info!(
         account = %creds.account,
         otp_len = creds.otp.len(),
+        quiet,
         "web-launch interception: handling beanfun game start"
     );
 
     let game_path = load_game_path();
 
-    // 1. Expose the account + OTP for the user's own script (best effort).
-    write_creds_file(&creds, game_path.as_deref());
+    if !quiet {
+        // Expose the account + OTP for the user's own script (best effort).
+        write_creds_file(&creds, game_path.as_deref());
+    }
 
-    // 2. Launch the real game with the exact args beanfun gave us.
+    // Launch the real game with the exact args beanfun gave us.
     let launched = match &game_path {
         Some(path) => launch_game(path, &creds.raw_args),
         None => {
-            tracing::warn!("web-launch: game_path not configured; credentials written only");
+            tracing::warn!("web-launch: game_path not configured; cannot launch game");
             false
         }
     };
 
-    // 3. Auto-paste in the background so the popup can appear immediately.
+    // Auto-paste in the background so any popup can appear immediately.
     let paste_handle = if launched {
         let account = creds.account.clone();
         let otp = creds.otp.clone();
@@ -143,11 +195,13 @@ pub fn run_intercept(creds: InterceptCreds) {
         None
     };
 
-    // 4. Prompt the user with the account + OTP (copyable) so they never have
-    //    to open the credentials file.
-    show_creds_popup(&creds.account, &creds.otp);
+    // Only prompt when invoked directly; the .bat's console handles this.
+    if !quiet {
+        show_creds_popup(&creds.account, &creds.otp);
+    }
 
-    // Let a still-running auto-paste finish (its own timeout caps this).
+    // Block until a running auto-paste finishes (its own timeout caps this) so
+    // the process stays alive long enough to type into the login window.
     if let Some(handle) = paste_handle {
         let _ = handle.join();
     }
