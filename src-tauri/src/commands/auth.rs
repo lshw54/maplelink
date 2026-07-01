@@ -1796,17 +1796,17 @@ pub async fn open_recaptcha_window(
     // as a format string.
     let init_script = format!("window.__RECAPTCHA_STEP__ = {step:?};\n{RECAPTCHA_INIT_SCRIPT}");
 
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| ErrorDto {
-            code: "SYS_PATH_ERROR".to_string(),
-            message: format!("Failed to get app data dir: {e}"),
-            category: crate::models::error::ErrorCategory::Process,
-            details: None,
-        })?
-        .join("recaptcha");
+    // Use a FRESH (incognito) profile every time. A persistent profile retains
+    // beanfun's login cookie, so loading Login/Index auto-completes the pSKey
+    // login and redirects to the portal — no reCAPTCHA is ever shown, no token
+    // is captured, and the frontend hangs on "登入中". A unique dir guarantees a
+    // clean login page with the reCAPTCHA every time.
+    let data_dir = std::env::temp_dir()
+        .join("MapleLink")
+        .join("recaptcha-incognito")
+        .join(uuid::Uuid::new_v4().to_string());
     let _ = std::fs::create_dir_all(&data_dir);
+    let cleanup_dir = data_dir.clone();
 
     // Navigate to bflogin/default.aspx — the server redirects to
     // login.beanfun.com/Login/Index?pSKey={skey} (a bare Login/Index with no
@@ -1866,6 +1866,23 @@ pub async fn open_recaptcha_window(
                     deliver_recaptcha_token(&poll_app, token.to_string(), step.to_string());
                     return;
                 }
+            }
+        }
+    });
+
+    // Remove the incognito profile once the window closes (best effort).
+    let cleanup_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            if cleanup_app
+                .get_webview_window(RECAPTCHA_WINDOW_LABEL)
+                .is_none()
+            {
+                // Let WebView2 release its file locks before deleting.
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let _ = std::fs::remove_dir_all(&cleanup_dir);
+                break;
             }
         }
     });
