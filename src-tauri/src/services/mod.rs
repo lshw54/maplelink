@@ -9,3 +9,4 @@ pub mod log_service;
 pub mod lr_service;
 pub mod process_service;
 pub mod update_service;
+pub mod web_launch;

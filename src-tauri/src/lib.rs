@@ -90,6 +90,24 @@ fn is_elevated() -> bool {
 ///    d. Check for auto-update (non-blocking, respects config toggle)
 /// 4. Window starts at login size (340×520) — defined in `tauri.conf.json5`
 pub fn run() {
+    // Web-login game-launch interception. If beanfun invoked us as the "game"
+    // (HKCU\SOFTWARE\Gamania\MapleStory\PATH → MapleLink), handle it headlessly
+    // and exit — never start the UI or self-elevate. See core::game_intercept.
+    {
+        let params: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(creds) = core::game_intercept::parse_intercept_args(&params) {
+            // Best-effort file logging for this headless path.
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                let log_dir = std::path::Path::new(&local)
+                    .join("com.maplelink.app")
+                    .join("logs");
+                let _ = services::log_service::init_logging(&log_dir);
+            }
+            services::web_launch::run_intercept(creds);
+            return;
+        }
+    }
+
     // Neutralise Windows Accessibility "Text size" setting.
     //
     // Windows has two independent scaling knobs:
@@ -221,6 +239,8 @@ pub fn run() {
             commands::launcher::get_process_status,
             commands::launcher::kill_game,
             commands::system::log_frontend_error,
+            commands::system::set_web_launch_intercept,
+            commands::system::get_web_launch_intercept_status,
             commands::system::resize_window,
             commands::system::open_file_dialog,
             commands::system::get_app_version,

@@ -38,6 +38,32 @@ pub fn log_frontend_error(level: String, module: String, message: String) -> Res
     Ok(())
 }
 
+/// Enable or disable web-login game-launch interception.
+///
+/// When enabled, registers MapleLink as the beanfun MapleStory launch target
+/// so users who can only log in via the website still open the game (with
+/// auto-paste) through MapleLink. Disabling restores beanfun's original value.
+#[tauri::command]
+pub fn set_web_launch_intercept(enabled: bool) -> Result<(), ErrorDto> {
+    let result = if enabled {
+        crate::services::web_launch::register()
+    } else {
+        crate::services::web_launch::unregister()
+    };
+    result.map_err(|e| ErrorDto {
+        code: "SYS_WEB_LAUNCH_TOGGLE_FAILED".to_string(),
+        message: format!("Failed to update web-launch interception: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })
+}
+
+/// Whether web-login game-launch interception is currently active.
+#[tauri::command]
+pub fn get_web_launch_intercept_status() -> Result<bool, ErrorDto> {
+    Ok(crate::services::web_launch::is_registered())
+}
+
 /// Resize the application window for a page transition.
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
