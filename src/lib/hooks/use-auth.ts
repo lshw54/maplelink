@@ -111,7 +111,16 @@ export function useLogin() {
     onSuccess: async (session: SessionDto) => {
       useAuthStore.getState().addSession(session);
       try {
-        const accounts = await commands.getGameAccounts(session.sessionId);
+        let accounts = await commands.getGameAccounts(session.sessionId);
+        if (accounts.length === 0) {
+          // Login-time list came back empty — force one fresh fetch so the user
+          // isn't stranded on an empty account list.
+          try {
+            accounts = await commands.refreshAccounts(session.sessionId);
+          } catch {
+            /* keep the empty list; refresh is best-effort */
+          }
+        }
         useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       } catch {
         /* accounts fetch failure is non-critical */
