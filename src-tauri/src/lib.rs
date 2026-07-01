@@ -288,6 +288,14 @@ pub fn run() {
             }
 
             tracing::info!("Starting MapleLink v{}", env!("CARGO_PKG_VERSION"));
+            // Diagnostic: log the raw launch args. When beanfun web-launches us
+            // as the game but the args don't match core::game_intercept, we land
+            // here (normal UI) instead of intercepting — this shows their real
+            // format so the parser can be aligned.
+            let startup_args: Vec<String> = std::env::args().skip(1).collect();
+            if !startup_args.is_empty() {
+                tracing::info!("startup args (not intercepted): {startup_args:?}");
+            }
 
             // Clean up old exe from self-replace update
             if let Ok(exe) = std::env::current_exe() {
