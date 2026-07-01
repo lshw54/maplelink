@@ -19,6 +19,8 @@
   "login.gamepass": "GamePass 登入",
   "login.gamepass_waiting": "等待 GamePass 登入",
   "login.gamepass_instruction": "請在 GamePass 瀏覽器視窗中完成登入",
+  "login.web_launch": "網頁登入開機",
+  "login.web_launch_hint": "只能用網頁登入時開啟。之後在官網按「開始遊戲」，MapleLink 會自動開機並填入帳號／OTP。",
   "login.back_normal": "← 返回一般登入",
   "login.back_to_accounts": "← 返回帳號列表",
   "login.launch_game_direct": "免登入啟動遊戲",

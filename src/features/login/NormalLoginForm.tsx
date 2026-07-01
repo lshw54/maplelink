@@ -48,6 +48,23 @@ export function NormalLoginForm({
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const showQr = region === "TW";
+  const [webLaunch, setWebLaunch] = useState(false);
+
+  // Load the current web-login interception state (TW only).
+  useEffect(() => {
+    if (!showQr) return;
+    commands
+      .getWebLaunchInterceptStatus()
+      .then(setWebLaunch)
+      .catch(() => {});
+  }, [showQr]);
+
+  function handleToggleWebLaunch(enabled: boolean) {
+    setWebLaunch(enabled);
+    commands.setWebLaunchIntercept(enabled).catch(() => {
+      setWebLaunch(!enabled); // revert on failure
+    });
+  }
 
   // Auto-fill from last saved account on mount and when region changes.
   const prevRegionRef = useRef(region);
@@ -364,6 +381,21 @@ export function NormalLoginForm({
           />
           {t("login.auto_login")}
         </label>
+        {showQr && (
+          <label
+            title={t("login.web_launch_hint")}
+            className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]"
+          >
+            <input
+              type="checkbox"
+              name="web-launch"
+              checked={webLaunch}
+              onChange={(e) => handleToggleWebLaunch(e.target.checked)}
+              className="h-3.5 w-3.5 accent-accent"
+            />
+            {t("login.web_launch")}
+          </label>
+        )}
         <button
           type="button"
           onClick={() => {

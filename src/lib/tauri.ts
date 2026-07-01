@@ -110,6 +110,9 @@ export const commands = {
   getPlatformInfo: () => invoke<string>("get_platform_info"),
   logFrontendError: (level: string, module: string, message: string) =>
     invoke("log_frontend_error", { level, module, message }),
+  // Web-login game-launch interception (opt-in registry toggle)
+  setWebLaunchIntercept: (enabled: boolean) => invoke("set_web_launch_intercept", { enabled }),
+  getWebLaunchInterceptStatus: () => invoke<boolean>("get_web_launch_intercept_status"),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),
   openLogFolder: () => invoke("open_log_folder"),
   getRecentLogs: () => invoke<string>("get_recent_logs"),

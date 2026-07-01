@@ -19,6 +19,8 @@
   "login.gamepass": "GamePass",
   "login.gamepass_waiting": "Waiting for GamePass Login",
   "login.gamepass_instruction": "Complete the login in the GamePass browser window",
+  "login.web_launch": "Web-login launch",
+  "login.web_launch_hint": "Enable when you can only log in on the website. Then click Start Game there and MapleLink auto-launches the game and fills in the account / OTP.",
   "login.back_normal": "← Back to login",
   "login.back_to_accounts": "← Back to Accounts",
   "login.launch_game_direct": "Launch Game Without Login",
