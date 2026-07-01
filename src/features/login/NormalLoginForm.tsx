@@ -49,6 +49,7 @@ export function NormalLoginForm({
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const showQr = region === "TW";
   const [webLaunch, setWebLaunch] = useState(false);
+  const [webLaunchMsg, setWebLaunchMsg] = useState<string | null>(null);
 
   // Load the current web-login interception state (TW only).
   useEffect(() => {
@@ -59,11 +60,21 @@ export function NormalLoginForm({
       .catch(() => {});
   }, [showQr]);
 
-  function handleToggleWebLaunch(enabled: boolean) {
+  async function handleToggleWebLaunch(enabled: boolean) {
     setWebLaunch(enabled);
-    commands.setWebLaunchIntercept(enabled).catch(() => {
+    setWebLaunchMsg(null);
+    try {
+      await commands.setWebLaunchIntercept(enabled);
+      // Re-read the real registry state so the checkbox reflects the truth.
+      const actual = await commands.getWebLaunchInterceptStatus();
+      setWebLaunch(actual);
+      setWebLaunchMsg(actual ? t("login.web_launch_on") : t("login.web_launch_off"));
+    } catch (e) {
       setWebLaunch(!enabled); // revert on failure
-    });
+      setWebLaunchMsg(
+        `${t("login.web_launch_failed")}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   // Auto-fill from last saved account on mount and when region changes.
@@ -410,6 +421,8 @@ export function NormalLoginForm({
           {t("login.forgot")}
         </button>
       </div>
+
+      {webLaunchMsg && <p className="mb-2 text-[11px] text-text-dim">{webLaunchMsg}</p>}
 
       {login.error && (
         <p className="mb-2 text-[12px] text-[var(--danger)]">{login.error.message}</p>
