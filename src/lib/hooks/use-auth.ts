@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { commands, webLogin } from "../tauri";
+import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
@@ -42,13 +42,20 @@ export function useLogin() {
       });
 
       try {
-        // TW Regular (帳密) login runs entirely inside a beanfun webview: we
-        // prefill the credentials and the user solves the reCAPTCHA (+ any
-        // advance check) on the real page, then the backend harvests cookies.
-        // HK keeps the reqwest path (advance-check captcha flow).
+        // TW Regular (帳密) login: solve the reCAPTCHA in a small on-origin
+        // popup (token is domain-locked to login.beanfun.com), then run the
+        // login over reqwest — CheckAccountType then AccountLogin, each gated by
+        // one reCAPTCHA. reqwest returning AdvanceCheckRequired drives the native
+        // VerifyForm (same path as HK). On a resume we reuse the session and only
+        // redo the login-step reCAPTCHA.
         let session: SessionDto;
         if (region === "TW") {
-          session = await webLogin(sessionId, account, password);
+          if (!resuming) {
+            const checkToken = await solveRecaptcha("check");
+            await commands.twLoginCheck(sessionId, account, checkToken);
+          }
+          const loginToken = await solveRecaptcha("login");
+          session = await commands.twLoginSubmit(sessionId, password, loginToken);
         } else {
           session = await commands.login(sessionId, account, password);
         }
