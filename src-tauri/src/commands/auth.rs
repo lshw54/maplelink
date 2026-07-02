@@ -1441,28 +1441,30 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
   const _origFetch = window.fetch;
 
   if (onLoginPage) {
-    // Self-heal the reCAPTCHA first-load race: WebView2 Tracking Prevention is
-    // only turned off a moment after this window is created, so the very first
-    // load can still init reCAPTCHA with google/gstatic storage blocked and
-    // `grecaptcha.render` ends up undefined. If we detect that, reload once
-    // (guarded via first-party sessionStorage) — the reload runs with prevention
-    // off and the widget renders.
+    // Self-heal beanfun's reCAPTCHA first-load race: on the first load its
+    // enterprise.js onload callback can fire before `render` is attached
+    // (grecaptcha.render undefined → beanfun logs "reCAPTCHA 渲染失敗"). A reload
+    // takes beanfun's "script already present → poll until ready" path, which
+    // renders reliably. Hook that exact error and reload once (guarded).
     try {
       const store = window.sessionStorage;
       const RK = '__wl_reloads__';
-      const done = parseInt(store.getItem(RK) || '0', 10) || 0;
-      setTimeout(() => {
-        const g = window.grecaptcha;
-        const broken =
-          g &&
-          typeof g.render !== 'function' &&
-          (!g.enterprise || typeof g.enterprise.render !== 'function');
-        if (broken && done < 1) {
-          store.setItem(RK, String(done + 1));
-          console.warn('[WebLogin] reCAPTCHA failed to init — reloading once');
-          location.reload();
-        }
-      }, 4000);
+      const reloadOnce = (why) => {
+        let done = 0;
+        try { done = parseInt(store.getItem(RK) || '0', 10) || 0; } catch (e) {}
+        if (done >= 1) return;
+        try { store.setItem(RK, String(done + 1)); } catch (e) {}
+        console.warn('[WebLogin] reloading once to recover reCAPTCHA:', why);
+        setTimeout(() => location.reload(), 50);
+      };
+      const _err = console.error;
+      console.error = function () {
+        try {
+          const m = arguments[0];
+          if (m && String(m).indexOf('reCAPTCHA') !== -1) reloadOnce('render error');
+        } catch (e) {}
+        return _err.apply(console, arguments);
+      };
     } catch (e) {}
 
     // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
