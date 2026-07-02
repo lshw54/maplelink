@@ -1423,6 +1423,7 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
   const SESSION_ID = window.__ML_SESSION_ID__ || "";
   const ACCOUNT = window.__ML_ACCOUNT__ || "";
   const PASSWORD = window.__ML_PASSWORD__ || "";
+
   const url = window.location.href;
   const onBeanfun = url.includes('beanfun.com');
   const onLoginPage = url.includes('Login/Index');
@@ -1439,32 +1440,34 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
   if (onDefaultAspx || onGamania || !onBeanfun) return;
 
   const _origFetch = window.fetch;
+  const hasSession = () => document.cookie.indexOf('bfWebToken=') !== -1;
+  console.log('[WebLogin] page', url, '| login?', onLoginPage, '| session?', hasSession());
 
-  if (onLoginPage) {
-    // Self-heal beanfun's reCAPTCHA first-load race: on the first load its
-    // enterprise.js onload callback can fire before `render` is attached
-    // (grecaptcha.render undefined → beanfun logs "reCAPTCHA 渲染失敗"). A reload
-    // takes beanfun's "script already present → poll until ready" path, which
-    // renders reliably. Hook that exact error and reload once (guarded).
+  // Only treat as the login form when we're on Login/Index AND not yet logged
+  // in — a post-login redirect back to a Login/Index URL should fall through to
+  // the harvest below.
+  if (onLoginPage && !hasSession()) {
+    // Self-heal reCAPTCHA: WebView2 Tracking Prevention is only turned off a
+    // moment AFTER this window is created, so the very first load inits reCAPTCHA
+    // with google/gstatic storage blocked and it fails to render. Wait ~4s (long
+    // enough for prevention to be applied), and if no reCAPTCHA widget appeared,
+    // reload once — the reload runs with prevention off and it renders. Same
+    // proven approach as the standalone reCAPTCHA helper window.
     try {
       const store = window.sessionStorage;
       const RK = '__wl_reloads__';
-      const reloadOnce = (why) => {
+      setTimeout(() => {
+        if (document.querySelector('iframe[src*="recaptcha"]')) return; // rendered OK
         let done = 0;
         try { done = parseInt(store.getItem(RK) || '0', 10) || 0; } catch (e) {}
-        if (done >= 1) return;
+        if (done >= 1) {
+          console.warn('[WebLogin] reCAPTCHA still missing after reload');
+          return;
+        }
         try { store.setItem(RK, String(done + 1)); } catch (e) {}
-        console.warn('[WebLogin] reloading once to recover reCAPTCHA:', why);
-        setTimeout(() => location.reload(), 50);
-      };
-      const _err = console.error;
-      console.error = function () {
-        try {
-          const m = arguments[0];
-          if (m && String(m).indexOf('reCAPTCHA') !== -1) reloadOnce('render error');
-        } catch (e) {}
-        return _err.apply(console, arguments);
-      };
+        console.warn('[WebLogin] reCAPTCHA not rendered — reloading once');
+        location.reload();
+      }, 4000);
     } catch (e) {}
 
     // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
@@ -1501,55 +1504,10 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
     return;
   }
 
-  // Post-login (tw.beanfun.com): poll echo_token, fetch the account list, then
-  // signal the backend to harvest cookies + build the session.
-  (async function () {
-    let ready = false;
-    for (let i = 0; i < 60; i++) {
-      try {
-        const r = await _origFetch(
-          'https://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1',
-          { credentials: 'include' }
-        );
-        const t = await r.text();
-        if (t.includes('ResultCode:1')) { ready = true; break; }
-      } catch (e) {}
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!ready) return;
-
-    let accountHtml = '';
-    try {
-      const sc = '610074', sr = 'T9';
-      await _origFetch(
-        'https://tw.beanfun.com/beanfun_block/auth.aspx?channel=game_zone'
-          + '&page_and_query=game_start.aspx%3Fservice_code_and_region%3D' + sc + '_' + sr
-          + '&web_token=1',
-        { credentials: 'include' }
-      );
-      const listResp = await _origFetch(
-        'https://tw.beanfun.com/beanfun_block/game_zone/game_server_account_list.aspx'
-          + '?sc=' + sc + '&sr=' + sr + '&dt=' + Date.now(),
-        { credentials: 'include' }
-      );
-      accountHtml = await listResp.text();
-    } catch (e) {}
-
-    let webToken = 'cookie_auth';
-    document.cookie.split(';').forEach((c) => {
-      const t = c.trim();
-      if (t.startsWith('bfWebToken=')) webToken = t.substring(11);
-    });
-
-    if (window.__TAURI_INTERNALS__) {
-      window.__TAURI_INTERNALS__.invoke('regular_web_login_done', {
-        sessionId: SESSION_ID,
-        account: ACCOUNT,
-        webToken: webToken,
-        accountHtml: accountHtml
-      }).catch((e) => console.error('[WebLogin] done failed', e));
-    }
-  })();
+  // Post-login: nothing to do here. beanfun's page CSP blocks Tauri IPC on
+  // these pages, so the backend watches this window's cookies for bfWebToken and
+  // harvests them itself (see open_regular_web_login).
+  console.log('[WebLogin] post-login page — backend will harvest cookies');
 })();
 "#;
 
@@ -1585,6 +1543,8 @@ pub async fn open_regular_web_login(
     let _ = std::fs::create_dir_all(&data_dir);
     let cleanup_dir = data_dir.clone();
 
+    let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+
     let prelude = format!(
         "window.__ML_SESSION_ID__={};window.__ML_ACCOUNT__={};window.__ML_PASSWORD__={};\n",
         serde_json::to_string(&session_id).unwrap_or_else(|_| "\"\"".into()),
@@ -1593,16 +1553,17 @@ pub async fn open_regular_web_login(
     );
     let init_script = format!("{prelude}{REGULAR_LOGIN_SCRIPT}");
 
-    let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
-
     let window = WebviewWindowBuilder::new(
         &app,
         label,
         tauri::WebviewUrl::External(start_url.parse().expect("static login URL is valid")),
     )
     .title("Beanfun 登入")
-    .inner_size(420.0, 580.0)
-    .min_inner_size(380.0, 500.0)
+    // Wide enough for beanfun's desktop login layout (promo panel + the form
+    // with the account/password fields + reCAPTCHA on the right). At ~420px only
+    // the left promo shows and the form is scrolled off.
+    .inner_size(1000.0, 680.0)
+    .min_inner_size(720.0, 560.0)
     .center()
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
@@ -1634,6 +1595,59 @@ pub async fn open_regular_web_login(
                 break;
             }
         }
+    });
+
+    // Watch the window's cookies for bfWebToken (set once login completes) and
+    // harvest them ourselves — beanfun's page CSP blocks Tauri IPC, so the page
+    // can't signal us. Fully URL-agnostic; no IPC/capability needed.
+    let watch_app = app.clone();
+    let watch_session = session_id.clone();
+    let watch_account = account.clone();
+    tauri::async_runtime::spawn(async move {
+        use tauri::Emitter;
+        // ~5 minutes at 1.5s.
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            let Some(_win) = watch_app.get_webview_window("web-login") else {
+                return; // window closed / cancelled
+            };
+            let cookies = extract_webview2_cookies(&watch_app, "web-login").await;
+            if !cookies.iter().any(|(name, _, _, _)| name == "bfWebToken") {
+                continue; // not logged in yet
+            }
+            tracing::info!("web-login: bfWebToken detected — harvesting session");
+            let Some(state) = watch_app.try_state::<AppState>() else {
+                return;
+            };
+            let Some(ss) = state.get_session(&watch_session).await else {
+                return;
+            };
+            match finalize_webview_login(
+                &watch_app,
+                &ss,
+                &watch_session,
+                "web-login",
+                &watch_account,
+                "cookie_auth",
+                "",
+            )
+            .await
+            {
+                Ok(dto) => {
+                    tracing::info!("regular web-login complete: {}", dto.account_name);
+                    let _ = watch_app.emit("regular-login-complete", dto);
+                }
+                Err(e) => {
+                    tracing::error!("regular web-login harvest failed: {e}");
+                    let _ = watch_app.emit("regular-login-error", format!("登入失敗: {e}"));
+                }
+            }
+            if let Some(win) = watch_app.get_webview_window("web-login") {
+                let _ = win.destroy();
+            }
+            return;
+        }
+        tracing::warn!("web-login: no login detected within timeout");
     });
 
     tracing::info!("regular web-login window opened");
