@@ -249,22 +249,25 @@ pub async fn tw_login_submit(
 
     let dto = SessionDto::from_session(&session, &session_id);
 
-    // Fetch the game accounts, retrying once if empty. The bfWebToken set by
-    // SendLogin can need a beat to settle before game_server_account_list.aspx
-    // returns the list — without the retry the UI lands on an empty account list.
-    let mut accounts =
+    // Fetch the game accounts, retrying a few times while empty. The bfWebToken
+    // set by SendLogin can need a moment to settle before
+    // game_server_account_list.aspx returns the list — without retries the UI
+    // lands on an empty account list.
+    let mut accounts = Vec::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        }
         match beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar).await {
-            Ok(a) => a,
-            Err(e) => {
-                tracing::warn!("failed to fetch game accounts after TW login: {e}");
-                Vec::new()
+            Ok(a) if !a.is_empty() => {
+                accounts = a;
+                break;
             }
-        };
-    if accounts.is_empty() {
-        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-        match beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar).await {
-            Ok(a) => accounts = a,
-            Err(e) => tracing::warn!("failed to fetch game accounts after TW login (retry): {e}"),
+            Ok(a) => accounts = a, // empty — retry
+            Err(e) => tracing::warn!(
+                "fetch game accounts after TW login (attempt {}): {e}",
+                attempt + 1
+            ),
         }
     }
     tracing::info!("TW two-phase login: {} game accounts", accounts.len());

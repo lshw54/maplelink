@@ -3,6 +3,7 @@ import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
+import { useErrorToastStore } from "../stores/error-toast-store";
 import type { SessionDto, QrPollResult } from "../types";
 
 /** Login with account + password. Creates a new session, then authenticates. */
@@ -117,6 +118,7 @@ export function useLogin() {
     },
     onSuccess: async (session: SessionDto) => {
       useAuthStore.getState().addSession(session);
+      let accountCount = -1;
       try {
         let accounts = await commands.getGameAccounts(session.sessionId);
         if (accounts.length === 0) {
@@ -128,9 +130,19 @@ export function useLogin() {
             /* keep the empty list; refresh is best-effort */
           }
         }
+        accountCount = accounts.length;
         useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       } catch {
         /* accounts fetch failure is non-critical */
+      }
+      // Make an empty account list VISIBLE instead of a silent empty page, so a
+      // tester notices + reports it (and can retry) rather than it looking broken.
+      if (accountCount === 0) {
+        useErrorToastStore.getState().addToast({
+          message: "登入成功，但暫時載入唔到遊戲帳號列表，可到主頁按「重新整理」再試",
+          category: "authentication",
+          critical: false,
+        });
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
       // Clear addingSession flag, reset login view, and navigate to main
