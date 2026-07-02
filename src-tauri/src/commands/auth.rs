@@ -1436,38 +1436,37 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
   const _origFetch = window.fetch;
 
   if (onLoginPage) {
-    // Prefill the saved account + password; the user only solves reCAPTCHA and
-    // clicks login. Fill the first visible text/email input and the password
-    // input, dispatching input/change so beanfun's framework picks them up.
+    // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
+    // CheckAccountType (reveals the password field) → enter password →
+    // AccountLogin. The inputs use deliberately-obfuscated names — account is
+    // name="aaa", password is name="inputName" (password only shows after
+    // step 1). We fill each once when it appears (empty), dispatching a native
+    // 'input' event so Vue's v-model picks up the value; the user just solves
+    // the reCAPTCHA and clicks through.
+    const setVal = (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    let accFilled = false;
+    let pwFilled = false;
     const prefill = () => {
       const acc = document.querySelector(
-        'input#account, input[name="account"], input[type="email"], input[type="text"]:not([type="hidden"])'
+        'input[name="aaa"], input[type="email"], input[type="text"]:not([type="hidden"])'
       );
-      const pw = document.querySelector('input[type="password"]');
-      if (acc && ACCOUNT && !acc.value) {
-        acc.value = ACCOUNT;
-        acc.dispatchEvent(new Event('input', { bubbles: true }));
-        acc.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      if (pw && PASSWORD && !pw.value) {
-        pw.value = PASSWORD;
-        pw.dispatchEvent(new Event('input', { bubbles: true }));
-        pw.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      return !!(acc && pw);
+      const pw = document.querySelector('input[name="inputName"], input[type="password"]');
+      if (acc && ACCOUNT && !accFilled && !acc.value) { setVal(acc, ACCOUNT); accFilled = true; }
+      if (pw && PASSWORD && !pwFilled && !pw.value) { setVal(pw, PASSWORD); pwFilled = true; }
+      return accFilled && pwFilled;
     };
-    if (!prefill()) {
-      let obs = null;
-      try {
-        obs = new MutationObserver(() => { if (prefill() && obs) obs.disconnect(); });
-        if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      } catch (e) {}
-      let n = 0;
-      const timer = setInterval(() => {
-        n++;
-        if (prefill() || n > 50) { clearInterval(timer); if (obs) obs.disconnect(); }
-      }, 200);
-    }
+    prefill();
+    // Keep watching for up to ~60s — the password field only appears after the
+    // account step (which needs the reCAPTCHA + a click).
+    let n = 0;
+    const timer = setInterval(() => {
+      n++;
+      if (prefill() || n > 120) clearInterval(timer);
+    }, 500);
     return;
   }
 
@@ -1565,7 +1564,7 @@ pub async fn open_regular_web_login(
 
     let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
 
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         &app,
         label,
         tauri::WebviewUrl::External(start_url.parse().expect("static login URL is valid")),
@@ -1587,6 +1586,11 @@ pub async fn open_regular_web_login(
         category: crate::models::error::ErrorCategory::Process,
         details: None,
     })?;
+
+    // The login page renders Google reCAPTCHA; WebView2 Tracking Prevention
+    // blocks its google.com/gstatic storage and makes it unclickable. Disable it
+    // for this window (same as the standalone reCAPTCHA helper).
+    disable_tracking_prevention(&window);
 
     // Clean up the incognito profile after the window closes.
     let cleanup_app = app.clone();
