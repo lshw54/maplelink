@@ -1467,7 +1467,7 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
         try { store.setItem(RK, String(done + 1)); } catch (e) {}
         console.warn('[WebLogin] reCAPTCHA not rendered — reloading once');
         location.reload();
-      }, 4000);
+      }, 2500);
     } catch (e) {}
 
     // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
@@ -1501,6 +1501,37 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
       n++;
       if (prefill() || n > 120) clearInterval(timer);
     }, 500);
+
+    // Auto-click the login buttons once the user solves the reCAPTCHA, so they
+    // only ever have to solve the challenge. Step 1 button is "登入帳號"
+    // (submitAccountName), step 2 is "繼續" (submitPassword); both require the
+    // reCAPTCHA token, and it resets between steps (so a fresh token = a fresh
+    // click). We click the first visible, enabled one that matches.
+    const recaptchaToken = () => {
+      try {
+        const g = window.grecaptcha;
+        if (g && g.enterprise && g.enterprise.getResponse) return g.enterprise.getResponse() || '';
+        if (g && g.getResponse) return g.getResponse() || '';
+      } catch (e) {}
+      return '';
+    };
+    let lastToken = '';
+    setInterval(() => {
+      const token = recaptchaToken();
+      if (!token || token === lastToken) return;
+      const btns = document.querySelectorAll('a.ui-btn');
+      for (const b of btns) {
+        const txt = (b.textContent || '').trim();
+        const visible = b.offsetParent !== null;
+        const disabled = b.classList.contains('disabled');
+        if (visible && !disabled && (txt.indexOf('登入帳號') !== -1 || txt.indexOf('繼續') !== -1)) {
+          lastToken = token;
+          console.log('[WebLogin] reCAPTCHA solved — auto-clicking', txt);
+          b.click();
+          break;
+        }
+      }
+    }, 400);
     return;
   }
 
