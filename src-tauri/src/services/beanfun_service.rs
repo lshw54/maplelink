@@ -1320,11 +1320,7 @@ async fn tw_check_account_type(
     // breaking AccountLogin later.
     if result_code != 1 {
         return Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: if result_msg.is_empty() {
-                "CheckAccountType failed".to_string()
-            } else {
-                result_msg.to_string()
-            },
+            reason: map_beanfun_error(result_msg),
         }));
     }
 
@@ -1332,6 +1328,18 @@ async fn tw_check_account_type(
         .as_ref()
         .and_then(|j| j["ResultData"]["Captcha"].as_str().map(String::from))
         .unwrap_or_default())
+}
+
+/// Map a beanfun API `ResultMessage` to a user-facing message using the
+/// official login SDK's wording for known codes. Unknown messages pass through
+/// (beanfun's `ResultMessage` is already user-facing); empty falls back.
+fn map_beanfun_error(result_msg: &str) -> String {
+    match result_msg.trim() {
+        "" => "登入失敗，請稍後再試".to_string(),
+        "AccountLock" => "帳號已被鎖定，可聯繫客服人員了解原因".to_string(),
+        "Token Expired" => "連線逾時，請重新登入".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// POST `AccountLogin` with the second reCAPTCHA token, then complete via the
@@ -1413,7 +1421,13 @@ async fn tw_account_login(
             })
         }
         2 => {
-            // AdvanceCheck with URL
+            // Per the official login SDK, ResultCode 2 is either an account lock
+            // or an advance-check redirect (ResultMessage = the URL).
+            if result_msg == "AccountLock" {
+                return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: "帳號已被鎖定，可聯繫客服人員了解原因".to_string(),
+                }));
+            }
             let url = if result_msg.starts_with("http") {
                 Some(result_msg.to_string())
             } else {
@@ -1422,11 +1436,9 @@ async fn tw_account_login(
             Err(LoginError::Auth(AuthError::AdvanceCheckRequired { url }))
         }
         _ => {
-            let msg = if result_msg.is_empty() {
-                "TW login failed".to_string()
-            } else {
-                result_msg.to_string()
-            };
+            // ResultCode 0 (and anything else) is a plain failure — beanfun's
+            // ResultMessage is the user-facing reason (matches the SDK popError).
+            let msg = map_beanfun_error(result_msg);
             Err(LoginError::Auth(AuthError::InvalidCredentials {
                 reason: msg,
             }))
