@@ -266,6 +266,8 @@ pub fn run() {
             commands::system::cleanup_game_cache,
             commands::auth::open_gamepass_login,
             commands::auth::gamepass_webview_done,
+            commands::auth::open_regular_web_login,
+            commands::auth::regular_web_login_done,
             commands::auth::open_recaptcha_window,
             commands::auth::submit_login_token,
             commands::auth::close_recaptcha_window,
@@ -572,6 +574,9 @@ pub fn run() {
                         if !commands::auth::recaptcha_take_delivered() {
                             let _ = app_handle.emit("recaptcha-cancelled", ());
                         }
+                    } else if label == "web-login" {
+                        // Regular web-login window closed before completion
+                        let _ = app_handle.emit("regular-login-cancelled", ());
                     }
                 });
             }

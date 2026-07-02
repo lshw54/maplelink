@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capabilities for MapleLink",
-  "windows": ["main", "debug-console", "gamepass-login", "recaptcha_window"],
+  "windows": ["main", "debug-console", "gamepass-login", "recaptcha_window", "web-login"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

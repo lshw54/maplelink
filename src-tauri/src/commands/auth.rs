@@ -1406,6 +1406,327 @@ pub async fn gamepass_webview_done(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Regular (帳密) web login — full login in a webview, then harvest cookies
+// ---------------------------------------------------------------------------
+//
+// Same robust pattern as GamePass: the user completes the entire login inside a
+// real beanfun page (account + password + reCAPTCHA + any advance check), then
+// we harvest ALL cookies from WebView2 and build the reqwest session — instead
+// of the fragile "grab a reCAPTCHA token and replay it" approach. The only
+// difference from GamePass is the login page prefills the saved credentials.
+
+/// Injected into the regular web-login window. Reads `window.__ML_*` globals
+/// (set by a prelude) — a plain raw string so the JS braces need no escaping.
+const REGULAR_LOGIN_SCRIPT: &str = r#"
+(() => {
+  const SESSION_ID = window.__ML_SESSION_ID__ || "";
+  const ACCOUNT = window.__ML_ACCOUNT__ || "";
+  const PASSWORD = window.__ML_PASSWORD__ || "";
+  const url = window.location.href;
+  const onBeanfun = url.includes('beanfun.com');
+  const onLoginPage = url.includes('Login/Index');
+  const onGamania = url.includes('accounts.gamania.com');
+  const onDefaultAspx = url.includes('bflogin/default.aspx');
+
+  try { Object.defineProperty(navigator, 'webdriver', { get: () => false }); } catch (e) {}
+
+  if (onDefaultAspx || onGamania || !onBeanfun) return;
+
+  const _origFetch = window.fetch;
+
+  if (onLoginPage) {
+    // Prefill the saved account + password; the user only solves reCAPTCHA and
+    // clicks login. Fill the first visible text/email input and the password
+    // input, dispatching input/change so beanfun's framework picks them up.
+    const prefill = () => {
+      const acc = document.querySelector(
+        'input#account, input[name="account"], input[type="email"], input[type="text"]:not([type="hidden"])'
+      );
+      const pw = document.querySelector('input[type="password"]');
+      if (acc && ACCOUNT && !acc.value) {
+        acc.value = ACCOUNT;
+        acc.dispatchEvent(new Event('input', { bubbles: true }));
+        acc.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (pw && PASSWORD && !pw.value) {
+        pw.value = PASSWORD;
+        pw.dispatchEvent(new Event('input', { bubbles: true }));
+        pw.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return !!(acc && pw);
+    };
+    if (!prefill()) {
+      let obs = null;
+      try {
+        obs = new MutationObserver(() => { if (prefill() && obs) obs.disconnect(); });
+        if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      } catch (e) {}
+      let n = 0;
+      const timer = setInterval(() => {
+        n++;
+        if (prefill() || n > 50) { clearInterval(timer); if (obs) obs.disconnect(); }
+      }, 200);
+    }
+    return;
+  }
+
+  // Post-login (tw.beanfun.com): poll echo_token, fetch the account list, then
+  // signal the backend to harvest cookies + build the session.
+  (async function () {
+    let ready = false;
+    for (let i = 0; i < 60; i++) {
+      try {
+        const r = await _origFetch(
+          'https://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1',
+          { credentials: 'include' }
+        );
+        const t = await r.text();
+        if (t.includes('ResultCode:1')) { ready = true; break; }
+      } catch (e) {}
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!ready) return;
+
+    let accountHtml = '';
+    try {
+      const sc = '610074', sr = 'T9';
+      await _origFetch(
+        'https://tw.beanfun.com/beanfun_block/auth.aspx?channel=game_zone'
+          + '&page_and_query=game_start.aspx%3Fservice_code_and_region%3D' + sc + '_' + sr
+          + '&web_token=1',
+        { credentials: 'include' }
+      );
+      const listResp = await _origFetch(
+        'https://tw.beanfun.com/beanfun_block/game_zone/game_server_account_list.aspx'
+          + '?sc=' + sc + '&sr=' + sr + '&dt=' + Date.now(),
+        { credentials: 'include' }
+      );
+      accountHtml = await listResp.text();
+    } catch (e) {}
+
+    let webToken = 'cookie_auth';
+    document.cookie.split(';').forEach((c) => {
+      const t = c.trim();
+      if (t.startsWith('bfWebToken=')) webToken = t.substring(11);
+    });
+
+    if (window.__TAURI_INTERNALS__) {
+      window.__TAURI_INTERNALS__.invoke('regular_web_login_done', {
+        sessionId: SESSION_ID,
+        account: ACCOUNT,
+        webToken: webToken,
+        accountHtml: accountHtml
+      }).catch((e) => console.error('[WebLogin] done failed', e));
+    }
+  })();
+})();
+"#;
+
+/// Open the regular (帳密) web-login window: the user completes the whole login
+/// on the official page (credentials prefilled), then cookies are harvested.
+#[tauri::command]
+pub async fn open_regular_web_login(
+    session_id: String,
+    account: String,
+    password: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    use tauri::WebviewWindowBuilder;
+
+    auth::validate_input("account", &account).map_err(to_dto)?;
+    auth::validate_input("password", &password).map_err(to_dto)?;
+    // Session is pre-created by the frontend.
+    let _ = state.require_session(&session_id).await?;
+
+    let label = "web-login";
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // Fresh incognito profile each time so the login form (for prefill + the
+    // user's reCAPTCHA) always shows instead of auto-logging-in from a cookie.
+    let data_dir = std::env::temp_dir()
+        .join("MapleLink")
+        .join("web-login")
+        .join(uuid::Uuid::new_v4().to_string());
+    let _ = std::fs::create_dir_all(&data_dir);
+    let cleanup_dir = data_dir.clone();
+
+    let prelude = format!(
+        "window.__ML_SESSION_ID__={};window.__ML_ACCOUNT__={};window.__ML_PASSWORD__={};\n",
+        serde_json::to_string(&session_id).unwrap_or_else(|_| "\"\"".into()),
+        serde_json::to_string(&account).unwrap_or_else(|_| "\"\"".into()),
+        serde_json::to_string(&password).unwrap_or_else(|_| "\"\"".into()),
+    );
+    let init_script = format!("{prelude}{REGULAR_LOGIN_SCRIPT}");
+
+    let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+
+    WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::External(start_url.parse().expect("static login URL is valid")),
+    )
+    .title("Beanfun 登入")
+    .inner_size(420.0, 580.0)
+    .min_inner_size(380.0, 500.0)
+    .center()
+    .visible(true)
+    .user_agent(WEBVIEW_USER_AGENT)
+    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .data_directory(data_dir)
+    .initialization_script(&init_script)
+    .devtools(true)
+    .build()
+    .map_err(|e| ErrorDto {
+        code: "AUTH_WEB_LOGIN_WINDOW_FAILED".to_string(),
+        message: format!("Failed to open login window: {e}"),
+        category: crate::models::error::ErrorCategory::Process,
+        details: None,
+    })?;
+
+    // Clean up the incognito profile after the window closes.
+    let cleanup_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            if cleanup_app.get_webview_window("web-login").is_none() {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let _ = std::fs::remove_dir_all(&cleanup_dir);
+                break;
+            }
+        }
+    });
+
+    tracing::info!("regular web-login window opened");
+    Ok(())
+}
+
+/// Called by the web-login init script once login completes: harvest cookies,
+/// build the session + account list, and emit `regular-login-complete`.
+#[tauri::command]
+pub async fn regular_web_login_done(
+    session_id: String,
+    account: String,
+    web_token: String,
+    account_html: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    use tauri::Emitter;
+
+    let ss = state.require_session(&session_id).await?;
+    match finalize_webview_login(
+        &app,
+        &ss,
+        &session_id,
+        "web-login",
+        &account,
+        &web_token,
+        &account_html,
+    )
+    .await
+    {
+        Ok(dto) => {
+            tracing::info!("regular web-login complete: {}", dto.account_name);
+            let _ = app.emit("regular-login-complete", dto);
+        }
+        Err(e) => {
+            tracing::error!("regular web-login failed: {e}");
+            let _ = app.emit("regular-login-error", format!("登入失敗: {e}"));
+        }
+    }
+
+    if let Some(win) = app.get_webview_window("web-login") {
+        let _ = win.destroy();
+    }
+    Ok(())
+}
+
+/// Shared finalization for a webview-completed beanfun login: harvest ALL
+/// WebView2 cookies from `window_label`, inject them into the session's reqwest
+/// jar, build the [`Session`] with `account_name`, fetch game accounts, and
+/// store both. Returns the [`SessionDto`] or an error message.
+async fn finalize_webview_login(
+    app: &tauri::AppHandle,
+    ss: &std::sync::Arc<crate::models::session_state::SessionState>,
+    session_id: &str,
+    window_label: &str,
+    account_name: &str,
+    web_token_fallback: &str,
+    account_html: &str,
+) -> Result<SessionDto, String> {
+    let all_cookies = extract_webview2_cookies(app, window_label).await;
+    tracing::info!(
+        "web-login: extracted {} cookies from WebView2",
+        all_cookies.len()
+    );
+
+    let real_web_token = all_cookies
+        .iter()
+        .find(|(name, _, _, _)| name == "bfWebToken")
+        .map(|(_, value, _, _)| value.clone())
+        .unwrap_or_else(|| {
+            if web_token_fallback != "cookie_auth" && !web_token_fallback.is_empty() {
+                web_token_fallback.to_string()
+            } else {
+                String::new()
+            }
+        });
+
+    if real_web_token.is_empty() {
+        return Err("no bfWebToken found in webview cookies".to_string());
+    }
+
+    let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
+    let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
+    let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
+    for (name, value, domain, path) in &all_cookies {
+        let clean_domain = domain.trim_start_matches('.');
+        let jar_url =
+            if clean_domain.contains("login.beanfun.com") && !clean_domain.contains("newlogin") {
+                &login_url
+            } else if clean_domain.contains("newlogin") {
+                &newlogin_url
+            } else {
+                &tw_url
+            };
+        let path_str = if path.is_empty() { "/" } else { path.as_str() };
+        let cookie_str = format!("{}={}; Domain={}; Path={}", name, value, domain, path_str);
+        ss.cookie_jar.add_cookie_str(&cookie_str, jar_url);
+    }
+
+    let session = crate::models::session::Session {
+        token: real_web_token,
+        refresh_token: None,
+        expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
+        region: crate::models::session::Region::TW,
+        account_name: account_name.to_string(),
+        session_key: None,
+        totp_state: None,
+    };
+
+    let accounts = crate::services::beanfun_service::get_game_accounts(
+        &ss.http_client,
+        &session,
+        &ss.cookie_jar,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!("web-login: reqwest get_game_accounts failed: {e}, using webview HTML");
+        crate::services::beanfun_service::parse_tw_account_list_html(account_html)
+    });
+    tracing::info!("web-login: got {} accounts", accounts.len());
+
+    let dto = SessionDto::from_session(&session, session_id);
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
+    Ok(dto)
+}
+
 /// A cookie tuple: (name, value, domain, path).
 type CookieTuple = (String, String, String, String);
 
