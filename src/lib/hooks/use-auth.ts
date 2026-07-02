@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { commands, solveRecaptcha } from "../tauri";
+import { commands, webLogin } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
@@ -42,18 +42,13 @@ export function useLogin() {
       });
 
       try {
-        // TW Regular (帳密) login is reCAPTCHA-gated at two points: once at
-        // CheckAccountType (the "check" token) and once at AccountLogin (the
-        // "login" token). Each is solved by the human in the helper window.
-        // HK uses the advance-check captcha flow instead — keep the old path.
+        // TW Regular (帳密) login runs entirely inside a beanfun webview: we
+        // prefill the credentials and the user solves the reCAPTCHA (+ any
+        // advance check) on the real page, then the backend harvests cookies.
+        // HK keeps the reqwest path (advance-check captcha flow).
         let session: SessionDto;
         if (region === "TW") {
-          if (!resuming) {
-            const checkToken = await solveRecaptcha("check");
-            await commands.twLoginCheck(sessionId, account, checkToken);
-          }
-          const loginToken = await solveRecaptcha("login");
-          session = await commands.twLoginSubmit(sessionId, password, loginToken);
+          session = await webLogin(sessionId, account, password);
         } else {
           session = await commands.login(sessionId, account, password);
         }
@@ -66,11 +61,16 @@ export function useLogin() {
         return session;
       } catch (err: unknown) {
         const errStr = typeof err === "object" && err !== null ? JSON.stringify(err) : String(err);
-        if (errStr.includes("RECAPTCHA_CANCELLED") || errStr.includes("RECAPTCHA_TIMEOUT")) {
-          // User closed the verification window, or it never produced a token —
+        if (
+          errStr.includes("RECAPTCHA_CANCELLED") ||
+          errStr.includes("RECAPTCHA_TIMEOUT") ||
+          errStr.includes("WEBLOGIN_CANCELLED") ||
+          errStr.includes("WEBLOGIN_TIMEOUT")
+        ) {
+          // User closed the login/verification window, or it never completed —
           // treat as a quiet abort so the button doesn't hang on "登入中...".
           useAuthStore.getState().setPendingCredentials(null);
-          throw new Error("人機驗證未完成,請再試一次", { cause: err });
+          throw new Error("登入已取消,請再試一次", { cause: err });
         }
         if (errStr.includes("TOTP") || errStr.includes("totp") || errStr.includes("Totp")) {
           const totpError = new Error("TOTP_REQUIRED") as Error & { sessionId: string };

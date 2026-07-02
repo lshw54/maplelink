@@ -28,6 +28,9 @@ export const commands = {
     invoke("tw_login_check", { sessionId, account, recaptchaCheck }),
   twLoginSubmit: (sessionId: string, password: string, recaptchaLogin: string) =>
     invoke<SessionDto>("tw_login_submit", { sessionId, password, recaptchaLogin }),
+  // TW regular login done fully inside a beanfun webview (credentials prefilled)
+  openRegularWebLogin: (sessionId: string, account: string, password: string) =>
+    invoke("open_regular_web_login", { sessionId, account, password }),
   openRecaptchaWindow: (step: "check" | "login") => invoke("open_recaptcha_window", { step }),
   closeRecaptchaWindow: () => invoke("close_recaptcha_window"),
   qrLoginStart: (sessionId: string) => invoke<QrCodeData>("qr_login_start", { sessionId }),
@@ -181,6 +184,49 @@ export async function solveRecaptcha(
 
     commands
       .openRecaptchaWindow(step)
+      .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
+  });
+}
+
+/**
+ * Run the TW regular login entirely inside a beanfun webview (credentials
+ * prefilled; the user solves reCAPTCHA + any advance check). Resolves with the
+ * session once the backend harvests cookies, rejects on error/cancel/timeout.
+ */
+export async function webLogin(
+  sessionId: string,
+  account: string,
+  password: string,
+  timeoutMs = 300_000,
+): Promise<SessionDto> {
+  return new Promise<SessionDto>((resolve, reject) => {
+    let settled = false;
+    const cleanups: Array<() => void> = [];
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanups.forEach((c) => c());
+      fn();
+    };
+
+    void listen<SessionDto>("regular-login-complete", (e) => {
+      finish(() => resolve(e.payload));
+    }).then((un) => cleanups.push(un));
+
+    void listen<string>("regular-login-error", (e) => {
+      finish(() => reject(new Error(e.payload || "WEBLOGIN_ERROR")));
+    }).then((un) => cleanups.push(un));
+
+    void listen("regular-login-cancelled", () => {
+      finish(() => reject(new Error("WEBLOGIN_CANCELLED")));
+    }).then((un) => cleanups.push(un));
+
+    // Safety net so a stuck window never hangs the login button forever.
+    const timer = setTimeout(() => finish(() => reject(new Error("WEBLOGIN_TIMEOUT"))), timeoutMs);
+    cleanups.push(() => clearTimeout(timer));
+
+    commands
+      .openRegularWebLogin(sessionId, account, password)
       .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
   });
 }
