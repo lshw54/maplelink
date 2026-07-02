@@ -1431,11 +1431,40 @@ const REGULAR_LOGIN_SCRIPT: &str = r#"
 
   try { Object.defineProperty(navigator, 'webdriver', { get: () => false }); } catch (e) {}
 
+  // Tauri hijacks window.alert to its dialog plugin, which isn't permitted for
+  // this remote origin (CSP/ACL) and throws. Route beanfun's alerts to the
+  // console so they never crash the page — real errors also show inline.
+  try { window.alert = function (m) { console.log('[beanfun alert]', m); }; } catch (e) {}
+
   if (onDefaultAspx || onGamania || !onBeanfun) return;
 
   const _origFetch = window.fetch;
 
   if (onLoginPage) {
+    // Self-heal the reCAPTCHA first-load race: WebView2 Tracking Prevention is
+    // only turned off a moment after this window is created, so the very first
+    // load can still init reCAPTCHA with google/gstatic storage blocked and
+    // `grecaptcha.render` ends up undefined. If we detect that, reload once
+    // (guarded via first-party sessionStorage) — the reload runs with prevention
+    // off and the widget renders.
+    try {
+      const store = window.sessionStorage;
+      const RK = '__wl_reloads__';
+      const done = parseInt(store.getItem(RK) || '0', 10) || 0;
+      setTimeout(() => {
+        const g = window.grecaptcha;
+        const broken =
+          g &&
+          typeof g.render !== 'function' &&
+          (!g.enterprise || typeof g.enterprise.render !== 'function');
+        if (broken && done < 1) {
+          store.setItem(RK, String(done + 1));
+          console.warn('[WebLogin] reCAPTCHA failed to init — reloading once');
+          location.reload();
+        }
+      }, 4000);
+    } catch (e) {}
+
     // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
     // CheckAccountType (reveals the password field) → enter password →
     // AccountLogin. The inputs use deliberately-obfuscated names — account is
