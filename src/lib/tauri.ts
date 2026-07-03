@@ -64,6 +64,8 @@ export const commands = {
     invoke<LastSavedAccountDto | null>("get_saved_account_detail", { account }),
   deleteSavedAccount: (account: string, region?: string) =>
     invoke<boolean>("delete_saved_account", { account, region }),
+  saveVerifyInfo: (account: string, verifyInfo: string) =>
+    invoke("save_verify_info", { account, verifyInfo }),
   saveLoginCredentials: (account: string, password: string, rememberPassword: boolean) =>
     invoke("save_login_credentials", { account, password, rememberPassword }),
 

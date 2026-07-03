@@ -602,6 +602,7 @@ pub async fn get_last_saved_account(
                 account: a.account.clone(),
                 password: a.password.clone(),
                 remember_password: a.remember_password,
+                verify_info: a.verify_info.clone(),
             }
         });
 
@@ -615,6 +616,8 @@ pub struct LastSavedAccountDto {
     pub account: String,
     pub password: String,
     pub remember_password: bool,
+    /// Remembered advance-check verify info (email / phone), if any.
+    pub verify_info: Option<String>,
 }
 
 /// Return a specific saved account's details (including password) by account ID.
@@ -634,9 +637,40 @@ pub async fn get_saved_account_detail(
             account: a.account.clone(),
             password: a.password.clone(),
             remember_password: a.remember_password,
+            verify_info: a.verify_info.clone(),
         });
 
     Ok(result)
+}
+
+/// Remember (or clear) the advance-check verify info (email / phone) for an
+/// account, so it can be pre-filled next time an advance check appears.
+#[tauri::command]
+pub async fn save_verify_info(
+    account: String,
+    verify_info: String,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    let region = state.config.read().await.region.clone();
+    let region_str = format!("{region:?}");
+
+    {
+        let mut accounts = state.saved_accounts.write().await;
+        crate::services::account_storage::set_verify_info(
+            &mut accounts,
+            &region_str,
+            &account,
+            &verify_info,
+        );
+    }
+
+    let accounts = state.saved_accounts.read().await;
+    if let Err(e) =
+        crate::services::account_storage::save_accounts(&state.accounts_path, &accounts).await
+    {
+        tracing::warn!("failed to persist verify info: {e}");
+    }
+    Ok(())
 }
 
 /// Delete a saved login account by account ID.

@@ -86,6 +86,7 @@ export interface LastSavedAccountDto {
   account: string;
   password: string;
   rememberPassword: boolean;
+  verifyInfo?: string | null;
 }
 
 export interface AdvanceCheckState {

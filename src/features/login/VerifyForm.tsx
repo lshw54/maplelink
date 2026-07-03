@@ -75,6 +75,16 @@ export function VerifyForm({
     if (loadedRef.current) return;
     loadedRef.current = true;
     loadPage();
+    // Pre-fill the email/phone remembered for this account last time.
+    const acct = useAuthStore.getState().pendingCredentials?.account;
+    if (acct) {
+      commands
+        .getSavedAccountDetail(acct)
+        .then((d) => {
+          if (d?.verifyInfo) setAuthInfo(d.verifyInfo);
+        })
+        .catch(() => {});
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRefreshCaptcha() {
@@ -108,6 +118,8 @@ export function VerifyForm({
         // Auto re-login using pending credentials
         const pending = useAuthStore.getState().pendingCredentials;
         if (pending) {
+          // Remember the verify info (email/phone) for this account next time.
+          commands.saveVerifyInfo(pending.account, authInfo.trim()).catch(() => {});
           setReLogging(true);
           setError(null);
           login.mutate(
