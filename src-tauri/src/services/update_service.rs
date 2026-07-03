@@ -1,7 +1,8 @@
 //! Auto-update service — checks GitHub Releases for updates.
 //!
 //! Automatically detects GitHub connectivity and falls back to proxy mirrors
-//! (ghproxy.vip, ghproxy.net, ghfast.top) for users in mainland China.
+//! (ghproxy.net, ghfast.top, gh-proxy.com, ghproxy.cc) for users in mainland
+//! China. Each mirror is probed before use, so a dead one is simply skipped.
 //! The probe result is cached for the entire session.
 
 use std::sync::OnceLock;
@@ -12,8 +13,15 @@ use crate::models::update::UpdateInfo;
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
 
-/// Proxy mirrors to try when direct GitHub access fails.
-const PROXY_MIRRORS: &[&str] = &["https://ghproxy.net/", "https://ghfast.top/"];
+/// Proxy mirrors to try (in order) when direct GitHub access fails. Each is
+/// probed in `ensure_proxy_resolved` before use, so unreachable ones are
+/// skipped — extra entries only add redundancy. (Old `ghproxy.com` is dead.)
+const PROXY_MIRRORS: &[&str] = &[
+    "https://ghproxy.net/",
+    "https://ghfast.top/",
+    "https://gh-proxy.com/",
+    "https://ghproxy.cc/",
+];
 
 /// Cached connectivity probe result.
 /// - `None` inside the Option = direct GitHub works (no proxy needed)
