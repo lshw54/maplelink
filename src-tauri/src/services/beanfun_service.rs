@@ -1315,10 +1315,14 @@ async fn tw_check_account_type(
         .and_then(|j| j["ResultMessage"].as_str())
         .unwrap_or("");
 
-    // ResultCode 1 == Success (beanfun convention). Surface anything else so a
-    // bad account or rejected first reCAPTCHA fails loudly instead of silently
-    // breaking AccountLogin later.
+    // ResultCode 1 == Success (beanfun convention). Surface anything else.
     if result_code != 1 {
+        // If beanfun is asking for a reCAPTCHA (account flagged IsRecaptcha) and
+        // we didn't send a token, signal the caller to obtain one and retry —
+        // most accounts don't need it, so we try without one first.
+        if recaptcha_required(check_json.as_ref(), result_msg) && is_blank(check_token) {
+            return Err(LoginError::Auth(AuthError::RecaptchaRequired));
+        }
         return Err(LoginError::Auth(AuthError::InvalidCredentials {
             reason: map_beanfun_error(result_msg),
         }));
@@ -1328,6 +1332,20 @@ async fn tw_check_account_type(
         .as_ref()
         .and_then(|j| j["ResultData"]["Captcha"].as_str().map(String::from))
         .unwrap_or_default())
+}
+
+/// Whether `token` is absent or empty.
+fn is_blank(token: Option<&str>) -> bool {
+    token.map(|t| t.trim().is_empty()).unwrap_or(true)
+}
+
+/// Whether a beanfun login response is demanding a reCAPTCHA: the account is
+/// flagged `IsRecaptcha`, or the message is the "click I'm not a robot" prompt.
+fn recaptcha_required(json: Option<&serde_json::Value>, result_msg: &str) -> bool {
+    let is_recaptcha = json
+        .and_then(|j| j["ResultData"]["IsRecaptcha"].as_bool())
+        .unwrap_or(false);
+    is_recaptcha || result_msg.contains("機器人") || result_msg.contains("recaptcha")
 }
 
 /// Map a beanfun API `ResultMessage` to a user-facing message using the
@@ -1436,11 +1454,14 @@ async fn tw_account_login(
             Err(LoginError::Auth(AuthError::AdvanceCheckRequired { url }))
         }
         _ => {
-            // ResultCode 0 (and anything else) is a plain failure — beanfun's
-            // ResultMessage is the user-facing reason (matches the SDK popError).
-            let msg = map_beanfun_error(result_msg);
+            // ResultCode 0 (and anything else) is a plain failure. If beanfun is
+            // asking for a reCAPTCHA (IsRecaptcha) and we sent none, signal the
+            // caller to obtain a token and retry — most accounts don't need it.
+            if recaptcha_required(Some(&login_json), result_msg) && is_blank(login_token) {
+                return Err(LoginError::Auth(AuthError::RecaptchaRequired));
+            }
             Err(LoginError::Auth(AuthError::InvalidCredentials {
-                reason: msg,
+                reason: map_beanfun_error(result_msg),
             }))
         }
     }

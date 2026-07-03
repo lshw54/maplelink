@@ -43,20 +43,36 @@ export function useLogin() {
       });
 
       try {
-        // TW Regular (帳密) login: solve the reCAPTCHA in a small on-origin
-        // popup (token is domain-locked to login.beanfun.com), then run the
-        // login over reqwest — CheckAccountType then AccountLogin, each gated by
-        // one reCAPTCHA. reqwest returning AdvanceCheckRequired drives the native
-        // VerifyForm (same path as HK). On a resume we reuse the session and only
-        // redo the login-step reCAPTCHA.
+        // TW Regular (帳密) login runs over reqwest (CheckAccountType then
+        // AccountLogin). Most accounts are NOT flagged IsRecaptcha, so we try
+        // each step WITHOUT a reCAPTCHA first and only open the small on-origin
+        // popup (token is domain-locked to login.beanfun.com) if beanfun replies
+        // RecaptchaRequired. reqwest returning AdvanceCheckRequired drives the
+        // native VerifyForm (same path as HK).
         let session: SessionDto;
         if (region === "TW") {
+          const needsRecaptcha = (e: unknown) => {
+            const s = typeof e === "object" && e !== null ? JSON.stringify(e) : String(e);
+            return s.includes("RecaptchaRequired") || s.includes("RECAPTCHA_REQUIRED");
+          };
           if (!resuming) {
-            const checkToken = await solveRecaptcha("check");
-            await commands.twLoginCheck(sessionId, account, checkToken);
+            try {
+              await commands.twLoginCheck(sessionId, account, "");
+            } catch (e) {
+              if (!needsRecaptcha(e)) throw e;
+              await commands.twLoginCheck(sessionId, account, await solveRecaptcha("check"));
+            }
           }
-          const loginToken = await solveRecaptcha("login");
-          session = await commands.twLoginSubmit(sessionId, password, loginToken);
+          try {
+            session = await commands.twLoginSubmit(sessionId, password, "");
+          } catch (e) {
+            if (!needsRecaptcha(e)) throw e;
+            session = await commands.twLoginSubmit(
+              sessionId,
+              password,
+              await solveRecaptcha("login"),
+            );
+          }
         } else {
           session = await commands.login(sessionId, account, password);
         }
