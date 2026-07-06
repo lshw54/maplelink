@@ -136,7 +136,7 @@ export const commands = {
   // Beanfun points (session-specific)
   openGashPopup: (sessionId: string) => invoke("open_gash_popup", { sessionId }),
   openMemberPopup: (sessionId: string) => invoke("open_member_popup", { sessionId }),
-  openCustomerService: () => invoke("open_customer_service"),
+  openCustomerService: (sessionId: string) => invoke("open_customer_service", { sessionId }),
   openAuthPopup: (sessionId: string, url: string, title: string) =>
     invoke("open_auth_popup", { sessionId, url, title }),
   pingSession: (sessionId: string) => invoke<boolean>("ping_session", { sessionId }),

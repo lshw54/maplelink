@@ -607,7 +607,9 @@ function MorePopupMenu({
       </button>
       <button
         onClick={() => {
-          commands.openCustomerService().catch(() => {});
+          commands
+            .openCustomerService(useAuthStore.getState().activeSessionId ?? "")
+            .catch(() => {});
           onClose();
         }}
         className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"

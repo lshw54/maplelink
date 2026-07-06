@@ -367,9 +367,10 @@ pub async fn change_account_display_name(
     let _bf_lock = ss.bf_client_lock.lock().await;
 
     let session_guard = ss.session.read().await;
-    let _session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
+    let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
-    let region = state.config.read().await.region.clone();
+    // Session's region, not the global config toggle (matches this account).
+    let region = session.region.clone();
     let game_code = format!("{}_{}", DEFAULT_SERVICE_CODE, DEFAULT_SERVICE_REGION);
 
     let success = beanfun_service::change_display_name(

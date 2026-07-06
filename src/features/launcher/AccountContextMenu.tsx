@@ -423,7 +423,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   }
 
   function handleSupport() {
-    commands.openCustomerService().catch(() => {});
+    commands.openCustomerService(useAuthStore.getState().activeSessionId ?? "").catch(() => {});
     onClose();
   }
 
