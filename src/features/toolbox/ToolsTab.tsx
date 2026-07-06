@@ -55,6 +55,17 @@ export function ToolsTab() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showWebviewConfirm, setShowWebviewConfirm] = useState(false);
+
+  async function doResetWebview() {
+    setShowWebviewConfirm(false);
+    try {
+      await commands.resetWebviewData();
+      await commands.restartApp();
+    } catch {
+      /* restart failure is non-critical */
+    }
+  }
 
   async function doCleanup() {
     setShowConfirm(false);
@@ -115,6 +126,15 @@ export function ToolsTab() {
               desc: cleanResult ?? String(t("toolbox.tools.cleanup_desc")),
               onClick: () => setShowConfirm(true),
               loading: cleaning,
+            }}
+          />
+          <ToolCardItem
+            card={{
+              icon: "🌐",
+              iconBg: "bg-[rgba(59,130,246,0.1)]",
+              name: t("toolbox.tools.reset_webview"),
+              desc: t("toolbox.tools.reset_webview_desc"),
+              onClick: () => setShowWebviewConfirm(true),
             }}
           />
         </div>
@@ -218,6 +238,31 @@ export function ToolsTab() {
               className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
             >
               {t("common.confirm")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* WebView2 reset confirm modal */}
+      <Modal
+        isOpen={showWebviewConfirm}
+        onClose={() => setShowWebviewConfirm(false)}
+        title={t("toolbox.tools.reset_webview")}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-text-dim">{t("toolbox.tools.reset_webview_confirm")}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowWebviewConfirm(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={doResetWebview}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("toolbox.tools.reset_webview_restart")}
             </button>
           </div>
         </div>
