@@ -80,6 +80,8 @@ export const commands = {
     invoke<GameAccountDto[]>("refresh_accounts", { sessionId }),
   getGameCredentials: (sessionId: string, accountId: string) =>
     invoke<GameCredentialsDto>("get_game_credentials", { sessionId, accountId }),
+  getAccountCreateTime: (sessionId: string, accountId: string) =>
+    invoke<string>("get_account_create_time", { sessionId, accountId }),
   autoPasteOtp: (sessionId: string, accountId: string) =>
     invoke<boolean>("auto_paste_otp", { sessionId, accountId }),
   changeAccountDisplayName: (sessionId: string, accountId: string, newName: string) =>

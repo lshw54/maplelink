@@ -285,6 +285,7 @@ pub fn run() {
             commands::config::set_config,
             commands::config::reset_config,
             commands::account::get_game_accounts,
+            commands::account::get_account_create_time,
             commands::account::get_game_credentials,
             commands::account::refresh_accounts,
             commands::account::ping_session,

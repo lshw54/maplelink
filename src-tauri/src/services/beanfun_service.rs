@@ -272,6 +272,41 @@ pub async fn get_game_accounts(
     }
 }
 
+/// Fetch the creation time for a single service account on demand.
+///
+/// The list load intentionally no longer fetches this per account (it made one
+/// beanfun request per account on every refresh — a rate-limit risk), so the
+/// account-detail popup calls this lazily for just the account being viewed.
+/// `sc`/`sr` come from the account's `game_type` (`"{sc}_{sr}"`). Empty on failure.
+pub async fn fetch_account_create_time(
+    client: &Client,
+    region: &Region,
+    sc: &str,
+    sr: &str,
+    sn: &str,
+) -> String {
+    let host = match region {
+        Region::HK => "bfweb.hk.beanfun.com",
+        Region::TW => "tw.beanfun.com",
+    };
+    let timestamp = get_current_time_method2();
+    let url = format!(
+        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
+         ?service_code={sc}&service_region={sr}&sotp={sn}&dt={timestamp}"
+    );
+    match http_get_text(client, &url).await {
+        Ok(html) => Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#)
+            .ok()
+            .and_then(|re| {
+                re.captures(&html)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string())
+            })
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
 /// Parse TW game accounts from raw account list HTML.
 ///
 /// Used by GamePass login where the HTML is fetched inside the WebView2

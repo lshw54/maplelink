@@ -113,6 +113,41 @@ pub async fn get_game_accounts(
     Ok(dtos)
 }
 
+/// Fetch a single account's creation date on demand (for the detail popup).
+///
+/// The account list no longer eagerly fetches create time (one request per
+/// account per refresh trips beanfun rate limits), so this resolves it lazily
+/// for just the account whose details are being viewed. Returns "" if unknown.
+#[tauri::command]
+pub async fn get_account_create_time(
+    session_id: String,
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+    let region = {
+        let session_guard = ss.session.read().await;
+        auth::require_valid_session(&session_guard)
+            .map_err(to_dto)?
+            .region
+            .clone()
+    };
+
+    // Find the account to get its game_type ("{sc}_{sr}") and sn.
+    let (game_type, sn) = {
+        let accounts = ss.game_accounts.read().await;
+        match accounts.iter().find(|a| a.id == account_id) {
+            Some(a) => (a.game_type.clone(), a.sn.clone()),
+            None => return Ok(String::new()),
+        }
+    };
+    let Some((sc, sr)) = game_type.split_once('_') else {
+        return Ok(String::new());
+    };
+
+    Ok(beanfun_service::fetch_account_create_time(&ss.http_client, &region, sc, sr, &sn).await)
+}
+
 /// Retrieve one-time game credentials for a specific account (Req 2.2, 2.3).
 ///
 /// Fetches fresh credentials from the Beanfun platform. On failure the
