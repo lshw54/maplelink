@@ -24,7 +24,10 @@ export function useGameAccounts() {
 export function useGameCredentials() {
   return useMutation<GameCredentialsDto, Error, string>({
     mutationFn: (accountId: string) => {
-      const sessionId = useAuthStore.getState().activeSessionId ?? "";
+      // Use the session that OWNS this account, not the globally-active one —
+      // otherwise switching account tabs fetches an account against the wrong
+      // session ("account not found" → the wrong account gets logged out).
+      const sessionId = useAuthStore.getState().sessionIdForAccount(accountId) ?? "";
       return commands.getGameCredentials(sessionId, accountId);
     },
   });

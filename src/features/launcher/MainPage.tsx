@@ -33,18 +33,6 @@ export function MainPage() {
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
   const { data: accounts } = useGameAccounts();
 
-  // Reset the selection whenever the active session (account tab) changes —
-  // otherwise a stale selectedAccountId from another session gets fetched
-  // against the newly-active session ("account not found" → wrong session
-  // logged out). Done during render (React's "reset state on prop change"
-  // pattern) so the auto-select below immediately picks THIS session's account.
-  const [prevSessionId, setPrevSessionId] = useState(activeSessionId);
-  if (activeSessionId !== prevSessionId) {
-    setPrevSessionId(activeSessionId);
-    setSelectedAccountId(null);
-    setAutoSelected(false);
-  }
-
   // Auto-select first account when accounts load and nothing is selected.
   if (!autoSelected && accounts?.length && !selectedAccountId) {
     const first = accounts[0];
@@ -167,7 +155,9 @@ export function MainPage() {
       setSelectedAccountId(accountId);
       setLaunching(true);
       try {
-        const processId = await commands.launchGame(activeSessionId ?? "", accountId, otp);
+        // Launch with the session that OWNS this account (not the global active).
+        const sessionId = useAuthStore.getState().sessionIdForAccount(accountId) ?? "";
+        const processId = await commands.launchGame(sessionId, accountId, otp);
         if (processId > 0) {
           setGamePid(processId);
           setGameRunning(true);
@@ -176,7 +166,7 @@ export function MainPage() {
         setLaunching(false);
       }
     },
-    [activeSessionId, setGamePid, setGameRunning],
+    [setGamePid, setGameRunning],
   );
 
   async function handlePlayClick() {

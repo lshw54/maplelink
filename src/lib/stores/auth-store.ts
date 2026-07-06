@@ -29,6 +29,8 @@ export interface AuthState {
   getActiveSession: () => SessionEntry | null;
   getActiveSessionId: () => string | null;
   getActiveGameAccounts: () => GameAccountDto[];
+  /** The session that owns a given game account (falls back to active). */
+  sessionIdForAccount: (accountId: string) => string | null;
 
   // Actions
   addSession: (session: SessionDto, gameAccounts?: GameAccountDto[]) => void;
@@ -83,6 +85,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   getActiveGameAccounts: () => {
     const entry = get().getActiveSession();
     return entry?.gameAccounts ?? [];
+  },
+
+  sessionIdForAccount: (accountId) => {
+    for (const [sid, entry] of get().sessions) {
+      if (entry.gameAccounts.some((a) => a.id === accountId)) return sid;
+    }
+    // Unknown account (not in any loaded list) — fall back to the active one.
+    return get().activeSessionId;
   },
 
   addSession: (session, gameAccounts = []) => {
