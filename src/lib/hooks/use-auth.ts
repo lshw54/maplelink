@@ -43,12 +43,19 @@ export function useLogin() {
       });
 
       try {
-        // TW Regular (帳密) login runs over reqwest (CheckAccountType then
-        // AccountLogin). Most accounts are NOT flagged IsRecaptcha, so we try
-        // each step WITHOUT a reCAPTCHA first and only open the small on-origin
-        // popup (token is domain-locked to login.beanfun.com) if beanfun replies
-        // RecaptchaRequired. reqwest returning AdvanceCheckRequired drives the
-        // native VerifyForm (same path as HK).
+        // TW Regular (帳密) login runs over the two-phase commands
+        // (twLoginCheck = CheckAccountType, twLoginSubmit = AccountLogin). We try
+        // each step WITHOUT a reCAPTCHA first, so IsRecaptcha=false accounts get
+        // the exact v0.3.6 experience (empty tokens, NO popup); only when beanfun
+        // replies RecaptchaRequired do we open the on-origin popup (token is
+        // domain-locked to login.beanfun.com).
+        //
+        // IMPORTANT: the non-resume attempt MUST go through twLoginCheck — it
+        // stashes the skey/form-token on the session. When AdvanceCheckRequired
+        // drives the native VerifyForm and the user passes it, the resume reuses
+        // that SAME verified session via twLoginSubmit. (A single-shot `login`
+        // here would fetch a fresh skey on resume, dropping beanfun's
+        // advance-check verification → login never reaches the account list.)
         let session: SessionDto;
         if (region === "TW") {
           const needsRecaptcha = (e: unknown) => {

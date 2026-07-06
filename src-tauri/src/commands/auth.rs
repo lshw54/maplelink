@@ -219,6 +219,16 @@ pub async fn tw_login_submit(
         details: None,
     })?;
 
+    let has_login_token = recaptcha_login
+        .as_deref()
+        .is_some_and(|t| !t.trim().is_empty());
+    tracing::info!(
+        account = %pending.account,
+        skey_len = pending.skey.len(),
+        has_login_token,
+        "TW login phase 2 (AccountLogin) starting"
+    );
+
     let login_result = beanfun_service::tw_login_submit(
         &ss.http_client,
         &pending.skey,
@@ -640,6 +650,13 @@ pub async fn get_saved_account_detail(
             verify_info: a.verify_info.clone(),
         });
 
+    tracing::info!(
+        region = %region_str,
+        account = %account,
+        found = result.is_some(),
+        has_verify_info = result.as_ref().is_some_and(|r| r.verify_info.is_some()),
+        "get_saved_account_detail"
+    );
     Ok(result)
 }
 
@@ -665,6 +682,16 @@ pub async fn save_verify_info(
     }
 
     let accounts = state.saved_accounts.read().await;
+    let saved = crate::services::account_storage::get_account(&accounts, &region_str, &account)
+        .and_then(|a| a.verify_info.clone());
+    tracing::info!(
+        region = %region_str,
+        account = %account,
+        value_len = verify_info.trim().len(),
+        stored = saved.is_some(),
+        total_accounts = accounts.len(),
+        "save_verify_info persisted"
+    );
     if let Err(e) =
         crate::services::account_storage::save_accounts(&state.accounts_path, &accounts).await
     {

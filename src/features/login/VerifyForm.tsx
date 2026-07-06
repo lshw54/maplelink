@@ -62,6 +62,16 @@ export function VerifyForm({
       if (msg.includes("advance_check_web:")) {
         const url = msg.replace("advance_check_web:", "").replace("Invalid credentials: ", "");
         setWebVerifyUrl(url);
+        // Web-redirect advance check: verification happens in an external
+        // browser, so there's no native field to capture/remember. This log
+        // distinguishes "remember didn't work" from "we never had the value".
+        commands
+          .logFrontendError(
+            "info",
+            "VerifyForm",
+            "advance check is WEB-redirect type — native verify-info remember does not apply",
+          )
+          .catch(() => {});
       } else {
         setError(msg);
       }
@@ -119,7 +129,16 @@ export function VerifyForm({
         const pending = useAuthStore.getState().pendingCredentials;
         if (pending) {
           // Remember the verify info (email/phone) for this account next time.
-          commands.saveVerifyInfo(pending.account, authInfo.trim()).catch(() => {});
+          // Await so it persists BEFORE the re-login's saveLoginCredentials
+          // upsert runs (which only preserves an already-stored value) — removes
+          // any write-order ambiguity between the two account-store writes.
+          try {
+            await commands.saveVerifyInfo(pending.account, authInfo.trim());
+          } catch (e) {
+            commands
+              .logFrontendError("warn", "VerifyForm", `saveVerifyInfo failed: ${e}`)
+              .catch(() => {});
+          }
           setReLogging(true);
           setError(null);
           login.mutate(
