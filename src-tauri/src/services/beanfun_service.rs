@@ -17,13 +17,19 @@ use crate::models::game_account::{GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
-/// User-Agent matching a current Chrome browser. beanfun's bot-risk scoring
-/// flags stale UAs (the old Chrome/55 string tripped the ~5-min IP lock even
-/// after a human solved the reCAPTCHA), so this is kept in sync with the
-/// `sec-ch-ua` version below and the session client defaults.
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+/// Default User-Agent for all beanfun requests — the plain LEGACY Chrome string.
+///
+/// IMPORTANT: keep this the old UA. A modern Chrome UA opts every request into
+/// beanfun's stricter per-fingerprint session handling, which a non-browser
+/// can't satisfy for several concurrent accounts (it broke multi-account login).
+/// Only the TW reCAPTCHA login POSTs use [`BROWSER_UA`] + `sec-ch-ua`, which is
+/// what that specific flow needs to avoid the bot-risk IP lock.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36";
 
-/// Chrome client-hint brand string; the version must match [`USER_AGENT`].
+/// Modern Chrome UA used ONLY on the TW login POSTs (paired with [`SEC_CH_UA`]).
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
+/// Chrome client-hint brand string; the version must match [`BROWSER_UA`].
 const SEC_CH_UA: &str =
     "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"";
 
@@ -1331,7 +1337,7 @@ async fn tw_check_account_type(
     let check_resp = with_browser_xhr_headers(
         client
             .post(&check_url)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", BROWSER_UA)
             .header("Content-Type", "application/json; charset=utf-8")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("RequestVerificationToken", form_token)
@@ -1383,11 +1389,12 @@ fn is_blank(token: Option<&str>) -> bool {
     token.map(|t| t.trim().is_empty()).unwrap_or(true)
 }
 
-/// Add the `Accept` + `Sec-Fetch-*` + client-hint headers a real browser sends
-/// on a same-origin `fetch`/XHR. Combined with the session client's UA +
-/// `sec-ch-ua` defaults, this makes our login POSTs look like the website —
-/// without it, beanfun's bot-risk scoring tripped the ~5-min IP lock even after
-/// a human solved the reCAPTCHA.
+/// Add the `Accept` + `Sec-Fetch-*` + `sec-ch-ua` headers a real browser sends
+/// on a same-origin `fetch`/XHR. Paired with [`BROWSER_UA`] on the two TW login
+/// POSTs, this makes them look like the website — without it, beanfun's bot-risk
+/// scoring tripped the ~5-min IP lock even after a human solved the reCAPTCHA.
+/// These modern-browser headers are deliberately scoped to just those POSTs so
+/// every other request stays on the legacy UA (see [`USER_AGENT`]).
 fn with_browser_xhr_headers(rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     rb.header("Accept", "application/json, text/plain, */*")
         .header("sec-ch-ua", SEC_CH_UA)
@@ -1454,7 +1461,7 @@ async fn tw_account_login(
     let login_resp = with_browser_xhr_headers(
         client
             .post(&login_url)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", BROWSER_UA)
             .header("Content-Type", "application/json; charset=utf-8")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("RequestVerificationToken", form_token)
