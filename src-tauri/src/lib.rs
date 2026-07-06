@@ -521,14 +521,43 @@ pub fn run() {
                 }
             });
 
-            // 6. Session keep-alive is handled by the frontend (MainPage pings
-            //    ONLY the active session every 60s). We deliberately do NOT run a
-            //    backend loop that pings *every* session: keep-aliving all logged-in
-            //    accounts at once is a signal 3-4 separate browsers never produce,
-            //    and it made beanfun drop the inactive sessions when several
-            //    accounts were logged in ("login 3, only 1 survives"). Inactive
-            //    beanfun sessions stay valid for a long time on their own, just
-            //    like a background browser tab, so no background ping is needed.
+            // 6. Backend ping loop — keeps every logged-in session alive (~60s).
+            let ping_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait for at least one session to exist
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    if let Some(state) = ping_app.try_state::<AppState>() {
+                        if !state.sessions.read().await.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                tracing::info!("backend ping loop started");
+
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    if let Some(state) = ping_app.try_state::<AppState>() {
+                        let sessions = state.sessions.read().await;
+                        if sessions.is_empty() {
+                            tracing::info!("backend ping loop stopped (no sessions)");
+                            break;
+                        }
+                        for ss in sessions.values() {
+                            let region = {
+                                let session = ss.session.read().await;
+                                session.as_ref().map(|s| s.region.clone())
+                            };
+                            if let Some(region) = region {
+                                if let Ok(_guard) = ss.bf_client_lock.try_lock() {
+                                    services::beanfun_service::ping(&ss.http_client, &region).await;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
 
             // Only resize the initial window when text-scale compensation
             // is active (force-device-scale-factor was set).  Otherwise
