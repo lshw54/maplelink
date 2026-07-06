@@ -86,7 +86,39 @@ export interface LastSavedAccountDto {
   account: string;
   password: string;
   rememberPassword: boolean;
+  verifyInfo?: string | null;
 }
+
+export interface WebLaunchStatus {
+  registered: boolean;
+  gamePath: string;
+  gamePathOk: boolean;
+  lrReady: boolean;
+  gamaniaInstalled: boolean;
+  exeName: string;
+  exeNameOk: boolean;
+}
+
+export interface DnsStatus {
+  publicIp: string;
+  countryCode: string;
+  isChina: boolean;
+  currentDns: string[];
+  usingRecommended: boolean;
+}
+
+export interface DnsTestResult {
+  beanfunOk: boolean;
+  googleOk: boolean;
+}
+
+/** Stable codes returned by the live launch tests, mapped to i18n in the UI. */
+export type WebLaunchTestCode =
+  | "ok"
+  | "skipped_running"
+  | "no_game_path"
+  | "spawn_failed"
+  | "not_found";
 
 export interface AdvanceCheckState {
   viewstate: string;

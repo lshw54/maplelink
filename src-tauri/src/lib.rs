@@ -78,6 +78,58 @@ fn is_elevated() -> bool {
     }
 }
 
+/// Delete cached WebView2 data (the `EBWebView` folders) once after each app
+/// update, so stale cached behaviour can't survive an update. Keyed on the
+/// executable's modification time, which changes when the installer replaces the
+/// exe. Runs at startup BEFORE the WebView2 window is created (otherwise the
+/// in-use Local copy is locked). Only the `EBWebView` subfolders are touched —
+/// never the parent dirs, which hold accounts / config / logs.
+#[cfg(target_os = "windows")]
+fn cleanup_webview_data_on_update() {
+    let Ok(local) = std::env::var("LOCALAPPDATA") else {
+        return;
+    };
+    let app_local = std::path::Path::new(&local).join("com.maplelink.app");
+
+    // Build ID = exe mtime (seconds since epoch); changes on every update.
+    let build_id = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+    if build_id.is_empty() {
+        return;
+    }
+
+    // `.webview_build` marker (deleting it via the reset command forces a clean).
+    let marker = app_local.join(".webview_build");
+    if std::fs::read_to_string(&marker).unwrap_or_default().trim() == build_id {
+        return; // already cleaned for this build
+    }
+
+    let mut targets = vec![app_local.join("EBWebView")];
+    if let Ok(roaming) = std::env::var("APPDATA") {
+        targets.push(
+            std::path::Path::new(&roaming)
+                .join("com.maplelink.app")
+                .join("EBWebView"),
+        );
+    }
+    for t in targets {
+        if t.exists() {
+            match std::fs::remove_dir_all(&t) {
+                Ok(()) => tracing::info!("cleaned WebView2 data: {}", t.display()),
+                Err(e) => tracing::warn!("could not clean WebView2 data {}: {e}", t.display()),
+            }
+        }
+    }
+
+    let _ = std::fs::create_dir_all(&app_local);
+    let _ = std::fs::write(&marker, &build_id);
+}
+
 /// Initialise and run the Tauri application.
 ///
 /// Startup sequence:
@@ -90,6 +142,34 @@ fn is_elevated() -> bool {
 ///    d. Check for auto-update (non-blocking, respects config toggle)
 /// 4. Window starts at login size (340×520) — defined in `tauri.conf.json5`
 pub fn run() {
+    // Web-login game-launch interception. If beanfun invoked us as the "game"
+    // (HKCU\SOFTWARE\Gamania\MapleStory\PATH → MapleLink), handle it headlessly
+    // and exit — never start the UI or self-elevate. See core::game_intercept.
+    {
+        let raw: Vec<String> = std::env::args().skip(1).collect();
+        // The helper .bat invokes us as `--web-launch <beanfun args>`; strip the
+        // tag (and remember we came from the .bat, so we stay quiet).
+        let (params, quiet) = match raw.split_first() {
+            Some((first, rest)) if first == "--web-launch" => (rest.to_vec(), true),
+            _ => (raw, false),
+        };
+        if let Some(creds) = core::game_intercept::parse_intercept_args(&params) {
+            // Best-effort file logging for this headless path.
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                let log_dir = std::path::Path::new(&local)
+                    .join("com.maplelink.app")
+                    .join("logs");
+                let _ = services::log_service::init_logging(&log_dir);
+            }
+            services::web_launch::run_intercept(creds, quiet);
+            return;
+        }
+    }
+
+    // Wipe stale WebView2 caches once per update (before the webview starts).
+    #[cfg(target_os = "windows")]
+    cleanup_webview_data_on_update();
+
     // Neutralise Windows Accessibility "Text size" setting.
     //
     // Windows has two independent scaling knobs:
@@ -197,6 +277,7 @@ pub fn run() {
             commands::auth::get_all_saved_accounts,
             commands::auth::get_last_saved_account,
             commands::auth::get_saved_account_detail,
+            commands::auth::save_verify_info,
             commands::auth::delete_saved_account,
             commands::auth::save_login_credentials,
             commands::auth::session_key_webview_done,
@@ -204,6 +285,7 @@ pub fn run() {
             commands::config::set_config,
             commands::config::reset_config,
             commands::account::get_game_accounts,
+            commands::account::get_account_create_time,
             commands::account::get_game_credentials,
             commands::account::refresh_accounts,
             commands::account::ping_session,
@@ -221,6 +303,16 @@ pub fn run() {
             commands::launcher::get_process_status,
             commands::launcher::kill_game,
             commands::system::log_frontend_error,
+            commands::system::set_web_launch_intercept,
+            commands::system::get_web_launch_intercept_status,
+            commands::system::get_web_launch_status,
+            commands::system::web_launch_test_game,
+            commands::system::web_launch_test_gamania,
+            commands::system::reset_webview_data,
+            commands::system::get_dns_status,
+            commands::system::test_dns,
+            commands::system::set_recommended_dns,
+            commands::system::reset_dns_auto,
             commands::system::resize_window,
             commands::system::open_file_dialog,
             commands::system::get_app_version,
@@ -240,6 +332,8 @@ pub fn run() {
             commands::system::cleanup_game_cache,
             commands::auth::open_gamepass_login,
             commands::auth::gamepass_webview_done,
+            commands::auth::open_regular_web_login,
+            commands::auth::regular_web_login_done,
             commands::auth::open_recaptcha_window,
             commands::auth::submit_login_token,
             commands::auth::close_recaptcha_window,
@@ -268,6 +362,14 @@ pub fn run() {
             }
 
             tracing::info!("Starting MapleLink v{}", env!("CARGO_PKG_VERSION"));
+            // Diagnostic: log the raw launch args. When beanfun web-launches us
+            // as the game but the args don't match core::game_intercept, we land
+            // here (normal UI) instead of intercepting — this shows their real
+            // format so the parser can be aligned.
+            let startup_args: Vec<String> = std::env::args().skip(1).collect();
+            if !startup_args.is_empty() {
+                tracing::info!("startup args (not intercepted): {startup_args:?}");
+            }
 
             // Clean up old exe from self-replace update
             if let Ok(exe) = std::env::current_exe() {
@@ -532,8 +634,15 @@ pub fn run() {
                         // GamePass popup closed — notify frontend
                         let _ = app_handle.emit("gamepass-login-cancelled", ());
                     } else if label == "recaptcha_window" {
-                        // reCAPTCHA helper closed before a token arrived
-                        let _ = app_handle.emit("recaptcha-cancelled", ());
+                        // Only a real user/abort close signals cancellation — not
+                        // when we closed the window ourselves after capturing a
+                        // token (that would abort the next login phase).
+                        if !commands::auth::recaptcha_take_delivered() {
+                            let _ = app_handle.emit("recaptcha-cancelled", ());
+                        }
+                    } else if label == "web-login" {
+                        // Regular web-login window closed before completion
+                        let _ = app_handle.emit("regular-login-cancelled", ());
                     }
                 });
             }

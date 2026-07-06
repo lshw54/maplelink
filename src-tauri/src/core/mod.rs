@@ -3,4 +3,5 @@
 pub mod auth;
 pub mod config_parser;
 pub mod error;
+pub mod game_intercept;
 pub mod game_launcher;

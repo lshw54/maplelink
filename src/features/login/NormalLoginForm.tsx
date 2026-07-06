@@ -25,6 +25,7 @@ interface NormalLoginFormProps {
   onTotpRequired: () => void;
   onAdvanceCheck: (url?: string) => void;
   onGamePass: () => void;
+  onWebLaunch: () => void;
 }
 
 export function NormalLoginForm({
@@ -32,6 +33,7 @@ export function NormalLoginForm({
   onTotpRequired,
   onAdvanceCheck,
   onGamePass,
+  onWebLaunch,
 }: NormalLoginFormProps) {
   const { t } = useTranslation();
   const login = useLogin();
@@ -455,6 +457,24 @@ export function NormalLoginForm({
               />
               <path d="M9 8.5V16.5" stroke="currentColor" strokeWidth="1.5" />
               <path d="M2 5.5L9 9.5L16 5.5" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        )}
+        {showQr && (
+          <button
+            type="button"
+            onClick={onWebLaunch}
+            title={t("web_launch.title")}
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg border border-border bg-[var(--surface)] text-text-dim transition-all hover:border-accent hover:bg-[var(--surface-hover)] hover:text-accent active:scale-95"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <circle cx="9" cy="9" r="7.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M2 9H16M9 2C11 4 11.5 7 11.5 9C11.5 11 11 14 9 16C7 14 6.5 11 6.5 9C6.5 7 7 4 9 2Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
         )}

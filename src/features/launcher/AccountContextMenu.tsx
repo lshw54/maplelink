@@ -54,8 +54,27 @@ function AccountDetailView({
   account: GameAccountDto;
   t: (key: string) => string;
 }) {
-  const hasDate = account.createdAt && account.createdAt.length > 0;
-  const created = hasDate ? new Date(account.createdAt) : null;
+  // Create time isn't fetched on list load (avoids one request per account per
+  // refresh), so pull it lazily for just this account when the detail opens.
+  const [createdAt, setCreatedAt] = useState(account.createdAt ?? "");
+  useEffect(() => {
+    if (createdAt) return;
+    const sessionId = useAuthStore.getState().activeSessionId;
+    if (!sessionId) return;
+    let alive = true;
+    commands
+      .getAccountCreateTime(sessionId, account.id)
+      .then((d) => {
+        if (alive && d) setCreatedAt(d);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [account.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hasDate = createdAt.length > 0;
+  const created = hasDate ? new Date(createdAt) : null;
   const [now] = useState(() => Date.now());
   const days = created ? Math.floor((now - created.getTime()) / 86_400_000) : null;
   const fmtDate = created

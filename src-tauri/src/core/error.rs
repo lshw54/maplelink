@@ -41,6 +41,10 @@ pub enum AuthError {
         /// Optional URL for the advance check page.
         url: Option<String>,
     },
+    /// beanfun requires a reCAPTCHA token for this step (the account is flagged
+    /// `IsRecaptcha`). The caller should obtain a token and retry.
+    #[error("reCAPTCHA verification required")]
+    RecaptchaRequired,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]

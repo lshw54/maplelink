@@ -12,6 +12,10 @@ import type {
   SavedAccountDto,
   LastSavedAccountDto,
   AdvanceCheckState,
+  WebLaunchStatus,
+  WebLaunchTestCode,
+  DnsStatus,
+  DnsTestResult,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -28,6 +32,9 @@ export const commands = {
     invoke("tw_login_check", { sessionId, account, recaptchaCheck }),
   twLoginSubmit: (sessionId: string, password: string, recaptchaLogin: string) =>
     invoke<SessionDto>("tw_login_submit", { sessionId, password, recaptchaLogin }),
+  // TW regular login done fully inside a beanfun webview (credentials prefilled)
+  openRegularWebLogin: (sessionId: string, account: string, password: string) =>
+    invoke("open_regular_web_login", { sessionId, account, password }),
   openRecaptchaWindow: (step: "check" | "login") => invoke("open_recaptcha_window", { step }),
   closeRecaptchaWindow: () => invoke("close_recaptcha_window"),
   qrLoginStart: (sessionId: string) => invoke<QrCodeData>("qr_login_start", { sessionId }),
@@ -61,6 +68,8 @@ export const commands = {
     invoke<LastSavedAccountDto | null>("get_saved_account_detail", { account }),
   deleteSavedAccount: (account: string, region?: string) =>
     invoke<boolean>("delete_saved_account", { account, region }),
+  saveVerifyInfo: (account: string, verifyInfo: string) =>
+    invoke("save_verify_info", { account, verifyInfo }),
   saveLoginCredentials: (account: string, password: string, rememberPassword: boolean) =>
     invoke("save_login_credentials", { account, password, rememberPassword }),
 
@@ -71,6 +80,8 @@ export const commands = {
     invoke<GameAccountDto[]>("refresh_accounts", { sessionId }),
   getGameCredentials: (sessionId: string, accountId: string) =>
     invoke<GameCredentialsDto>("get_game_credentials", { sessionId, accountId }),
+  getAccountCreateTime: (sessionId: string, accountId: string) =>
+    invoke<string>("get_account_create_time", { sessionId, accountId }),
   autoPasteOtp: (sessionId: string, accountId: string) =>
     invoke<boolean>("auto_paste_otp", { sessionId, accountId }),
   changeAccountDisplayName: (sessionId: string, accountId: string, newName: string) =>
@@ -110,6 +121,12 @@ export const commands = {
   getPlatformInfo: () => invoke<string>("get_platform_info"),
   logFrontendError: (level: string, module: string, message: string) =>
     invoke("log_frontend_error", { level, module, message }),
+  // Web-login game-launch interception (opt-in registry toggle)
+  setWebLaunchIntercept: (enabled: boolean) => invoke("set_web_launch_intercept", { enabled }),
+  getWebLaunchInterceptStatus: () => invoke<boolean>("get_web_launch_intercept_status"),
+  getWebLaunchStatus: () => invoke<WebLaunchStatus>("get_web_launch_status"),
+  webLaunchTestGame: () => invoke<WebLaunchTestCode>("web_launch_test_game"),
+  webLaunchTestGamania: () => invoke<WebLaunchTestCode>("web_launch_test_gamania"),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),
   openLogFolder: () => invoke("open_log_folder"),
   getRecentLogs: () => invoke<string>("get_recent_logs"),
@@ -130,6 +147,13 @@ export const commands = {
 
   // Cleanup (global)
   cleanupGameCache: () => invoke<string>("cleanup_game_cache"),
+  resetWebviewData: () => invoke("reset_webview_data"),
+
+  // Network / DNS (global)
+  getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
+  testDns: () => invoke<DnsTestResult>("test_dns"),
+  setRecommendedDns: () => invoke("set_recommended_dns"),
+  resetDnsAuto: () => invoke("reset_dns_auto"),
 
   // GamePass login (TW only — creates its own session, returns sessionId)
   openGamePassLogin: () => invoke<string>("open_gamepass_login"),
@@ -178,6 +202,49 @@ export async function solveRecaptcha(
 
     commands
       .openRecaptchaWindow(step)
+      .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
+  });
+}
+
+/**
+ * Run the TW regular login entirely inside a beanfun webview (credentials
+ * prefilled; the user solves reCAPTCHA + any advance check). Resolves with the
+ * session once the backend harvests cookies, rejects on error/cancel/timeout.
+ */
+export async function webLogin(
+  sessionId: string,
+  account: string,
+  password: string,
+  timeoutMs = 300_000,
+): Promise<SessionDto> {
+  return new Promise<SessionDto>((resolve, reject) => {
+    let settled = false;
+    const cleanups: Array<() => void> = [];
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanups.forEach((c) => c());
+      fn();
+    };
+
+    void listen<SessionDto>("regular-login-complete", (e) => {
+      finish(() => resolve(e.payload));
+    }).then((un) => cleanups.push(un));
+
+    void listen<string>("regular-login-error", (e) => {
+      finish(() => reject(new Error(e.payload || "WEBLOGIN_ERROR")));
+    }).then((un) => cleanups.push(un));
+
+    void listen("regular-login-cancelled", () => {
+      finish(() => reject(new Error("WEBLOGIN_CANCELLED")));
+    }).then((un) => cleanups.push(un));
+
+    // Safety net so a stuck window never hangs the login button forever.
+    const timer = setTimeout(() => finish(() => reject(new Error("WEBLOGIN_TIMEOUT"))), timeoutMs);
+    cleanups.push(() => clearTimeout(timer));
+
+    commands
+      .openRegularWebLogin(sessionId, account, password)
       .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
   });
 }

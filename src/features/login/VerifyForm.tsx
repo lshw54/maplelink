@@ -62,6 +62,16 @@ export function VerifyForm({
       if (msg.includes("advance_check_web:")) {
         const url = msg.replace("advance_check_web:", "").replace("Invalid credentials: ", "");
         setWebVerifyUrl(url);
+        // Web-redirect advance check: verification happens in an external
+        // browser, so there's no native field to capture/remember. This log
+        // distinguishes "remember didn't work" from "we never had the value".
+        commands
+          .logFrontendError(
+            "info",
+            "VerifyForm",
+            "advance check is WEB-redirect type — native verify-info remember does not apply",
+          )
+          .catch(() => {});
       } else {
         setError(msg);
       }
@@ -75,6 +85,16 @@ export function VerifyForm({
     if (loadedRef.current) return;
     loadedRef.current = true;
     loadPage();
+    // Pre-fill the email/phone remembered for this account last time.
+    const acct = useAuthStore.getState().pendingCredentials?.account;
+    if (acct) {
+      commands
+        .getSavedAccountDetail(acct)
+        .then((d) => {
+          if (d?.verifyInfo) setAuthInfo(d.verifyInfo);
+        })
+        .catch(() => {});
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRefreshCaptcha() {
@@ -108,6 +128,17 @@ export function VerifyForm({
         // Auto re-login using pending credentials
         const pending = useAuthStore.getState().pendingCredentials;
         if (pending) {
+          // Remember the verify info (email/phone) for this account next time.
+          // Await so it persists BEFORE the re-login's saveLoginCredentials
+          // upsert runs (which only preserves an already-stored value) — removes
+          // any write-order ambiguity between the two account-store writes.
+          try {
+            await commands.saveVerifyInfo(pending.account, authInfo.trim());
+          } catch (e) {
+            commands
+              .logFrontendError("warn", "VerifyForm", `saveVerifyInfo failed: ${e}`)
+              .catch(() => {});
+          }
           setReLogging(true);
           setError(null);
           login.mutate(
@@ -115,6 +146,9 @@ export function VerifyForm({
               account: pending.account,
               password: pending.password,
               rememberPassword: pending.rememberPassword,
+              // Reuse the SAME session the advance check was verified on — a new
+              // session would drop the verified context and loop advance check.
+              resumeSessionId: pending.sessionId,
             },
             {
               onError: (err) => {

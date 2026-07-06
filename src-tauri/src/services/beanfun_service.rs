@@ -17,8 +17,15 @@ use crate::models::game_account::{GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
-/// User-Agent matching the original Beanfun client.
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36";
+/// User-Agent matching a current Chrome browser. beanfun's bot-risk scoring
+/// flags stale UAs (the old Chrome/55 string tripped the ~5-min IP lock even
+/// after a human solved the reCAPTCHA), so this is kept in sync with the
+/// `sec-ch-ua` version below and the session client defaults.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
+/// Chrome client-hint brand string; the version must match [`USER_AGENT`].
+const SEC_CH_UA: &str =
+    "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"";
 
 /// Magic constant used in the OTP retrieval request.
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
@@ -262,6 +269,41 @@ pub async fn get_game_accounts(
     match session.region {
         Region::HK => hk_get_accounts(client, session, cookie_jar).await,
         Region::TW => tw_get_accounts(client, session, cookie_jar).await,
+    }
+}
+
+/// Fetch the creation time for a single service account on demand.
+///
+/// The list load intentionally no longer fetches this per account (it made one
+/// beanfun request per account on every refresh — a rate-limit risk), so the
+/// account-detail popup calls this lazily for just the account being viewed.
+/// `sc`/`sr` come from the account's `game_type` (`"{sc}_{sr}"`). Empty on failure.
+pub async fn fetch_account_create_time(
+    client: &Client,
+    region: &Region,
+    sc: &str,
+    sr: &str,
+    sn: &str,
+) -> String {
+    let host = match region {
+        Region::HK => "bfweb.hk.beanfun.com",
+        Region::TW => "tw.beanfun.com",
+    };
+    let timestamp = get_current_time_method2();
+    let url = format!(
+        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
+         ?service_code={sc}&service_region={sr}&sotp={sn}&dt={timestamp}"
+    );
+    match http_get_text(client, &url).await {
+        Ok(html) => Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#)
+            .ok()
+            .and_then(|re| {
+                re.captures(&html)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string())
+            })
+            .unwrap_or_default(),
+        Err(_) => String::new(),
     }
 }
 
@@ -781,7 +823,9 @@ async fn hk_get_accounts(
             } else {
                 "normal".to_string()
             },
-            created_at: get_create_time(client, host, sc, sr, &ssn).await,
+            // Fetched on demand from the game_start_step2 page when launching
+            // (avoids one beanfun request per account on every list load).
+            created_at: String::new(),
         });
     }
 
@@ -790,25 +834,6 @@ async fn hk_get_accounts(
 
     tracing::info!("HK: found {} game accounts", accounts.len());
     Ok(accounts)
-}
-
-/// Fetch the creation time for a single service account.
-async fn get_create_time(client: &Client, host: &str, sc: &str, sr: &str, sn: &str) -> String {
-    let timestamp = get_current_time_method2();
-    let url = format!(
-        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
-         ?service_code={sc}&service_region={sr}&sotp={sn}&dt={timestamp}"
-    );
-    match http_get_text(client, &url).await {
-        Ok(html) => {
-            let re = Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#).ok();
-            re.and_then(|r| r.captures(&html))
-                .and_then(|c| c.get(1))
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default()
-        }
-        Err(_) => String::new(),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,18 +1328,20 @@ async fn tw_check_account_type(
         "__RequestVerificationToken": form_token,
     });
 
-    let check_resp = client
-        .post(&check_url)
-        .header("User-Agent", USER_AGENT)
-        .header("Content-Type", "application/json; charset=utf-8")
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", form_token)
-        .header("Referer", &index_url)
-        .header("Origin", api_base)
-        .json(&check_body)
-        .send()
-        .await
-        .map_err(|e| map_reqwest_error(&check_url, e))?;
+    let check_resp = with_browser_xhr_headers(
+        client
+            .post(&check_url)
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("RequestVerificationToken", form_token)
+            .header("Referer", &index_url)
+            .header("Origin", api_base),
+    )
+    .json(&check_body)
+    .send()
+    .await
+    .map_err(|e| map_reqwest_error(&check_url, e))?;
 
     let check_text = check_resp.text().await.unwrap_or_default();
     tracing::debug!(
@@ -1332,16 +1359,16 @@ async fn tw_check_account_type(
         .and_then(|j| j["ResultMessage"].as_str())
         .unwrap_or("");
 
-    // ResultCode 1 == Success (beanfun convention). Surface anything else so a
-    // bad account or rejected first reCAPTCHA fails loudly instead of silently
-    // breaking AccountLogin later.
+    // ResultCode 1 == Success (beanfun convention). Surface anything else.
     if result_code != 1 {
+        // If beanfun is asking for a reCAPTCHA (account flagged IsRecaptcha) and
+        // we didn't send a token, signal the caller to obtain one and retry —
+        // most accounts don't need it, so we try without one first.
+        if recaptcha_required(check_json.as_ref(), result_msg) && is_blank(check_token) {
+            return Err(LoginError::Auth(AuthError::RecaptchaRequired));
+        }
         return Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: if result_msg.is_empty() {
-                "CheckAccountType failed".to_string()
-            } else {
-                result_msg.to_string()
-            },
+            reason: map_beanfun_error(result_msg),
         }));
     }
 
@@ -1349,6 +1376,47 @@ async fn tw_check_account_type(
         .as_ref()
         .and_then(|j| j["ResultData"]["Captcha"].as_str().map(String::from))
         .unwrap_or_default())
+}
+
+/// Whether `token` is absent or empty.
+fn is_blank(token: Option<&str>) -> bool {
+    token.map(|t| t.trim().is_empty()).unwrap_or(true)
+}
+
+/// Add the `Accept` + `Sec-Fetch-*` + client-hint headers a real browser sends
+/// on a same-origin `fetch`/XHR. Combined with the session client's UA +
+/// `sec-ch-ua` defaults, this makes our login POSTs look like the website —
+/// without it, beanfun's bot-risk scoring tripped the ~5-min IP lock even after
+/// a human solved the reCAPTCHA.
+fn with_browser_xhr_headers(rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    rb.header("Accept", "application/json, text/plain, */*")
+        .header("sec-ch-ua", SEC_CH_UA)
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("Sec-Fetch-Dest", "empty")
+        .header("Sec-Fetch-Mode", "cors")
+        .header("Sec-Fetch-Site", "same-origin")
+}
+
+/// Whether a beanfun login response is demanding a reCAPTCHA: the account is
+/// flagged `IsRecaptcha`, or the message is the "click I'm not a robot" prompt.
+fn recaptcha_required(json: Option<&serde_json::Value>, result_msg: &str) -> bool {
+    let is_recaptcha = json
+        .and_then(|j| j["ResultData"]["IsRecaptcha"].as_bool())
+        .unwrap_or(false);
+    is_recaptcha || result_msg.contains("機器人") || result_msg.contains("recaptcha")
+}
+
+/// Map a beanfun API `ResultMessage` to a user-facing message using the
+/// official login SDK's wording for known codes. Unknown messages pass through
+/// (beanfun's `ResultMessage` is already user-facing); empty falls back.
+fn map_beanfun_error(result_msg: &str) -> String {
+    match result_msg.trim() {
+        "" => "登入失敗，請稍後再試".to_string(),
+        "AccountLock" => "帳號已被鎖定，可聯繫客服人員了解原因".to_string(),
+        "Token Expired" => "連線逾時，請重新登入".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// POST `AccountLogin` with the second reCAPTCHA token, then complete via the
@@ -1383,18 +1451,20 @@ async fn tw_account_login(
         "__RequestVerificationToken": form_token,
     });
 
-    let login_resp = client
-        .post(&login_url)
-        .header("User-Agent", USER_AGENT)
-        .header("Content-Type", "application/json; charset=utf-8")
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", form_token)
-        .header("Referer", &index_url)
-        .header("Origin", api_base)
-        .json(&login_body)
-        .send()
-        .await
-        .map_err(|e| map_reqwest_error(&login_url, e))?;
+    let login_resp = with_browser_xhr_headers(
+        client
+            .post(&login_url)
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("RequestVerificationToken", form_token)
+            .header("Referer", &index_url)
+            .header("Origin", api_base),
+    )
+    .json(&login_body)
+    .send()
+    .await
+    .map_err(|e| map_reqwest_error(&login_url, e))?;
 
     let login_text = login_resp.text().await.unwrap_or_default();
     tracing::debug!(
@@ -1408,6 +1478,14 @@ async fn tw_account_login(
     let result_code = login_json["ResultCode"].as_i64().unwrap_or(-1);
     let result = login_json["Result"].as_i64().unwrap_or(-1);
     let result_msg = login_json["ResultMessage"].as_str().unwrap_or("");
+
+    tracing::info!(
+        result_code,
+        result,
+        msg = %result_msg,
+        had_login_token = !is_blank(login_token),
+        "TW AccountLogin result"
+    );
 
     match result_code {
         1 => {
@@ -1430,7 +1508,13 @@ async fn tw_account_login(
             })
         }
         2 => {
-            // AdvanceCheck with URL
+            // Per the official login SDK, ResultCode 2 is either an account lock
+            // or an advance-check redirect (ResultMessage = the URL).
+            if result_msg == "AccountLock" {
+                return Err(LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: "帳號已被鎖定，可聯繫客服人員了解原因".to_string(),
+                }));
+            }
             let url = if result_msg.starts_with("http") {
                 Some(result_msg.to_string())
             } else {
@@ -1439,13 +1523,14 @@ async fn tw_account_login(
             Err(LoginError::Auth(AuthError::AdvanceCheckRequired { url }))
         }
         _ => {
-            let msg = if result_msg.is_empty() {
-                "TW login failed".to_string()
-            } else {
-                result_msg.to_string()
-            };
+            // ResultCode 0 (and anything else) is a plain failure. If beanfun is
+            // asking for a reCAPTCHA (IsRecaptcha) and we sent none, signal the
+            // caller to obtain a token and retry — most accounts don't need it.
+            if recaptcha_required(Some(&login_json), result_msg) && is_blank(login_token) {
+                return Err(LoginError::Auth(AuthError::RecaptchaRequired));
+            }
             Err(LoginError::Auth(AuthError::InvalidCredentials {
-                reason: msg,
+                reason: map_beanfun_error(result_msg),
             }))
         }
     }
@@ -1866,7 +1951,9 @@ async fn tw_get_accounts(
             } else {
                 "normal".to_string()
             },
-            created_at: get_create_time(client, host, sc, sr, &ssn).await,
+            // Fetched on demand from the game_start_step2 page when launching
+            // (avoids one beanfun request per account on every list load).
+            created_at: String::new(),
         });
     }
 

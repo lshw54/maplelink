@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, USER_AGENT};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT,
+};
 use tokio::sync::{Mutex, RwLock};
 
 use super::game_account::GameAccount;
@@ -57,12 +59,35 @@ impl SessionState {
     /// Create a new session state with a fresh HTTP client and cookie jar.
     pub fn new() -> Self {
         let cookie_jar = Arc::new(reqwest::cookie::Jar::default());
+        // Match a current Chrome browser: beanfun's bot-risk scoring flags stale
+        // UAs / missing client hints, which was tripping the ~5-min IP lock even
+        // when a real person solved the reCAPTCHA. These headers are constant for
+        // a browser, so they're safe as client-wide defaults; per-request
+        // Sec-Fetch-* metadata is added on the login XHR calls in beanfun_service.
         let mut default_headers = HeaderMap::new();
         default_headers.insert(
             USER_AGENT,
             HeaderValue::from_static(
-                "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
             ),
+        );
+        default_headers.insert(
+            HeaderName::from_static("sec-ch-ua"),
+            HeaderValue::from_static(
+                "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"",
+            ),
+        );
+        default_headers.insert(
+            HeaderName::from_static("sec-ch-ua-mobile"),
+            HeaderValue::from_static("?0"),
+        );
+        default_headers.insert(
+            HeaderName::from_static("sec-ch-ua-platform"),
+            HeaderValue::from_static("\"Windows\""),
+        );
+        default_headers.insert(
+            ACCEPT_LANGUAGE,
+            HeaderValue::from_static("zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"),
         );
         default_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
         let http_client = reqwest::Client::builder()

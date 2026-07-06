@@ -4,6 +4,7 @@
 
 use base64::Engine;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::Manager;
@@ -218,6 +219,16 @@ pub async fn tw_login_submit(
         details: None,
     })?;
 
+    let has_login_token = recaptcha_login
+        .as_deref()
+        .is_some_and(|t| !t.trim().is_empty());
+    tracing::info!(
+        account = %pending.account,
+        skey_len = pending.skey.len(),
+        has_login_token,
+        "TW login phase 2 (AccountLogin) starting"
+    );
+
     let login_result = beanfun_service::tw_login_submit(
         &ss.http_client,
         &pending.skey,
@@ -248,12 +259,28 @@ pub async fn tw_login_submit(
 
     let dto = SessionDto::from_session(&session, &session_id);
 
-    let accounts = beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!("failed to fetch game accounts after TW login: {e}");
-            Vec::new()
-        });
+    // Fetch the game accounts, retrying a few times while empty. The bfWebToken
+    // set by SendLogin can need a moment to settle before
+    // game_server_account_list.aspx returns the list — without retries the UI
+    // lands on an empty account list.
+    let mut accounts = Vec::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        }
+        match beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar).await {
+            Ok(a) if !a.is_empty() => {
+                accounts = a;
+                break;
+            }
+            Ok(a) => accounts = a, // empty — retry
+            Err(e) => tracing::warn!(
+                "fetch game accounts after TW login (attempt {}): {e}",
+                attempt + 1
+            ),
+        }
+    }
+    tracing::info!("TW two-phase login: {} game accounts", accounts.len());
 
     *ss.session.write().await = Some(session);
     *ss.game_accounts.write().await = accounts;
@@ -585,6 +612,7 @@ pub async fn get_last_saved_account(
                 account: a.account.clone(),
                 password: a.password.clone(),
                 remember_password: a.remember_password,
+                verify_info: a.verify_info.clone(),
             }
         });
 
@@ -598,6 +626,8 @@ pub struct LastSavedAccountDto {
     pub account: String,
     pub password: String,
     pub remember_password: bool,
+    /// Remembered advance-check verify info (email / phone), if any.
+    pub verify_info: Option<String>,
 }
 
 /// Return a specific saved account's details (including password) by account ID.
@@ -617,9 +647,57 @@ pub async fn get_saved_account_detail(
             account: a.account.clone(),
             password: a.password.clone(),
             remember_password: a.remember_password,
+            verify_info: a.verify_info.clone(),
         });
 
+    tracing::info!(
+        region = %region_str,
+        account = %account,
+        found = result.is_some(),
+        has_verify_info = result.as_ref().is_some_and(|r| r.verify_info.is_some()),
+        "get_saved_account_detail"
+    );
     Ok(result)
+}
+
+/// Remember (or clear) the advance-check verify info (email / phone) for an
+/// account, so it can be pre-filled next time an advance check appears.
+#[tauri::command]
+pub async fn save_verify_info(
+    account: String,
+    verify_info: String,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    let region = state.config.read().await.region.clone();
+    let region_str = format!("{region:?}");
+
+    {
+        let mut accounts = state.saved_accounts.write().await;
+        crate::services::account_storage::set_verify_info(
+            &mut accounts,
+            &region_str,
+            &account,
+            &verify_info,
+        );
+    }
+
+    let accounts = state.saved_accounts.read().await;
+    let saved = crate::services::account_storage::get_account(&accounts, &region_str, &account)
+        .and_then(|a| a.verify_info.clone());
+    tracing::info!(
+        region = %region_str,
+        account = %account,
+        value_len = verify_info.trim().len(),
+        stored = saved.is_some(),
+        total_accounts = accounts.len(),
+        "save_verify_info persisted"
+    );
+    if let Err(e) =
+        crate::services::account_storage::save_accounts(&state.accounts_path, &accounts).await
+    {
+        tracing::warn!("failed to persist verify info: {e}");
+    }
+    Ok(())
 }
 
 /// Delete a saved login account by account ID.
@@ -1392,6 +1470,407 @@ pub async fn gamepass_webview_done(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Regular (帳密) web login — full login in a webview, then harvest cookies
+// ---------------------------------------------------------------------------
+//
+// Same robust pattern as GamePass: the user completes the entire login inside a
+// real beanfun page (account + password + reCAPTCHA + any advance check), then
+// we harvest ALL cookies from WebView2 and build the reqwest session — instead
+// of the fragile "grab a reCAPTCHA token and replay it" approach. The only
+// difference from GamePass is the login page prefills the saved credentials.
+
+/// Injected into the regular web-login window. Reads `window.__ML_*` globals
+/// (set by a prelude) — a plain raw string so the JS braces need no escaping.
+const REGULAR_LOGIN_SCRIPT: &str = r#"
+(() => {
+  const SESSION_ID = window.__ML_SESSION_ID__ || "";
+  const ACCOUNT = window.__ML_ACCOUNT__ || "";
+  const PASSWORD = window.__ML_PASSWORD__ || "";
+
+  const url = window.location.href;
+  const onBeanfun = url.includes('beanfun.com');
+  const onLoginPage = url.includes('Login/Index');
+  const onGamania = url.includes('accounts.gamania.com');
+  const onDefaultAspx = url.includes('bflogin/default.aspx');
+
+  try { Object.defineProperty(navigator, 'webdriver', { get: () => false }); } catch (e) {}
+
+  // Tauri hijacks window.alert to its dialog plugin, which isn't permitted for
+  // this remote origin (CSP/ACL) and throws. Route beanfun's alerts to the
+  // console so they never crash the page — real errors also show inline.
+  try { window.alert = function (m) { console.log('[beanfun alert]', m); }; } catch (e) {}
+
+  if (onDefaultAspx || onGamania || !onBeanfun) return;
+
+  const _origFetch = window.fetch;
+  const hasSession = () => document.cookie.indexOf('bfWebToken=') !== -1;
+  console.log('[WebLogin] page', url, '| login?', onLoginPage, '| session?', hasSession());
+
+  // Only treat as the login form when we're on Login/Index AND not yet logged
+  // in — a post-login redirect back to a Login/Index URL should fall through to
+  // the harvest below.
+  if (onLoginPage && !hasSession()) {
+    // Self-heal reCAPTCHA: WebView2 Tracking Prevention is only turned off a
+    // moment AFTER this window is created, so the very first load inits reCAPTCHA
+    // with google/gstatic storage blocked and it fails to render. Wait ~4s (long
+    // enough for prevention to be applied), and if no reCAPTCHA widget appeared,
+    // reload once — the reload runs with prevention off and it renders. Same
+    // proven approach as the standalone reCAPTCHA helper window.
+    try {
+      const store = window.sessionStorage;
+      const RK = '__wl_reloads__';
+      setTimeout(() => {
+        if (document.querySelector('iframe[src*="recaptcha"]')) return; // rendered OK
+        let done = 0;
+        try { done = parseInt(store.getItem(RK) || '0', 10) || 0; } catch (e) {}
+        if (done >= 1) {
+          console.warn('[WebLogin] reCAPTCHA still missing after reload');
+          return;
+        }
+        try { store.setItem(RK, String(done + 1)); } catch (e) {}
+        console.warn('[WebLogin] reCAPTCHA not rendered — reloading once');
+        location.reload();
+      }, 2500);
+    } catch (e) {}
+
+    // beanfun's login is a Vue app with a TWO-STEP flow: enter account →
+    // CheckAccountType (reveals the password field) → enter password →
+    // AccountLogin. The inputs use deliberately-obfuscated names — account is
+    // name="aaa", password is name="inputName" (password only shows after
+    // step 1). We fill each once when it appears (empty), dispatching a native
+    // 'input' event so Vue's v-model picks up the value; the user just solves
+    // the reCAPTCHA and clicks through.
+    const setVal = (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    let accFilled = false;
+    let pwFilled = false;
+    const prefill = () => {
+      const acc = document.querySelector(
+        'input[name="aaa"], input[type="email"], input[type="text"]:not([type="hidden"])'
+      );
+      const pw = document.querySelector('input[name="inputName"], input[type="password"]');
+      if (acc && ACCOUNT && !accFilled && !acc.value) { setVal(acc, ACCOUNT); accFilled = true; }
+      if (pw && PASSWORD && !pwFilled && !pw.value) { setVal(pw, PASSWORD); pwFilled = true; }
+      return accFilled && pwFilled;
+    };
+    prefill();
+    // Keep watching for up to ~60s — the password field only appears after the
+    // account step (which needs the reCAPTCHA + a click).
+    let n = 0;
+    const timer = setInterval(() => {
+      n++;
+      if (prefill() || n > 120) clearInterval(timer);
+    }, 500);
+
+    // Auto-click the login buttons once the user solves the reCAPTCHA, so they
+    // only ever have to solve the challenge. Step 1 button is "登入帳號"
+    // (submitAccountName), step 2 is "繼續" (submitPassword); both require the
+    // reCAPTCHA token, and it resets between steps (so a fresh token = a fresh
+    // click). We click the first visible, enabled one that matches.
+    const recaptchaToken = () => {
+      try {
+        const g = window.grecaptcha;
+        if (g && g.enterprise && g.enterprise.getResponse) return g.enterprise.getResponse() || '';
+        if (g && g.getResponse) return g.getResponse() || '';
+      } catch (e) {}
+      return '';
+    };
+    let lastToken = '';
+    setInterval(() => {
+      const token = recaptchaToken();
+      if (!token || token === lastToken) return;
+      const btns = document.querySelectorAll('a.ui-btn');
+      for (const b of btns) {
+        const txt = (b.textContent || '').trim();
+        const visible = b.offsetParent !== null;
+        const disabled = b.classList.contains('disabled');
+        if (visible && !disabled && (txt.indexOf('登入帳號') !== -1 || txt.indexOf('繼續') !== -1)) {
+          lastToken = token;
+          console.log('[WebLogin] reCAPTCHA solved — auto-clicking', txt);
+          b.click();
+          break;
+        }
+      }
+    }, 400);
+    return;
+  }
+
+  // Post-login: nothing to do here. beanfun's page CSP blocks Tauri IPC on
+  // these pages, so the backend watches this window's cookies for bfWebToken and
+  // harvests them itself (see open_regular_web_login).
+  console.log('[WebLogin] post-login page — backend will harvest cookies');
+})();
+"#;
+
+/// Open the regular (帳密) web-login window: the user completes the whole login
+/// on the official page (credentials prefilled), then cookies are harvested.
+#[tauri::command]
+pub async fn open_regular_web_login(
+    session_id: String,
+    account: String,
+    password: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    use tauri::WebviewWindowBuilder;
+
+    auth::validate_input("account", &account).map_err(to_dto)?;
+    auth::validate_input("password", &password).map_err(to_dto)?;
+    // Session is pre-created by the frontend.
+    let _ = state.require_session(&session_id).await?;
+
+    let label = "web-login";
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // Fresh incognito profile each time so the login form (for prefill + the
+    // user's reCAPTCHA) always shows instead of auto-logging-in from a cookie.
+    let data_dir = std::env::temp_dir()
+        .join("MapleLink")
+        .join("web-login")
+        .join(uuid::Uuid::new_v4().to_string());
+    let _ = std::fs::create_dir_all(&data_dir);
+    let cleanup_dir = data_dir.clone();
+
+    let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+
+    let prelude = format!(
+        "window.__ML_SESSION_ID__={};window.__ML_ACCOUNT__={};window.__ML_PASSWORD__={};\n",
+        serde_json::to_string(&session_id).unwrap_or_else(|_| "\"\"".into()),
+        serde_json::to_string(&account).unwrap_or_else(|_| "\"\"".into()),
+        serde_json::to_string(&password).unwrap_or_else(|_| "\"\"".into()),
+    );
+    let init_script = format!("{prelude}{REGULAR_LOGIN_SCRIPT}");
+
+    let window = WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::External(start_url.parse().expect("static login URL is valid")),
+    )
+    .title("Beanfun 登入")
+    // Wide enough for beanfun's desktop login layout (promo panel + the form
+    // with the account/password fields + reCAPTCHA on the right). At ~420px only
+    // the left promo shows and the form is scrolled off.
+    .inner_size(1000.0, 680.0)
+    .min_inner_size(720.0, 560.0)
+    .center()
+    .visible(true)
+    .user_agent(WEBVIEW_USER_AGENT)
+    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .data_directory(data_dir)
+    .initialization_script(&init_script)
+    .devtools(true)
+    .build()
+    .map_err(|e| ErrorDto {
+        code: "AUTH_WEB_LOGIN_WINDOW_FAILED".to_string(),
+        message: format!("Failed to open login window: {e}"),
+        category: crate::models::error::ErrorCategory::Process,
+        details: None,
+    })?;
+
+    // The login page renders Google reCAPTCHA; WebView2 Tracking Prevention
+    // blocks its google.com/gstatic storage and makes it unclickable. Disable it
+    // for this window (same as the standalone reCAPTCHA helper).
+    disable_tracking_prevention(&window);
+
+    // Clean up the incognito profile after the window closes.
+    let cleanup_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            if cleanup_app.get_webview_window("web-login").is_none() {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let _ = std::fs::remove_dir_all(&cleanup_dir);
+                break;
+            }
+        }
+    });
+
+    // Watch the window's cookies for bfWebToken (set once login completes) and
+    // harvest them ourselves — beanfun's page CSP blocks Tauri IPC, so the page
+    // can't signal us. Fully URL-agnostic; no IPC/capability needed.
+    let watch_app = app.clone();
+    let watch_session = session_id.clone();
+    let watch_account = account.clone();
+    tauri::async_runtime::spawn(async move {
+        use tauri::Emitter;
+        // ~5 minutes at 1.5s.
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            let Some(_win) = watch_app.get_webview_window("web-login") else {
+                return; // window closed / cancelled
+            };
+            let cookies = extract_webview2_cookies(&watch_app, "web-login").await;
+            if !cookies.iter().any(|(name, _, _, _)| name == "bfWebToken") {
+                continue; // not logged in yet
+            }
+            tracing::info!("web-login: bfWebToken detected — harvesting session");
+            let Some(state) = watch_app.try_state::<AppState>() else {
+                return;
+            };
+            let Some(ss) = state.get_session(&watch_session).await else {
+                return;
+            };
+            match finalize_webview_login(
+                &watch_app,
+                &ss,
+                &watch_session,
+                "web-login",
+                &watch_account,
+                "cookie_auth",
+                "",
+            )
+            .await
+            {
+                Ok(dto) => {
+                    tracing::info!("regular web-login complete: {}", dto.account_name);
+                    let _ = watch_app.emit("regular-login-complete", dto);
+                }
+                Err(e) => {
+                    tracing::error!("regular web-login harvest failed: {e}");
+                    let _ = watch_app.emit("regular-login-error", format!("登入失敗: {e}"));
+                }
+            }
+            if let Some(win) = watch_app.get_webview_window("web-login") {
+                let _ = win.destroy();
+            }
+            return;
+        }
+        tracing::warn!("web-login: no login detected within timeout");
+    });
+
+    tracing::info!("regular web-login window opened");
+    Ok(())
+}
+
+/// Called by the web-login init script once login completes: harvest cookies,
+/// build the session + account list, and emit `regular-login-complete`.
+#[tauri::command]
+pub async fn regular_web_login_done(
+    session_id: String,
+    account: String,
+    web_token: String,
+    account_html: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    use tauri::Emitter;
+
+    let ss = state.require_session(&session_id).await?;
+    match finalize_webview_login(
+        &app,
+        &ss,
+        &session_id,
+        "web-login",
+        &account,
+        &web_token,
+        &account_html,
+    )
+    .await
+    {
+        Ok(dto) => {
+            tracing::info!("regular web-login complete: {}", dto.account_name);
+            let _ = app.emit("regular-login-complete", dto);
+        }
+        Err(e) => {
+            tracing::error!("regular web-login failed: {e}");
+            let _ = app.emit("regular-login-error", format!("登入失敗: {e}"));
+        }
+    }
+
+    if let Some(win) = app.get_webview_window("web-login") {
+        let _ = win.destroy();
+    }
+    Ok(())
+}
+
+/// Shared finalization for a webview-completed beanfun login: harvest ALL
+/// WebView2 cookies from `window_label`, inject them into the session's reqwest
+/// jar, build the [`Session`] with `account_name`, fetch game accounts, and
+/// store both. Returns the [`SessionDto`] or an error message.
+async fn finalize_webview_login(
+    app: &tauri::AppHandle,
+    ss: &std::sync::Arc<crate::models::session_state::SessionState>,
+    session_id: &str,
+    window_label: &str,
+    account_name: &str,
+    web_token_fallback: &str,
+    account_html: &str,
+) -> Result<SessionDto, String> {
+    let all_cookies = extract_webview2_cookies(app, window_label).await;
+    tracing::info!(
+        "web-login: extracted {} cookies from WebView2",
+        all_cookies.len()
+    );
+
+    let real_web_token = all_cookies
+        .iter()
+        .find(|(name, _, _, _)| name == "bfWebToken")
+        .map(|(_, value, _, _)| value.clone())
+        .unwrap_or_else(|| {
+            if web_token_fallback != "cookie_auth" && !web_token_fallback.is_empty() {
+                web_token_fallback.to_string()
+            } else {
+                String::new()
+            }
+        });
+
+    if real_web_token.is_empty() {
+        return Err("no bfWebToken found in webview cookies".to_string());
+    }
+
+    let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
+    let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
+    let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
+    for (name, value, domain, path) in &all_cookies {
+        let clean_domain = domain.trim_start_matches('.');
+        let jar_url =
+            if clean_domain.contains("login.beanfun.com") && !clean_domain.contains("newlogin") {
+                &login_url
+            } else if clean_domain.contains("newlogin") {
+                &newlogin_url
+            } else {
+                &tw_url
+            };
+        let path_str = if path.is_empty() { "/" } else { path.as_str() };
+        let cookie_str = format!("{}={}; Domain={}; Path={}", name, value, domain, path_str);
+        ss.cookie_jar.add_cookie_str(&cookie_str, jar_url);
+    }
+
+    let session = crate::models::session::Session {
+        token: real_web_token,
+        refresh_token: None,
+        expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
+        region: crate::models::session::Region::TW,
+        account_name: account_name.to_string(),
+        session_key: None,
+        totp_state: None,
+    };
+
+    let accounts = crate::services::beanfun_service::get_game_accounts(
+        &ss.http_client,
+        &session,
+        &ss.cookie_jar,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!("web-login: reqwest get_game_accounts failed: {e}, using webview HTML");
+        crate::services::beanfun_service::parse_tw_account_list_html(account_html)
+    });
+    tracing::info!("web-login: got {} accounts", accounts.len());
+
+    let dto = SessionDto::from_session(&session, session_id);
+    *ss.session.write().await = Some(session);
+    *ss.game_accounts.write().await = accounts;
+    Ok(dto)
+}
+
 /// A cookie tuple: (name, value, domain, path).
 type CookieTuple = (String, String, String, String);
 
@@ -1539,6 +2018,18 @@ async fn extract_webview2_cookies(_app: &tauri::AppHandle, _label: &str) -> Vec<
 
 /// Window label for the external reCAPTCHA helper window.
 const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
+
+/// Set right before the backend destroys the helper window after a SUCCESSFUL
+/// token capture, so the window-destroyed handler can tell that apart from a
+/// user closing the window. Without this, the destroy after phase 1 emits a
+/// spurious `recaptcha-cancelled` that can abort phase 2.
+static RECAPTCHA_DELIVERED: AtomicBool = AtomicBool::new(false);
+
+/// Consume the "token delivered" flag. `true` → the window closed because we
+/// captured a token (suppress cancel); `false` → user/close abort (emit cancel).
+pub fn recaptcha_take_delivered() -> bool {
+    RECAPTCHA_DELIVERED.swap(false, Ordering::SeqCst)
+}
 
 /// Injected at document-start into the reCAPTCHA helper window.
 ///
@@ -1770,8 +2261,10 @@ pub async fn open_recaptcha_window(
 
     let step = step.unwrap_or_else(|| "login".to_string());
 
-    // Replace any existing helper window so we never stack two.
+    // Replace any existing helper window so we never stack two. Mark it as a
+    // backend close so its destroy doesn't emit a cancel that aborts this solve.
     if let Some(existing) = app.get_webview_window(RECAPTCHA_WINDOW_LABEL) {
+        RECAPTCHA_DELIVERED.store(true, Ordering::SeqCst);
         let _ = existing.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
@@ -1781,17 +2274,17 @@ pub async fn open_recaptcha_window(
     // as a format string.
     let init_script = format!("window.__RECAPTCHA_STEP__ = {step:?};\n{RECAPTCHA_INIT_SCRIPT}");
 
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| ErrorDto {
-            code: "SYS_PATH_ERROR".to_string(),
-            message: format!("Failed to get app data dir: {e}"),
-            category: crate::models::error::ErrorCategory::Process,
-            details: None,
-        })?
-        .join("recaptcha");
+    // Use a FRESH (incognito) profile every time. A persistent profile retains
+    // beanfun's login cookie, so loading Login/Index auto-completes the pSKey
+    // login and redirects to the portal — no reCAPTCHA is ever shown, no token
+    // is captured, and the frontend hangs on "登入中". A unique dir guarantees a
+    // clean login page with the reCAPTCHA every time.
+    let data_dir = std::env::temp_dir()
+        .join("MapleLink")
+        .join("recaptcha-incognito")
+        .join(uuid::Uuid::new_v4().to_string());
     let _ = std::fs::create_dir_all(&data_dir);
+    let cleanup_dir = data_dir.clone();
 
     // Navigate to bflogin/default.aspx — the server redirects to
     // login.beanfun.com/Login/Index?pSKey={skey} (a bare Login/Index with no
@@ -1851,6 +2344,23 @@ pub async fn open_recaptcha_window(
                     deliver_recaptcha_token(&poll_app, token.to_string(), step.to_string());
                     return;
                 }
+            }
+        }
+    });
+
+    // Remove the incognito profile once the window closes (best effort).
+    let cleanup_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            if cleanup_app
+                .get_webview_window(RECAPTCHA_WINDOW_LABEL)
+                .is_none()
+            {
+                // Let WebView2 release its file locks before deleting.
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let _ = std::fs::remove_dir_all(&cleanup_dir);
+                break;
             }
         }
     });
@@ -1947,6 +2457,9 @@ fn deliver_recaptcha_token(app: &tauri::AppHandle, token: String, step: String) 
     if let Err(e) = app.emit("recaptcha-token", RecaptchaTokenEvent { token, step }) {
         tracing::warn!("failed to emit recaptcha-token event: {e}");
     }
+    // Mark this close as a successful delivery so on_window_event does NOT emit
+    // recaptcha-cancelled (which would abort the next phase).
+    RECAPTCHA_DELIVERED.store(true, Ordering::SeqCst);
     let _ = win.destroy();
 }
 

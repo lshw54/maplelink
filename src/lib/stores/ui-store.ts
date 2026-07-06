@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
 
-export type Page = "login" | "main" | "toolbox";
+export type Page = "login" | "main" | "toolbox" | "web_launch";
 export type ThemeMode = "system" | "dark" | "light";
 export type Language = "en-US" | "zh-TW" | "zh-CN";
 
@@ -44,7 +44,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   qrData: null,
   setPage: (page) => {
     const current = get().currentPage;
-    const prev = current !== "toolbox" ? current : get().previousPage;
+    // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.
+    const prev = current !== "toolbox" && current !== "web_launch" ? current : get().previousPage;
     set({ currentPage: page, previousPage: prev });
     commands.resizeWindow(page).catch((e) => {
       commands.logFrontendError("warn", "ui-store", `resize failed for ${page}: ${e}`);

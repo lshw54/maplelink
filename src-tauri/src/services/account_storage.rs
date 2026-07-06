@@ -18,6 +18,11 @@ pub struct SavedAccount {
     pub account: String,
     pub password: String,
     pub remember_password: bool,
+    /// Remembered advance-check verify info (email / phone) for this account,
+    /// pre-filled next time an advance check appears. `#[serde(default)]` keeps
+    /// older stored records (without this field) loadable.
+    #[serde(default)]
+    pub verify_info: Option<String>,
 }
 
 /// Load saved accounts from encrypted storage.
@@ -146,12 +151,45 @@ pub fn upsert_account(
         String::new()
     };
 
+    // Preserve any previously remembered advance-check verify info.
+    let verify_info = existing.as_ref().and_then(|p| p.verify_info.clone());
+
     accounts.push(SavedAccount {
         region: region.to_string(),
         account: account.to_string(),
         password: pwd,
         remember_password: remember,
+        verify_info,
     });
+}
+
+/// Remember the advance-check verify info (email / phone) for an account,
+/// creating a minimal entry if the account isn't saved yet. Empty clears it.
+pub fn set_verify_info(
+    accounts: &mut Vec<SavedAccount>,
+    region: &str,
+    account: &str,
+    verify_info: &str,
+) {
+    let value = if verify_info.trim().is_empty() {
+        None
+    } else {
+        Some(verify_info.trim().to_string())
+    };
+    if let Some(a) = accounts
+        .iter_mut()
+        .find(|a| a.region == region && a.account == account)
+    {
+        a.verify_info = value;
+    } else {
+        accounts.push(SavedAccount {
+            region: region.to_string(),
+            account: account.to_string(),
+            password: String::new(),
+            remember_password: false,
+            verify_info: value,
+        });
+    }
 }
 
 /// Get all saved accounts for a specific region.

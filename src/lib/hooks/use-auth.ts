@@ -3,6 +3,7 @@ import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
+import { useErrorToastStore } from "../stores/error-toast-store";
 import type { SessionDto, QrPollResult } from "../types";
 
 /** Login with account + password. Creates a new session, then authenticates. */
@@ -14,13 +15,25 @@ export function useLogin() {
       account,
       password,
       rememberPassword,
+      resumeSessionId,
     }: {
       account: string;
       password: string;
       rememberPassword: boolean;
+      /**
+       * Set when retrying after a passed advance check: reuse this session
+       * (which already holds the verified context + the pending skey/form-token)
+       * and only redo the login-step reCAPTCHA — do NOT create a new session or
+       * redo CheckAccountType, which would reset beanfun's context and re-trigger
+       * advance check in a loop.
+       */
+      resumeSessionId?: string;
     }) => {
-      // Create a new session first
-      const sessionId = await commands.createSession();
+      const region = useConfigStore.getState().config?.region ?? "TW";
+      // Resume (advance-check retry) only applies to the TW two-phase flow.
+      const resuming = resumeSessionId !== undefined && region === "TW";
+      const sessionId =
+        resuming && resumeSessionId ? resumeSessionId : await commands.createSession();
 
       useAuthStore.getState().setPendingCredentials({
         account,
@@ -30,17 +43,43 @@ export function useLogin() {
       });
 
       try {
-        // TW Regular (帳密) login is reCAPTCHA-gated at two points: once at
-        // CheckAccountType (the "check" token) and once at AccountLogin (the
-        // "login" token). Each is solved by the human in the helper window.
-        // HK uses the advance-check captcha flow instead — keep the old path.
-        const region = useConfigStore.getState().config?.region ?? "TW";
+        // TW Regular (帳密) login runs over the two-phase commands
+        // (twLoginCheck = CheckAccountType, twLoginSubmit = AccountLogin). We try
+        // each step WITHOUT a reCAPTCHA first, so IsRecaptcha=false accounts get
+        // the exact v0.3.6 experience (empty tokens, NO popup); only when beanfun
+        // replies RecaptchaRequired do we open the on-origin popup (token is
+        // domain-locked to login.beanfun.com).
+        //
+        // IMPORTANT: the non-resume attempt MUST go through twLoginCheck — it
+        // stashes the skey/form-token on the session. When AdvanceCheckRequired
+        // drives the native VerifyForm and the user passes it, the resume reuses
+        // that SAME verified session via twLoginSubmit. (A single-shot `login`
+        // here would fetch a fresh skey on resume, dropping beanfun's
+        // advance-check verification → login never reaches the account list.)
         let session: SessionDto;
         if (region === "TW") {
-          const checkToken = await solveRecaptcha("check");
-          await commands.twLoginCheck(sessionId, account, checkToken);
-          const loginToken = await solveRecaptcha("login");
-          session = await commands.twLoginSubmit(sessionId, password, loginToken);
+          const needsRecaptcha = (e: unknown) => {
+            const s = typeof e === "object" && e !== null ? JSON.stringify(e) : String(e);
+            return s.includes("RecaptchaRequired") || s.includes("RECAPTCHA_REQUIRED");
+          };
+          if (!resuming) {
+            try {
+              await commands.twLoginCheck(sessionId, account, "");
+            } catch (e) {
+              if (!needsRecaptcha(e)) throw e;
+              await commands.twLoginCheck(sessionId, account, await solveRecaptcha("check"));
+            }
+          }
+          try {
+            session = await commands.twLoginSubmit(sessionId, password, "");
+          } catch (e) {
+            if (!needsRecaptcha(e)) throw e;
+            session = await commands.twLoginSubmit(
+              sessionId,
+              password,
+              await solveRecaptcha("login"),
+            );
+          }
         } else {
           session = await commands.login(sessionId, account, password);
         }
@@ -53,11 +92,16 @@ export function useLogin() {
         return session;
       } catch (err: unknown) {
         const errStr = typeof err === "object" && err !== null ? JSON.stringify(err) : String(err);
-        if (errStr.includes("RECAPTCHA_CANCELLED") || errStr.includes("RECAPTCHA_TIMEOUT")) {
-          // User closed the verification window, or it never produced a token —
+        if (
+          errStr.includes("RECAPTCHA_CANCELLED") ||
+          errStr.includes("RECAPTCHA_TIMEOUT") ||
+          errStr.includes("WEBLOGIN_CANCELLED") ||
+          errStr.includes("WEBLOGIN_TIMEOUT")
+        ) {
+          // User closed the login/verification window, or it never completed —
           // treat as a quiet abort so the button doesn't hang on "登入中...".
           useAuthStore.getState().setPendingCredentials(null);
-          throw new Error("人機驗證未完成,請再試一次", { cause: err });
+          throw new Error("登入已取消,請再試一次", { cause: err });
         }
         if (errStr.includes("TOTP") || errStr.includes("totp") || errStr.includes("Totp")) {
           const totpError = new Error("TOTP_REQUIRED") as Error & { sessionId: string };
@@ -66,6 +110,13 @@ export function useLogin() {
           throw totpError;
         }
         if (errStr.includes("ADVANCE_CHECK") || errStr.includes("advance_check")) {
+          // B: cap the loop. If advance check is required *again* right after we
+          // already passed one (this is a resume), stop instead of re-looping —
+          // repeated attempts are what trips beanfun's IP lock.
+          if (resuming) {
+            useAuthStore.getState().setPendingCredentials(null);
+            throw new Error("beanfun 要求重複人機驗證,請稍後再試", { cause: err });
+          }
           const errObj =
             typeof err === "object" && err !== null ? (err as Record<string, unknown>) : null;
           const url = errObj?.message ? String(errObj.message) : undefined;
@@ -90,11 +141,31 @@ export function useLogin() {
     },
     onSuccess: async (session: SessionDto) => {
       useAuthStore.getState().addSession(session);
+      let accountCount = -1;
       try {
-        const accounts = await commands.getGameAccounts(session.sessionId);
+        let accounts = await commands.getGameAccounts(session.sessionId);
+        if (accounts.length === 0) {
+          // Login-time list came back empty — force one fresh fetch so the user
+          // isn't stranded on an empty account list.
+          try {
+            accounts = await commands.refreshAccounts(session.sessionId);
+          } catch {
+            /* keep the empty list; refresh is best-effort */
+          }
+        }
+        accountCount = accounts.length;
         useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
       } catch {
         /* accounts fetch failure is non-critical */
+      }
+      // Make an empty account list VISIBLE instead of a silent empty page, so a
+      // tester notices + reports it (and can retry) rather than it looking broken.
+      if (accountCount === 0) {
+        useErrorToastStore.getState().addToast({
+          message: "登入成功，但暫時載入唔到遊戲帳號列表，可到主頁按「重新整理」再試",
+          category: "authentication",
+          critical: false,
+        });
       }
       await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
       // Clear addingSession flag, reset login view, and navigate to main
