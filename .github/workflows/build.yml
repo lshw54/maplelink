@@ -250,6 +250,11 @@ jobs:
           make_latest: ${{ github.event.inputs.release_type == 'release' && 'true' || 'false' }}
 
       - name: Commit version bump (verified)
+        # Only sync the version bump back to main when the release was dispatched
+        # from main. On a feature-branch build the parent commit (github.sha) is
+        # the feature tip, so fast-forwarding refs/heads/main to it is impossible
+        # and GitHub returns "422 not a fast forward" — which failed the whole run.
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
