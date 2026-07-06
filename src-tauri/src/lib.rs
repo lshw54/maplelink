@@ -78,6 +78,58 @@ fn is_elevated() -> bool {
     }
 }
 
+/// Delete cached WebView2 data (the `EBWebView` folders) once after each app
+/// update, so stale cached behaviour can't survive an update. Keyed on the
+/// executable's modification time, which changes when the installer replaces the
+/// exe. Runs at startup BEFORE the WebView2 window is created (otherwise the
+/// in-use Local copy is locked). Only the `EBWebView` subfolders are touched —
+/// never the parent dirs, which hold accounts / config / logs.
+#[cfg(target_os = "windows")]
+fn cleanup_webview_data_on_update() {
+    let Ok(local) = std::env::var("LOCALAPPDATA") else {
+        return;
+    };
+    let app_local = std::path::Path::new(&local).join("com.maplelink.app");
+
+    // Build ID = exe mtime (seconds since epoch); changes on every update.
+    let build_id = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+    if build_id.is_empty() {
+        return;
+    }
+
+    // `.webview_build` marker (deleting it via the reset command forces a clean).
+    let marker = app_local.join(".webview_build");
+    if std::fs::read_to_string(&marker).unwrap_or_default().trim() == build_id {
+        return; // already cleaned for this build
+    }
+
+    let mut targets = vec![app_local.join("EBWebView")];
+    if let Ok(roaming) = std::env::var("APPDATA") {
+        targets.push(
+            std::path::Path::new(&roaming)
+                .join("com.maplelink.app")
+                .join("EBWebView"),
+        );
+    }
+    for t in targets {
+        if t.exists() {
+            match std::fs::remove_dir_all(&t) {
+                Ok(()) => tracing::info!("cleaned WebView2 data: {}", t.display()),
+                Err(e) => tracing::warn!("could not clean WebView2 data {}: {e}", t.display()),
+            }
+        }
+    }
+
+    let _ = std::fs::create_dir_all(&app_local);
+    let _ = std::fs::write(&marker, &build_id);
+}
+
 /// Initialise and run the Tauri application.
 ///
 /// Startup sequence:
@@ -113,6 +165,10 @@ pub fn run() {
             return;
         }
     }
+
+    // Wipe stale WebView2 caches once per update (before the webview starts).
+    #[cfg(target_os = "windows")]
+    cleanup_webview_data_on_update();
 
     // Neutralise Windows Accessibility "Text size" setting.
     //
@@ -248,6 +304,14 @@ pub fn run() {
             commands::system::log_frontend_error,
             commands::system::set_web_launch_intercept,
             commands::system::get_web_launch_intercept_status,
+            commands::system::get_web_launch_status,
+            commands::system::web_launch_test_game,
+            commands::system::web_launch_test_gamania,
+            commands::system::reset_webview_data,
+            commands::system::get_dns_status,
+            commands::system::test_dns,
+            commands::system::set_recommended_dns,
+            commands::system::reset_dns_auto,
             commands::system::resize_window,
             commands::system::open_file_dialog,
             commands::system::get_app_version,

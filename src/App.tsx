@@ -12,6 +12,7 @@ import { Modal } from "./features/shared/Modal";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
+import { WebLaunchPage } from "./features/toolbox/WebLaunchPage";
 import type { UpdateInfoDto } from "./lib/types";
 
 function PageRouter() {
@@ -24,6 +25,8 @@ function PageRouter() {
       return <MainPage />;
     case "toolbox":
       return <ToolboxPage />;
+    case "web_launch":
+      return <WebLaunchPage />;
   }
 }
 

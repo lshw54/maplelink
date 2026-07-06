@@ -147,6 +147,336 @@ pub fn is_registered() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Self-check detection (for the web-launch tool UI)
+// ---------------------------------------------------------------------------
+
+/// Whether the Locale Remulator (`LRProc.exe`) has been extracted and is ready
+/// to launch the game.
+#[cfg(target_os = "windows")]
+pub fn lr_ready() -> bool {
+    lr_proc_path().is_some()
+}
+
+/// Whether Gamania's official launcher (`GamaniaGameDownloader.exe`) is really
+/// installed — resolved from the "gamania Games Manager" install location and
+/// confirmed to exist on disk (see [`gamania_downloader_path`]).
+#[cfg(target_os = "windows")]
+pub fn gamania_installed() -> bool {
+    gamania_downloader_path().is_some()
+}
+
+/// Resolve the on-disk path of Gamania's official launcher
+/// (`GamaniaGameDownloader.exe`). Returns `Some` only when the exe actually
+/// exists. Tries several signals so it's robust across installs:
+///   1. `HKLM\SOFTWARE\gamaniaGamesManager\InstallPath` (the launcher's own key)
+///   2. the "gamania Games Manager" Uninstall entry's `InstallLocation`
+///   3. well-known Program Files paths
+///   4. the legacy `gameplapp://` protocol handler (if any install registers it)
+///
+/// The downloader lives at `<install dir>\Downloader\GamaniaGameDownloader.exe`.
+#[cfg(target_os = "windows")]
+fn gamania_downloader_path() -> Option<std::path::PathBuf> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    // The downloader sits under `<install dir>\Downloader\`.
+    fn downloader_under(dir: &str) -> Option<std::path::PathBuf> {
+        let dir = dir.trim().trim_end_matches(['\\', '/']);
+        if dir.is_empty() {
+            return None;
+        }
+        let p = std::path::Path::new(dir)
+            .join("Downloader")
+            .join("GamaniaGameDownloader.exe");
+        p.exists().then_some(p)
+    }
+
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+    // 1) The launcher's own key. Read both registry views so it resolves no
+    //    matter our process bitness (the installer writes the 64-bit view).
+    for flags in [KEY_READ | KEY_WOW64_64KEY, KEY_READ | KEY_WOW64_32KEY] {
+        if let Ok(key) = hklm.open_subkey_with_flags(r"SOFTWARE\gamaniaGamesManager", flags) {
+            if let Ok(install) = key.get_value::<String, _>("InstallPath") {
+                if let Some(exe) = downloader_under(&install) {
+                    return Some(exe);
+                }
+            }
+        }
+    }
+
+    // 2) The "gamania Games Manager" Uninstall entry (Inno Setup GUID key).
+    for base in [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ] {
+        if let Ok(uninstall) = hklm.open_subkey(base) {
+            for sub in uninstall.enum_keys().flatten() {
+                if let Ok(entry) = uninstall.open_subkey(&sub) {
+                    let name = entry
+                        .get_value::<String, _>("DisplayName")
+                        .unwrap_or_default();
+                    if name.eq_ignore_ascii_case("gamania Games Manager") {
+                        if let Ok(loc) = entry.get_value::<String, _>("InstallLocation") {
+                            if let Some(exe) = downloader_under(&loc) {
+                                return Some(exe);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3) Well-known install directories.
+    for env in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(pf) = std::env::var(env) {
+            if let Some(exe) =
+                downloader_under(&format!(r"{pf}\gamania Games\gamania Games Manager"))
+            {
+                return Some(exe);
+            }
+        }
+    }
+
+    // 4) Legacy fallback: the `gameplapp://` protocol handler, if registered.
+    let candidates = [
+        (
+            HKEY_CURRENT_USER,
+            r"Software\Classes\gameplapp\shell\open\command",
+        ),
+        (HKEY_CLASSES_ROOT, r"gameplapp\shell\open\command"),
+    ];
+    for (root, subkey) in candidates {
+        if let Ok(key) = RegKey::predef(root).open_subkey(subkey) {
+            if let Ok(cmd) = key.get_value::<String, _>("") {
+                if let Some(exe) = extract_exe_from_command(&cmd) {
+                    let p = std::path::PathBuf::from(&exe);
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Pull the executable path out of a registry `shell\open\command` string, e.g.
+/// `"C:\...\GamaniaGameDownloader.exe" "%1"` → `C:\...\GamaniaGameDownloader.exe`.
+#[cfg(target_os = "windows")]
+fn extract_exe_from_command(cmd: &str) -> Option<String> {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+    if let Some(rest) = cmd.strip_prefix('"') {
+        // Quoted path: everything up to the closing quote.
+        return rest
+            .split('"')
+            .next()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty());
+    }
+    // Unquoted: best-effort first whitespace-delimited token.
+    cmd.split_whitespace().next().map(str::to_string)
+}
+
+/// This executable's own file name, e.g. `maplelink.exe`.
+pub fn exe_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_default()
+}
+
+/// Whether the exe is named one of the values the web-launch flow expects. Some
+/// users rename the exe (which can break interception / process detection), so
+/// the self-check surfaces a wrong name rather than letting it fail silently.
+pub fn exe_name_ok() -> bool {
+    matches!(
+        exe_name().to_ascii_lowercase().as_str(),
+        "maplelink.exe" | "beanfun.exe"
+    )
+}
+
+// ---------------------------------------------------------------------------
+// "Really opens?" self-test — actually launches each dependency then kills it
+// immediately, so the user sees a genuine result rather than a file-exists guess.
+// ---------------------------------------------------------------------------
+
+/// Game/LR launch test → code: `ok` | `skipped_running` | `no_game_path` |
+/// `spawn_failed`. `game_already_running` is passed in by the caller (it has the
+/// app state) so we never kill a game the user actually has open. Exposed as its
+/// own command so the UI can show live "testing the game…" progress.
+#[cfg(target_os = "windows")]
+pub async fn test_game(game_already_running: bool) -> String {
+    test_launch_game(game_already_running).await.to_string()
+}
+
+/// Gamania launcher test → code: `ok` | `not_found` | `spawn_failed`.
+#[cfg(target_os = "windows")]
+pub async fn test_gamania() -> String {
+    test_launch_gamania().await.to_string()
+}
+
+/// Launch the game exactly the way web-launch would (via LR on non-zh-TW), wait
+/// for the game process to actually appear, then kill it immediately.
+#[cfg(target_os = "windows")]
+async fn test_launch_game(game_already_running: bool) -> &'static str {
+    // Never disturb a game the user already has running — we can't tell our test
+    // instance apart from theirs, so skip rather than risk killing it.
+    if game_already_running {
+        return "skipped_running";
+    }
+    let game_path = match load_game_path() {
+        Some(p) => p,
+        None => return "no_game_path",
+    };
+    let game_exe = std::path::Path::new(&game_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "MapleStory.exe".to_string());
+
+    // No beanfun args — we only need to prove the process boots, not log in.
+    let pid = match spawn_game_capture(&game_path, &[]) {
+        Some(p) => p,
+        None => return "spawn_failed",
+    };
+
+    // Poll a few seconds for the real game process to show up.
+    let mut appeared = false;
+    for _ in 0..12 {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        if crate::services::process_service::is_process_name_running(&game_exe) {
+            appeared = true;
+            break;
+        }
+    }
+
+    // Kill immediately: our spawned tree, plus any game process it started (safe
+    // because we confirmed none was running before the test).
+    kill_tree(pid);
+    kill_image(&game_exe);
+
+    if appeared {
+        "ok"
+    } else {
+        "spawn_failed"
+    }
+}
+
+/// Launch Gamania's official downloader, confirm it started, then kill just the
+/// process tree we spawned (leaving any pre-existing user instance untouched).
+#[cfg(target_os = "windows")]
+async fn test_launch_gamania() -> &'static str {
+    let exe = match gamania_downloader_path() {
+        Some(p) => p,
+        None => return "not_found",
+    };
+    let cwd = exe.parent().map(|p| p.to_path_buf());
+    let pid = match spawn_capture(&exe, &[], cwd.as_deref()) {
+        Some(p) => p,
+        None => return "spawn_failed",
+    };
+    // Give it a beat to get going, then kill only what we launched.
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    kill_tree(pid);
+    "ok"
+}
+
+/// Spawn the game through LR (non-zh-TW) or directly, capturing the child PID.
+#[cfg(target_os = "windows")]
+fn spawn_game_capture(game_path: &str, raw_args: &[String]) -> Option<u32> {
+    let cwd = std::path::Path::new(game_path).parent();
+    if !crate::services::lr_service::is_system_locale_chinese_traditional() {
+        if let Some(lrproc) = lr_proc_path() {
+            let mut args = vec![
+                crate::services::lr_service::LR_PROFILE_GUID.to_string(),
+                game_path.to_string(),
+            ];
+            args.extend(raw_args.iter().cloned());
+            return spawn_capture(&lrproc, &args, cwd);
+        }
+    }
+    spawn_capture(std::path::Path::new(game_path), raw_args, cwd)
+}
+
+/// Spawn a process and return its PID (no window), or `None` on failure.
+#[cfg(target_os = "windows")]
+fn spawn_capture(
+    program: &std::path::Path,
+    args: &[String],
+    cwd: Option<&std::path::Path>,
+) -> Option<u32> {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    // CREATE_NEW_PROCESS_GROUP so the tree kill can reach children.
+    cmd.creation_flags(0x0000_0200);
+    match cmd.spawn() {
+        Ok(child) => {
+            let pid = child.id();
+            tracing::info!(
+                "web-launch self-test: spawned {} pid={pid}",
+                program.display()
+            );
+            Some(pid)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "web-launch self-test: spawn failed for {}: {e}",
+                program.display()
+            );
+            None
+        }
+    }
+}
+
+/// `taskkill /PID <pid> /T /F` — kill a process and its whole tree.
+#[cfg(target_os = "windows")]
+fn kill_tree(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output();
+}
+
+/// `taskkill /IM <name> /T /F` — kill every process with the given image name.
+/// Only used for the game during self-test, and only after confirming none was
+/// running beforehand.
+#[cfg(target_os = "windows")]
+fn kill_image(name: &str) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("taskkill")
+        .args(["/IM", name, "/T", "/F"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output();
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn lr_ready() -> bool {
+    false
+}
+#[cfg(not(target_os = "windows"))]
+pub fn gamania_installed() -> bool {
+    false
+}
+#[cfg(not(target_os = "windows"))]
+pub async fn test_game(_game_already_running: bool) -> String {
+    "spawn_failed".to_string()
+}
+#[cfg(not(target_os = "windows"))]
+pub async fn test_gamania() -> String {
+    "not_found".to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Interception execution (headless — runs before the Tauri UI starts)
 // ---------------------------------------------------------------------------
 

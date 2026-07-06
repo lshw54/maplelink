@@ -64,6 +64,144 @@ pub fn get_web_launch_intercept_status() -> Result<bool, ErrorDto> {
     Ok(crate::services::web_launch::is_registered())
 }
 
+/// Self-check snapshot for the web-launch tool UI.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebLaunchStatus {
+    /// MapleLink is currently registered as beanfun's launch target.
+    pub registered: bool,
+    /// Configured game path (may be empty).
+    pub game_path: String,
+    /// The configured game path points at an existing `maplestory.exe`.
+    pub game_path_ok: bool,
+    /// The Locale Remulator (`LRProc.exe`) is extracted and ready.
+    pub lr_ready: bool,
+    /// Gamania's official launcher is installed.
+    pub gamania_installed: bool,
+    /// This app's own exe file name (e.g. `maplelink.exe`).
+    pub exe_name: String,
+    /// The exe is named one of the expected values (not renamed to something odd).
+    pub exe_name_ok: bool,
+}
+
+/// Report the readiness of every prerequisite the one-click web-launch tool
+/// depends on, so the UI can show the user exactly which step is missing.
+#[tauri::command]
+pub async fn get_web_launch_status(
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<WebLaunchStatus, ErrorDto> {
+    let game_path = state.config.read().await.game_path.clone();
+    let game_path_ok = !game_path.trim().is_empty() && std::path::Path::new(&game_path).exists();
+
+    Ok(WebLaunchStatus {
+        registered: crate::services::web_launch::is_registered(),
+        game_path,
+        game_path_ok,
+        lr_ready: crate::services::web_launch::lr_ready(),
+        gamania_installed: crate::services::web_launch::gamania_installed(),
+        exe_name: crate::services::web_launch::exe_name(),
+        exe_name_ok: crate::services::web_launch::exe_name_ok(),
+    })
+}
+
+/// Live launch test — game only: starts the game (via LR), confirms it really
+/// opens, then kills it immediately. Skipped if a game is already running.
+/// Returns a stable code the UI maps to a message.
+#[tauri::command]
+pub async fn web_launch_test_game(
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<String, ErrorDto> {
+    let game_running = state.is_any_game_running().await;
+    Ok(crate::services::web_launch::test_game(game_running).await)
+}
+
+/// Live launch test — Gamania launcher only: starts it, confirms it opens, then
+/// kills the spawned tree. Returns a stable code the UI maps to a message.
+#[tauri::command]
+pub async fn web_launch_test_gamania() -> Result<String, ErrorDto> {
+    Ok(crate::services::web_launch::test_gamania().await)
+}
+
+/// Queue a WebView2 data reset for the next launch by clearing the build marker.
+/// The `EBWebView` folders can't be deleted now (the running app's own webview
+/// holds the Local copy open), so the actual wipe happens at the next startup in
+/// `cleanup_webview_data_on_update` — the caller should restart the app.
+#[tauri::command]
+pub fn reset_webview_data() -> Result<(), ErrorDto> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let marker = std::path::Path::new(&local)
+                .join("com.maplelink.app")
+                .join(".webview_build");
+            let _ = std::fs::remove_file(marker);
+        }
+    }
+    Ok(())
+}
+
+/// Network / DNS diagnostics: public IP + geo, and the active adapter's DNS.
+#[tauri::command]
+pub async fn get_dns_status(
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<crate::services::network_service::DnsStatus, ErrorDto> {
+    let (public_ip, country_code) =
+        crate::services::network_service::geo_lookup(&state.http_client).await;
+    let current_dns = crate::services::network_service::current_dns();
+    let using_recommended = current_dns.iter().any(|d| d == "223.5.5.5");
+    Ok(crate::services::network_service::DnsStatus {
+        is_china: country_code == "CN",
+        public_ip,
+        country_code,
+        current_dns,
+        using_recommended,
+    })
+}
+
+/// Resolve login.beanfun.com + www.google.com via the current DNS.
+#[tauri::command]
+pub async fn test_dns() -> Result<crate::services::network_service::DnsTestResult, ErrorDto> {
+    Ok(crate::services::network_service::test_resolution().await)
+}
+
+/// Switch the active adapter to Alibaba DNS (needs admin → UAC prompt).
+#[tauri::command]
+pub async fn set_recommended_dns() -> Result<(), ErrorDto> {
+    run_dns_change(crate::services::network_service::set_recommended_dns).await
+}
+
+/// Revert the active adapter to automatic DNS (needs admin → UAC prompt).
+#[tauri::command]
+pub async fn reset_dns_auto() -> Result<(), ErrorDto> {
+    run_dns_change(crate::services::network_service::reset_dns).await
+}
+
+/// Run a blocking, elevation-prompting DNS change off the async runtime and map
+/// its outcome (including a declined UAC prompt) to an `ErrorDto`.
+async fn run_dns_change(op: fn() -> Result<(), String>) -> Result<(), ErrorDto> {
+    let result = tokio::task::spawn_blocking(op)
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_DNS_TASK_FAILED".to_string(),
+            message: format!("DNS task failed to run: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+    result.map_err(|e| {
+        let cancelled = e == "cancelled";
+        ErrorDto {
+            code: if cancelled {
+                "SYS_DNS_CANCELLED".to_string()
+            } else {
+                "SYS_DNS_FAILED".to_string()
+            },
+            message: e,
+            category: ErrorCategory::Process,
+            details: None,
+        }
+    })
+}
+
 /// Resize the application window for a page transition.
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
@@ -72,6 +210,7 @@ pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), Er
         "login-enlarged" => (540.0, 780.0),
         "main" => (760.0, 530.0),
         "toolbox" => (750.0, 490.0),
+        "web_launch" => (560.0, 640.0),
         _ => {
             return Err(ErrorDto {
                 code: "SYS_INVALID_PAGE".to_string(),

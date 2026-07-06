@@ -25,6 +25,7 @@ interface NormalLoginFormProps {
   onTotpRequired: () => void;
   onAdvanceCheck: (url?: string) => void;
   onGamePass: () => void;
+  onWebLaunch: () => void;
 }
 
 export function NormalLoginForm({
@@ -32,6 +33,7 @@ export function NormalLoginForm({
   onTotpRequired,
   onAdvanceCheck,
   onGamePass,
+  onWebLaunch,
 }: NormalLoginFormProps) {
   const { t } = useTranslation();
   const login = useLogin();
@@ -48,34 +50,6 @@ export function NormalLoginForm({
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const showQr = region === "TW";
-  const [webLaunch, setWebLaunch] = useState(false);
-  const [webLaunchMsg, setWebLaunchMsg] = useState<string | null>(null);
-
-  // Load the current web-login interception state (TW only).
-  useEffect(() => {
-    if (!showQr) return;
-    commands
-      .getWebLaunchInterceptStatus()
-      .then(setWebLaunch)
-      .catch(() => {});
-  }, [showQr]);
-
-  async function handleToggleWebLaunch(enabled: boolean) {
-    setWebLaunch(enabled);
-    setWebLaunchMsg(null);
-    try {
-      await commands.setWebLaunchIntercept(enabled);
-      // Re-read the real registry state so the checkbox reflects the truth.
-      const actual = await commands.getWebLaunchInterceptStatus();
-      setWebLaunch(actual);
-      setWebLaunchMsg(actual ? t("login.web_launch_on") : t("login.web_launch_off"));
-    } catch (e) {
-      setWebLaunch(!enabled); // revert on failure
-      setWebLaunchMsg(
-        `${t("login.web_launch_failed")}: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-  }
 
   // Auto-fill from last saved account on mount and when region changes.
   const prevRegionRef = useRef(region);
@@ -392,21 +366,6 @@ export function NormalLoginForm({
           />
           {t("login.auto_login")}
         </label>
-        {showQr && (
-          <label
-            title={t("login.web_launch_hint")}
-            className="flex cursor-pointer items-center gap-1.5 text-[12px] text-text-dim transition-colors hover:text-[var(--text)]"
-          >
-            <input
-              type="checkbox"
-              name="web-launch"
-              checked={webLaunch}
-              onChange={(e) => handleToggleWebLaunch(e.target.checked)}
-              className="h-3.5 w-3.5 accent-accent"
-            />
-            {t("login.web_launch")}
-          </label>
-        )}
         <button
           type="button"
           onClick={() => {
@@ -421,8 +380,6 @@ export function NormalLoginForm({
           {t("login.forgot")}
         </button>
       </div>
-
-      {webLaunchMsg && <p className="mb-2 text-[11px] text-text-dim">{webLaunchMsg}</p>}
 
       {login.error && (
         <p className="mb-2 text-[12px] text-[var(--danger)]">{login.error.message}</p>
@@ -500,6 +457,24 @@ export function NormalLoginForm({
               />
               <path d="M9 8.5V16.5" stroke="currentColor" strokeWidth="1.5" />
               <path d="M2 5.5L9 9.5L16 5.5" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        )}
+        {showQr && (
+          <button
+            type="button"
+            onClick={onWebLaunch}
+            title={t("web_launch.title")}
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg border border-border bg-[var(--surface)] text-text-dim transition-all hover:border-accent hover:bg-[var(--surface-hover)] hover:text-accent active:scale-95"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <circle cx="9" cy="9" r="7.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M2 9H16M9 2C11 4 11.5 7 11.5 9C11.5 11 11 14 9 16C7 14 6.5 11 6.5 9C6.5 7 7 4 9 2Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
         )}

@@ -129,6 +129,7 @@ export function LoginPage() {
               onTotpRequired={handleTotpRequired}
               onAdvanceCheck={handleAdvanceCheck}
               onGamePass={handleGamePass}
+              onWebLaunch={() => setPage("web_launch")}
             />
 
             {useUiStore.getState().addingSession && (

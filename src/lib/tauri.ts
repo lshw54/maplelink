@@ -12,6 +12,10 @@ import type {
   SavedAccountDto,
   LastSavedAccountDto,
   AdvanceCheckState,
+  WebLaunchStatus,
+  WebLaunchTestCode,
+  DnsStatus,
+  DnsTestResult,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -118,6 +122,9 @@ export const commands = {
   // Web-login game-launch interception (opt-in registry toggle)
   setWebLaunchIntercept: (enabled: boolean) => invoke("set_web_launch_intercept", { enabled }),
   getWebLaunchInterceptStatus: () => invoke<boolean>("get_web_launch_intercept_status"),
+  getWebLaunchStatus: () => invoke<WebLaunchStatus>("get_web_launch_status"),
+  webLaunchTestGame: () => invoke<WebLaunchTestCode>("web_launch_test_game"),
+  webLaunchTestGamania: () => invoke<WebLaunchTestCode>("web_launch_test_gamania"),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),
   openLogFolder: () => invoke("open_log_folder"),
   getRecentLogs: () => invoke<string>("get_recent_logs"),
@@ -138,6 +145,13 @@ export const commands = {
 
   // Cleanup (global)
   cleanupGameCache: () => invoke<string>("cleanup_game_cache"),
+  resetWebviewData: () => invoke("reset_webview_data"),
+
+  // Network / DNS (global)
+  getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
+  testDns: () => invoke<DnsTestResult>("test_dns"),
+  setRecommendedDns: () => invoke("set_recommended_dns"),
+  resetDnsAuto: () => invoke("reset_dns_auto"),
 
   // GamePass login (TW only — creates its own session, returns sessionId)
   openGamePassLogin: () => invoke<string>("open_gamepass_login"),
