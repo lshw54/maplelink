@@ -22,12 +22,13 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
 
   function handleOtpError(error: Error) {
     const msg = error.message || t("launcher.otp_error");
+    // Only these clearly mean the session itself is dead. Do NOT include the
+    // generic "Invalid credentials" — it also covers "account … not found",
+    // which is a session/account mismatch (e.g. a stale selected account fetched
+    // against another logged-in session), and treating that as a dead session
+    // wrongly logged the WRONG account out ("斷曬" with multiple accounts).
     const isSessionGone =
-      msg.includes("Not authenticated") ||
-      msg.includes("expired") ||
-      msg.includes("閒置過久") ||
-      msg.includes("重新登入") ||
-      msg.includes("Invalid credentials");
+      msg.includes("Not authenticated") || msg.includes("閒置過久") || msg.includes("重新登入");
 
     if (isSessionGone) {
       // Session is dead — remove it and redirect to login
