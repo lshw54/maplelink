@@ -17,8 +17,15 @@ use crate::models::game_account::{GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
-/// User-Agent matching the original Beanfun client.
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36";
+/// User-Agent matching a current Chrome browser. beanfun's bot-risk scoring
+/// flags stale UAs (the old Chrome/55 string tripped the ~5-min IP lock even
+/// after a human solved the reCAPTCHA), so this is kept in sync with the
+/// `sec-ch-ua` version below and the session client defaults.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
+/// Chrome client-hint brand string; the version must match [`USER_AGENT`].
+const SEC_CH_UA: &str =
+    "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"";
 
 /// Magic constant used in the OTP retrieval request.
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
@@ -1286,18 +1293,20 @@ async fn tw_check_account_type(
         "__RequestVerificationToken": form_token,
     });
 
-    let check_resp = client
-        .post(&check_url)
-        .header("User-Agent", USER_AGENT)
-        .header("Content-Type", "application/json; charset=utf-8")
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", form_token)
-        .header("Referer", &index_url)
-        .header("Origin", api_base)
-        .json(&check_body)
-        .send()
-        .await
-        .map_err(|e| map_reqwest_error(&check_url, e))?;
+    let check_resp = with_browser_xhr_headers(
+        client
+            .post(&check_url)
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("RequestVerificationToken", form_token)
+            .header("Referer", &index_url)
+            .header("Origin", api_base),
+    )
+    .json(&check_body)
+    .send()
+    .await
+    .map_err(|e| map_reqwest_error(&check_url, e))?;
 
     let check_text = check_resp.text().await.unwrap_or_default();
     tracing::debug!(
@@ -1337,6 +1346,21 @@ async fn tw_check_account_type(
 /// Whether `token` is absent or empty.
 fn is_blank(token: Option<&str>) -> bool {
     token.map(|t| t.trim().is_empty()).unwrap_or(true)
+}
+
+/// Add the `Accept` + `Sec-Fetch-*` + client-hint headers a real browser sends
+/// on a same-origin `fetch`/XHR. Combined with the session client's UA +
+/// `sec-ch-ua` defaults, this makes our login POSTs look like the website —
+/// without it, beanfun's bot-risk scoring tripped the ~5-min IP lock even after
+/// a human solved the reCAPTCHA.
+fn with_browser_xhr_headers(rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    rb.header("Accept", "application/json, text/plain, */*")
+        .header("sec-ch-ua", SEC_CH_UA)
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("Sec-Fetch-Dest", "empty")
+        .header("Sec-Fetch-Mode", "cors")
+        .header("Sec-Fetch-Site", "same-origin")
 }
 
 /// Whether a beanfun login response is demanding a reCAPTCHA: the account is
@@ -1392,18 +1416,20 @@ async fn tw_account_login(
         "__RequestVerificationToken": form_token,
     });
 
-    let login_resp = client
-        .post(&login_url)
-        .header("User-Agent", USER_AGENT)
-        .header("Content-Type", "application/json; charset=utf-8")
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("RequestVerificationToken", form_token)
-        .header("Referer", &index_url)
-        .header("Origin", api_base)
-        .json(&login_body)
-        .send()
-        .await
-        .map_err(|e| map_reqwest_error(&login_url, e))?;
+    let login_resp = with_browser_xhr_headers(
+        client
+            .post(&login_url)
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("RequestVerificationToken", form_token)
+            .header("Referer", &index_url)
+            .header("Origin", api_base),
+    )
+    .json(&login_body)
+    .send()
+    .await
+    .map_err(|e| map_reqwest_error(&login_url, e))?;
 
     let login_text = login_resp.text().await.unwrap_or_default();
     tracing::debug!(
@@ -1417,6 +1443,14 @@ async fn tw_account_login(
     let result_code = login_json["ResultCode"].as_i64().unwrap_or(-1);
     let result = login_json["Result"].as_i64().unwrap_or(-1);
     let result_msg = login_json["ResultMessage"].as_str().unwrap_or("");
+
+    tracing::info!(
+        result_code,
+        result,
+        msg = %result_msg,
+        had_login_token = !is_blank(login_token),
+        "TW AccountLogin result"
+    );
 
     match result_code {
         1 => {
