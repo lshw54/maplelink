@@ -155,7 +155,9 @@ export function MainPage() {
       setSelectedAccountId(accountId);
       setLaunching(true);
       try {
-        const processId = await commands.launchGame(activeSessionId ?? "", accountId, otp);
+        // Launch with the session that OWNS this account (not the global active).
+        const sessionId = useAuthStore.getState().sessionIdForAccount(accountId) ?? "";
+        const processId = await commands.launchGame(sessionId, accountId, otp);
         if (processId > 0) {
           setGamePid(processId);
           setGameRunning(true);
@@ -164,7 +166,7 @@ export function MainPage() {
         setLaunching(false);
       }
     },
-    [activeSessionId, setGamePid, setGameRunning],
+    [setGamePid, setGameRunning],
   );
 
   async function handlePlayClick() {
@@ -368,7 +370,7 @@ export function MainPage() {
               {beansMenuOpen && (
                 <BeansPopupMenu
                   t={t}
-                  region={region}
+                  region={session?.region ?? region}
                   onRefresh={async () => {
                     const pts = await commands.getRemainPoint(activeSessionId ?? "");
                     setRemainPoint(pts);
@@ -605,7 +607,9 @@ function MorePopupMenu({
       </button>
       <button
         onClick={() => {
-          commands.openCustomerService().catch(() => {});
+          commands
+            .openCustomerService(useAuthStore.getState().activeSessionId ?? "")
+            .catch(() => {});
           onClose();
         }}
         className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"

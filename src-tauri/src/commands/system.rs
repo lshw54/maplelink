@@ -652,12 +652,17 @@ pub async fn open_gash_popup(
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
 
-    let config = state.config.read().await;
-    let (host, region_path) = match config.region {
+    // Use the SESSION's region (the account being viewed), NOT the global config
+    // toggle — otherwise a TW account opens HK URLs (seeded with the TW session's
+    // cookies → beanfun serves a logged-out page = a fake logout).
+    let region = match ss.session.read().await.as_ref() {
+        Some(s) => s.region.clone(),
+        None => state.config.read().await.region.clone(),
+    };
+    let (host, region_path) = match region {
         crate::models::session::Region::HK => ("bfweb.hk.beanfun.com", "HK"),
         crate::models::session::Region::TW => ("tw.beanfun.com", "TW"),
     };
-    drop(config);
 
     // Step 1: Call auth.aspx via reqwest to establish server-side session
     let auth_url = format!("https://{host}/{region_path}/auth.aspx");
@@ -883,8 +888,12 @@ pub async fn open_member_popup(
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
 
-    let config = state.config.read().await;
-    let (host, region_path, page_query) = match config.region {
+    // Session's region, not the global config toggle (see open_gash_popup).
+    let region = match ss.session.read().await.as_ref() {
+        Some(s) => s.region.clone(),
+        None => state.config.read().await.region.clone(),
+    };
+    let (host, region_path, page_query) = match region {
         crate::models::session::Region::HK => (
             "bfweb.hk.beanfun.com",
             "HK",
@@ -892,7 +901,6 @@ pub async fn open_member_popup(
         ),
         crate::models::session::Region::TW => ("tw.beanfun.com", "TW", "index_new.aspx"),
     };
-    drop(config);
 
     let token = get_web_token_from_jar(&ss.cookie_jar, &state).await?;
     let url = format!(
@@ -977,20 +985,27 @@ pub async fn open_member_popup(
 /// Customer service pages don't require auth — open in internal WebView popup.
 #[tauri::command]
 pub async fn open_customer_service(
+    session_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
-    let config = state.config.read().await;
-    let url = match config.region {
+    // Region from the active session, not the global config toggle.
+    let region = match state.get_session(&session_id).await {
+        Some(ss) => match ss.session.read().await.as_ref() {
+            Some(s) => s.region.clone(),
+            None => state.config.read().await.region.clone(),
+        },
+        None => state.config.read().await.region.clone(),
+    };
+    let url = match region {
         crate::models::session::Region::HK => {
             "https://bfweb.hk.beanfun.com/newfaq/service_newBF.aspx"
         }
         crate::models::session::Region::TW => {
             "https://tw.beanfun.com/customerservice/www/main.aspx"
         }
-    };
-    let url = url.to_string();
-    drop(config);
+    }
+    .to_string();
 
     open_web_popup(url, "客服中心".to_string(), app, state).await
 }

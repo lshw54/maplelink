@@ -18,7 +18,7 @@
         "width": 350,
         "height": 620,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "resizable": false,
         "shadow": true,
         "center": true,

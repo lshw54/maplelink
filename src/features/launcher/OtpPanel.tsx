@@ -54,7 +54,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       setPasting(true);
       try {
         const pasted = await commands.autoPasteOtp(
-          useAuthStore.getState().activeSessionId ?? "",
+          useAuthStore.getState().sessionIdForAccount(selectedAccountId) ?? "",
           selectedAccountId,
         );
         // Always fetch credentials to display OTP regardless of paste result
