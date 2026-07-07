@@ -17,16 +17,13 @@ use crate::models::game_account::{GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
-/// Default User-Agent for all beanfun requests — the plain LEGACY Chrome string.
-///
-/// IMPORTANT: keep this the old UA. A modern Chrome UA opts every request into
-/// beanfun's stricter per-fingerprint session handling, which a non-browser
-/// can't satisfy for several concurrent accounts (it broke multi-account login).
-/// Only the TW reCAPTCHA login POSTs use [`BROWSER_UA`] + `sec-ch-ua`, which is
-/// what that specific flow needs to avoid the bot-risk IP lock.
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36";
+/// Default User-Agent for all beanfun requests — a current Chrome string
+/// (kept in sync with the session client defaults and [`SEC_CH_UA`]).
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
-/// Modern Chrome UA used ONLY on the TW login POSTs (paired with [`SEC_CH_UA`]).
+/// Same modern Chrome UA, used explicitly on the TW login POSTs alongside
+/// [`SEC_CH_UA`]. Kept distinct so the login fingerprint stays pinned even if
+/// the default UA is ever changed again.
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 /// Chrome client-hint brand string; the version must match [`BROWSER_UA`].
