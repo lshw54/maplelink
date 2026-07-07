@@ -591,8 +591,22 @@ pub fn run() {
             if let tauri::WindowEvent::Focused(true) = event {
                 if let Ok(hwnd) = window.hwnd() {
                     unsafe {
+                        const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
                         const DWMWA_BORDER_COLOR: u32 = 34;
-                        let color: u32 = 0xFFFFFFFE; // DWMWCP_NONE
+                        const DWMWCP_ROUND: u32 = 2;
+                        const DWM_COLOR_NONE: u32 = 0xFFFFFFFE;
+                        // Round the window corners so the DWM shadow follows the
+                        // rounded shape (the window is transparent, so the CSS
+                        // border-radius defines the visible edge — no black corner).
+                        let round = DWMWCP_ROUND;
+                        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+                            hwnd.0,
+                            DWMWA_WINDOW_CORNER_PREFERENCE,
+                            &round as *const _ as *const _,
+                            std::mem::size_of::<u32>() as u32,
+                        );
+                        // Remove the DWM border colour (no black hairline border).
+                        let color: u32 = DWM_COLOR_NONE;
                         let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
                             hwnd.0,
                             DWMWA_BORDER_COLOR,
