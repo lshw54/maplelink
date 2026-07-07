@@ -370,7 +370,7 @@ export function MainPage() {
               {beansMenuOpen && (
                 <BeansPopupMenu
                   t={t}
-                  region={region}
+                  region={session?.region ?? region}
                   onRefresh={async () => {
                     const pts = await commands.getRemainPoint(activeSessionId ?? "");
                     setRemainPoint(pts);
