@@ -2049,157 +2049,117 @@ pub fn recaptcha_take_delivered() -> bool {
 const RECAPTCHA_INIT_SCRIPT: &str = r#"
 (() => {
   'use strict';
-  // recaptcha.net mirror — ONLY needed where www.google.com is blocked
-  // (mainland). It breaks the Enterprise load elsewhere because recaptcha.net
-  // does not reliably serve /recaptcha/enterprise.js, leaving
-  // `grecaptcha.render` undefined. Keep OFF until mainland support is wired
-  // (and verified against the enterprise endpoint).
-  const MIRROR_ENABLED = false;
-  const GOOGLE = 'www.google.com/recaptcha';
-  const MIRROR = 'www.recaptcha.net/recaptcha';
-  const swap = (s) =>
-    MIRROR_ENABLED && typeof s === 'string' ? s.split(GOOGLE).join(MIRROR) : s;
+  // The reCAPTCHA token is origin-locked to login.beanfun.com, so the widget is
+  // solved on beanfun's own Login/Index page. Do NOT swap www.google.com for
+  // recaptcha.net: the Enterprise endpoint 404s on the mirror, leaving
+  // grecaptcha.render undefined. (Mainland support would need that wired up and
+  // verified separately.)
 
   // Parity with the rest of the app's webviews.
   try { Object.defineProperty(navigator, 'webdriver', { get: () => false }); } catch (e) {}
 
-  const origCreate = document.createElement.bind(document);
-
-  // Replace a <script> node whose src still points at google.com.
-  const rewriteScriptNode = (node) => {
-    const next = origCreate('script');
-    for (const a of node.attributes) {
-      next.setAttribute(a.name, a.name === 'src' ? swap(a.value) : a.value);
-    }
-    if (node.parentNode) node.parentNode.replaceChild(next, node);
-  };
-
-  if (MIRROR_ENABLED) {
-    // 1a. Intercept dynamically-created <script> tags and rewrite the origin.
-    document.createElement = function (tag) {
-      const el = origCreate.apply(document, arguments);
-      if (String(tag).toLowerCase() === 'script') {
-        try {
-          const proto = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
-          if (proto && proto.set) {
-            Object.defineProperty(el, 'src', {
-              configurable: true,
-              enumerable: true,
-              get() { return proto.get.call(this); },
-              set(v) { proto.set.call(this, swap(v)); },
-            });
-          }
-          const origSetAttr = el.setAttribute.bind(el);
-          el.setAttribute = function (name, value) {
-            return origSetAttr(name, name === 'src' ? swap(value) : value);
-          };
-        } catch (e) {}
-      }
-      return el;
-    };
-
-    // 1b. Catch static <script> tags as the parser inserts them.
-    try {
-      const mo = new MutationObserver((muts) => {
-        for (const m of muts) {
-          for (const n of m.addedNodes) {
-            if (n.tagName === 'SCRIPT' && n.src && n.src.indexOf(GOOGLE) !== -1) {
-              rewriteScriptNode(n);
-            }
-          }
-        }
-      });
-      mo.observe(document.documentElement, { childList: true, subtree: true });
-    } catch (e) {}
-  }
+  const OVERLAY_Z = 999999; // MUST stay below reCAPTCHA's challenge bframe (~2e9)
 
   const onReady = () => {
-    // Sweep any static google.com reCAPTCHA scripts already in the HTML.
-    if (MIRROR_ENABLED) {
-      document
-        .querySelectorAll('script[src*="www.google.com/recaptcha"]')
-        .forEach(rewriteScriptNode);
-    }
-
     // The helper window first passes through redirect pages (default.aspx →
     // checkin → Login/Index). Only act on the actual login form.
     if (location.href.indexOf('Login/Index') === -1) return;
     console.log('[reCAPTCHA] on Login/Index, watching for token');
 
-    // 2. Trim the page down to just the reCAPTCHA — but only AFTER the widget
-    //    actually renders. If we hid the page up front and beanfun's reCAPTCHA
-    //    lost its first-load render race (works after a manual refresh), the
-    //    window would be all white. So keep the real page visible until the
-    //    widget exists, then hide everything else via the `visibility` trick
-    //    (a visible descendant shows through a hidden ancestor).
-    let trimmed = false;
-    const trimPage = () => {
-      if (trimmed) return;
-      trimmed = true;
-      // Do NOT use `visibility:hidden` on an ancestor of the reCAPTCHA: Chromium
-      // suppresses hit-testing for a cross-origin (out-of-process) iframe under
-      // a hidden subtree, so the widget would render but be unclickable. Instead
-      // lay an opaque mask BELOW reCAPTCHA's z-index (~2e9) and lift the anchor
-      // checkbox above it — everything stays interactive.
-      const mask = origCreate('div');
-      mask.id = '__rc_mask__';
-      mask.style.cssText =
-        'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#fff;z-index:1000000;';
-      (document.body || document.documentElement).appendChild(mask);
+    if (document.getElementById('__ov')) return;
 
-      // Lift the anchor checkbox above the mask. The challenge bframe popup
-      // already sits at z-index ~2e9, well above the mask, so it shows itself.
-      const style = origCreate('style');
-      style.textContent = [
-        '.g-recaptcha, iframe[src*="anchor"] {',
-        '  position: fixed !important; top: 16px !important;',
-        '  left: 50% !important; transform: translateX(-50%) !important;',
-        '  z-index: 1000001 !important;',
-        '}',
-      ].join('\n');
-      (document.head || document.documentElement).appendChild(style);
+    // (1) Lay an opaque overlay + spinner from first paint so the user never
+    //     sees beanfun's raw login page flash by.
+    const style = document.createElement('style');
+    style.textContent =
+      '#__ov{position:fixed;inset:0;z-index:' + OVERLAY_Z + ';background:#1c1712;' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;' +
+      'color:#f4ede4;font-family:system-ui,sans-serif;font-size:14px}' +
+      '#__sp{width:34px;height:34px;border-radius:50%;border:3px solid rgba(244,237,228,.25);' +
+      'border-top-color:#ff8201;animation:__r .8s linear infinite}' +
+      '@keyframes __r{to{transform:rotate(360deg)}}' +
+      '.grecaptcha-badge{z-index:' + (OVERLAY_Z + 1) + ' !important}';
+    const ov = document.createElement('div'); ov.id = '__ov';
+    const sp = document.createElement('div'); sp.id = '__sp';
+    const lb = document.createElement('div'); lb.textContent = '驗證載入中，請稍候…';
+    ov.appendChild(sp); ov.appendChild(lb);
+    (document.head || document.documentElement).appendChild(style);
+    (document.body || document.documentElement).appendChild(ov);
+
+    // (2) Detect the ANCHOR iframe (the "I'm not a robot" checkbox, not the
+    //     nine-grid bframe challenge).
+    const anchor = () =>
+      document.querySelector("iframe[src*='recaptcha'][src*='anchor']") ||
+      document.querySelector("iframe[title='reCAPTCHA']") ||
+      document.querySelector("iframe[src*='recaptcha']");
+
+    const findWidget = () => {
+      const a = anchor(); if (!a) return null;
+      let w = a.closest('.g-recaptcha');
+      if (!w) {
+        w = a;
+        for (let i = 0; i < 5 && w.parentElement && w.parentElement !== document.body; i++) {
+          w = w.parentElement;
+          if (w.offsetWidth >= 280 && w.offsetWidth <= 400) break;
+        }
+      }
+      return w;
     };
 
-    // Reload-once guard to self-heal beanfun's first-load render race.
     let store = null;
     try { store = window.sessionStorage; } catch (e) {}
     const RKEY = '__rc_reloads__';
-    const reloads = store ? (parseInt(store.getItem(RKEY) || '0', 10) || 0) : 99;
 
-    let waited = 0;
-    const renderWatch = setInterval(() => {
-      if (document.querySelector('iframe[src*="recaptcha"]')) {
-        clearInterval(renderWatch);
-        trimPage();
+    // (3) Once the widget exists, REPARENT it into the overlay. This is the only
+    //     reliable presentation: a pure z-index lift leaves the cross-origin
+    //     (out-of-process) iframe visible but unclickable (trapped in its
+    //     stacking context). Moving the iframe reloads it → the checkbox resets
+    //     to unchecked, but the user ticks the fresh one and getResponse() still
+    //     returns a fully valid token. If no widget ever renders, reveal the real
+    //     page (or, once the reload budget is spent, close so the frontend isn't
+    //     stuck on a blank helper — closing fires `recaptcha-cancelled`).
+    let placed = false;
+    const place = () => {
+      if (placed) return;
+      const w = findWidget();
+      if (w && w !== document.body && w !== document.documentElement) {
+        placed = true; clearInterval(rt);
+        w.style.position = 'relative';
+        w.style.zIndex = String(OVERLAY_Z + 2);
+        sp.remove();
+        lb.textContent = '請完成「我不是機器人」驗證';
+        ov.appendChild(w); // reparent → iframe reload → fresh checkbox
         return;
       }
-      waited += 300;
-      if (waited >= 3500) {
-        clearInterval(renderWatch);
-        if (store && reloads < 1) {
-          store.setItem(RKEY, String(reloads + 1));
-          console.warn('[reCAPTCHA] widget did not render — reloading once');
-          location.reload();
-        } else {
-          // Give up rather than leave a blank window the user must force-close.
-          // Closing fires `recaptcha-cancelled`, which unblocks the frontend.
-          console.warn('[reCAPTCHA] widget did not render (reload budget spent) — closing');
-          if (store) { try { store.removeItem(RKEY); } catch (e) {} }
-          if (window.__TAURI_INTERNALS__) {
-            window.__TAURI_INTERNALS__
-              .invoke('close_recaptcha_window')
-              .catch(() => {});
-          }
+      // Safety-net path (no widget yet). Only give up once the reload has run.
+      if (store && store.getItem(RKEY)) {
+        placed = true; clearInterval(rt);
+        try { store.removeItem(RKEY); } catch (e) {}
+        console.warn('[reCAPTCHA] widget did not render (reload budget spent) — closing');
+        if (window.__TAURI_INTERNALS__) {
+          window.__TAURI_INTERNALS__.invoke('close_recaptcha_window').catch(() => {});
         }
       }
-    }, 300);
+    };
+    const rt = setInterval(() => { if (anchor()) place(); }, 200);
+    setTimeout(place, 6000); // safety net so the spinner never sticks forever
 
-    // 3 + 4. Capture the Enterprise token once the human ticks the checkbox.
-    //    Primary source is grecaptcha.enterprise.getResponse() — beanfun is an
-    //    Enterprise checkbox and reads it straight into its XHR rather than into
-    //    a stable hidden input. Fall back to the response <textarea> / beanfun's
-    //    own field. We never fire beanfun's submit, so the token stays
-    //    unconsumed and can be replayed into AccountLogin's `Captcha` field.
+    // (3b) Self-heal beanfun's first-load render race: no reCAPTCHA iframe after
+    //      3.5s → reload once (guarded so it can't loop).
+    setTimeout(() => {
+      if (!document.querySelector("iframe[src*='recaptcha']") && store && !store.getItem(RKEY)) {
+        store.setItem(RKEY, '1');
+        console.warn('[reCAPTCHA] widget did not render — reloading once');
+        location.reload();
+      }
+    }, 3500);
+
+    // (4) Harvest the Enterprise token once the human ticks the checkbox.
+    //     Primary source is grecaptcha.enterprise.getResponse() — beanfun is an
+    //     Enterprise checkbox and reads it straight into its XHR rather than into
+    //     a stable hidden input. Fall back to the response <textarea> / beanfun's
+    //     own field. We never fire beanfun's submit, so the token stays
+    //     unconsumed and can be replayed into AccountLogin's `Captcha` field.
     const readToken = () => {
       try {
         const g = window.grecaptcha;
