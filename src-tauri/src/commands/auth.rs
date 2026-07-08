@@ -1323,12 +1323,23 @@ pub async fn open_gamepass_login(
     };
     builder = builder.data_directory(webview_data_dir.clone());
 
-    let _window = builder.build().map_err(|e| ErrorDto {
+    let window = builder.build().map_err(|e| ErrorDto {
         code: "AUTH_GAMEPASS_WINDOW_FAILED".to_string(),
         message: format!("Failed to open GamePass login window: {e}"),
         category: crate::models::error::ErrorCategory::Process,
         details: None,
     })?;
+
+    // Google / Facebook / Apple sign-in need their third-party storage and an
+    // OAuth popup. WebView2 Tracking Prevention blocks the SDK storage (see the
+    // "Tracking Prevention blocked ... connect.facebook.net / apis.google.com"
+    // errors) and the popup is blocked (POPUP_MAYBE_BLOCKED_OAUTH). Disable
+    // tracking prevention and route window.open through the main window so the
+    // provider login page loads instead of being blocked.
+    disable_tracking_prevention(&window);
+    if let Err(e) = crate::services::cookie_native::register_new_window_handler(&window) {
+        tracing::warn!("GamePass: failed to register new-window handler: {e}");
+    }
 
     // Clean up incognito temp dir when window closes (best-effort)
     if incognito {
