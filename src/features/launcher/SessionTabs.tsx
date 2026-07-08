@@ -20,6 +20,10 @@ export function SessionTabs() {
   const dragSrcIdRef = useRef<string | null>(null);
   const dragStartX = useRef(0);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // Mirror of dragOverIdx read by the mouseup handler — that handler closes over
+  // the mousedown-time render, where the state value is stale (always null), so
+  // the reorder never ran. The ref always holds the latest hovered index.
+  const dragOverIdxRef = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const entries = Array.from(sessions.values());
@@ -80,6 +84,7 @@ export function SessionTabs() {
         const rect = tab.getBoundingClientRect();
         if (ev.clientX >= rect.left && ev.clientX <= rect.right) overIdx = idx;
       });
+      dragOverIdxRef.current = overIdx;
       setDragOverIdx(overIdx);
     };
 
@@ -88,8 +93,9 @@ export function SessionTabs() {
       document.removeEventListener("mouseup", onUp);
 
       const srcId = dragSrcIdRef.current;
-      const targetIdx = dragOverIdx;
+      const targetIdx = dragOverIdxRef.current;
       dragSrcIdRef.current = null;
+      dragOverIdxRef.current = null;
       setDragOverIdx(null);
       setIsDragging(false);
 
