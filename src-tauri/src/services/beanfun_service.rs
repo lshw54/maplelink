@@ -19,16 +19,19 @@ use crate::utils::crypto::des_ecb_decrypt_hex;
 
 /// Default User-Agent for all beanfun requests — a current Chrome string
 /// (kept in sync with the session client defaults and [`SEC_CH_UA`]).
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
 /// Same modern Chrome UA, used explicitly on the TW login POSTs alongside
 /// [`SEC_CH_UA`]. Kept distinct so the login fingerprint stays pinned even if
 /// the default UA is ever changed again.
-const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
-/// Chrome client-hint brand string; the version must match [`BROWSER_UA`].
+/// Chrome client-hint brand string; the Chrome major MUST match [`BROWSER_UA`]
+/// (a version mismatch between the UA and `sec-ch-ua` is a bot signal → beanfun
+/// rejects the reCAPTCHA token and IP-locks for 15 min). Verified against real
+/// Chrome 150.
 const SEC_CH_UA: &str =
-    "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"";
+    "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"";
 
 /// Magic constant used in the OTP retrieval request.
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
