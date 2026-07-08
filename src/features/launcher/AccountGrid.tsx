@@ -98,7 +98,10 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       if (dragState.current.active) {
-        await commands.setAccountOrder(dragState.current.items.map((a) => a.id));
+        // Key the saved order on the stable serial (sn), NOT id: beanfun's `id`
+        // is a per-login encrypted token, so an id-keyed order never matches on
+        // the next login.
+        await commands.setAccountOrder(dragState.current.items.map((a) => a.sn));
         await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
       }
       setDragOrder(null);

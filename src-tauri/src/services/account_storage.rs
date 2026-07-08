@@ -236,7 +236,8 @@ pub struct DisplayOverrides {
     /// account_id → custom display name
     #[serde(default)]
     pub names: std::collections::HashMap<String, String>,
-    /// Custom account sort order (list of account IDs)
+    /// Custom account sort order (list of account serials `sn`, which are stable
+    /// across logins — unlike `id`, a per-login encrypted token).
     #[serde(default)]
     pub order: Vec<String>,
 }

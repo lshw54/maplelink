@@ -106,7 +106,7 @@ pub async fn get_game_accounts(
             overrides
                 .order
                 .iter()
-                .position(|id| id == &d.id)
+                .position(|sn| sn == &d.sn)
                 .unwrap_or(usize::MAX)
         });
     }
@@ -223,7 +223,7 @@ pub async fn refresh_accounts(
             overrides
                 .order
                 .iter()
-                .position(|id| id == &d.id)
+                .position(|sn| sn == &d.sn)
                 .unwrap_or(usize::MAX)
         });
     }
