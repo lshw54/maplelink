@@ -2268,8 +2268,12 @@ pub async fn open_recaptcha_window(
         tauri::WebviewUrl::External(url.parse().expect("static reCAPTCHA URL is valid")),
     )
     .title("Beanfun 驗證")
-    .inner_size(400.0, 550.0)
-    .resizable(false)
+    // Roomy enough that reCAPTCHA's image-challenge popup (~400px wide, opens
+    // beside the centred checkbox) isn't clipped on the right/bottom. Resizable
+    // so the user can enlarge further if a taller challenge appears.
+    .inner_size(500.0, 680.0)
+    .min_inner_size(440.0, 560.0)
+    .resizable(true)
     // Keep the native title bar so the user can always close the window — a
     // frameless window that fails to render leaves no way out and hangs the
     // login. Closing fires `recaptcha-cancelled`, which unblocks the frontend.
