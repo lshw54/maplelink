@@ -22,6 +22,14 @@
 
 ⚠️ **This is NOT an official Gamania product.** Use at your own risk. Make sure you trust where you got this from.
 
+> **📢 Parallel Development Notice (Project Status)**
+>
+> This project is developed **in parallel** with the original **[Beanfun](https://github.com/pungin/Beanfun)**, to give players a more flexible choice. The two projects have distinct goals:
+> - **MapleLink (this project)**: Built purely for *MapleStory* players. Thanks to its lightweight, rewritten-from-scratch architecture, it serves as the proving ground for **new tech experiments** and **fast triage of login issues**.
+> - **Beanfun**: Aims to support **all Gamania titles**, with continued optimization and broad, high-compatibility coverage of the whole ecosystem.
+>
+> Details: [About the parallel development of Beanfun and MapleLink (pungin/Beanfun#323)](https://github.com/pungin/Beanfun/issues/323)
+
 ## Why MapleLink?
 
 The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well but was showing its age — .NET WinForms, hard to maintain and extend. MapleLink is a ground-up rewrite built for the long run:

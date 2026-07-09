@@ -22,6 +22,14 @@
 
 ⚠️ **本程式並非遊戲橘子官方產品。** 使用前請自行評估風險，並確認下載來源是否安全。
 
+> **📢 雙線並行開發公告 (Project Status)**
+>
+> 本專案目前與原版 **[Beanfun](https://github.com/pungin/Beanfun)** 維持**雙線並行開發**，旨在為玩家提供更具彈性的選擇。雙方專案各有其明確的定位：
+> - **MapleLink (本專案)**：專為純《新楓之谷》玩家打造。由於採用由零重寫的輕量化架構，將作為**新技術實驗**與**快速排查登入異常問題**的先行區。
+> - **Beanfun**：以支援**所有橘子旗下遊戲**為目標，持續優化並提供高相容性的全生態服務。
+>
+> 詳情請參閱：[關於 Beanfun 與 MapleLink 雙線並行開發的說明 (pungin/Beanfun#323)](https://github.com/pungin/Beanfun/issues/323)
+
 ## 為什麼要做 MapleLink？
 
 原版 [Beanfun 啟動器](https://github.com/pungin/Beanfun) 使用多年，但底層架構已經老舊 — .NET WinForms，不易維護也難以擴充。MapleLink 是從零開始的全新重寫，為長期維護而設計：
