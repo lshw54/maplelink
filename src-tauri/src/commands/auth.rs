@@ -1162,6 +1162,9 @@ pub async fn open_gamepass_login(
     let (session_id, _) = state.create_session().await;
     tracing::info!("GamePass: created session {session_id}");
 
+    // Fresh flow — clear the "already finalized" guard.
+    GAMEPASS_DONE.store(false, Ordering::SeqCst);
+
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
         message: format!("Failed to get app data dir: {e}"),
@@ -1341,6 +1344,31 @@ pub async fn open_gamepass_login(
         tracing::warn!("GamePass: failed to register new-window handler: {e}");
     }
 
+    // Backend completion poll (the robust path). The injected JS tries to reach
+    // us over IPC, but beanfun's page CSP blocks ipc.localhost, so that invoke
+    // can silently fail and the login stalls on the beanfun portal without ever
+    // reaching the account list. Instead, poll the WebView2 cookie store from the
+    // backend and finalize as soon as the HttpOnly `bfWebToken` appears — exactly
+    // when the OAuth redirect lands back on the beanfun portal.
+    let poll_app = app.clone();
+    let poll_sid = session_id.clone();
+    tauri::async_runtime::spawn(async move {
+        // ~5 minutes at 500ms; the window-gone check ends it early on close.
+        for _ in 0..600 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if poll_app.get_webview_window("gamepass-login").is_none() {
+                return; // window closed (finalized elsewhere or user cancelled)
+            }
+            let st = poll_app.state::<AppState>();
+            match try_finalize_gamepass(&poll_app, st.inner(), &poll_sid, "", "").await {
+                Ok(true) => return, // finalized
+                Ok(false) => {}     // token not there yet — keep polling
+                Err(e) => tracing::debug!("GamePass poll: {}", e.message),
+            }
+        }
+        tracing::warn!("GamePass: completion poll timed out after ~5 min");
+    });
+
     // Clean up incognito temp dir when window closes (best-effort)
     if incognito {
         let app_clone = app.clone();
@@ -1379,48 +1407,75 @@ pub async fn gamepass_webview_done(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), ErrorDto> {
+    tracing::info!("=== GamePass webview_done (JS IPC) session: {session_id} ===");
+    // Delegate to the shared finalizer. `web_token` is the JS `document.cookie`
+    // value, only useful as a fallback (bfWebToken is HttpOnly so JS usually
+    // can't read it); the finalizer prefers the COM-extracted cookie.
+    let completed =
+        try_finalize_gamepass(&app, state.inner(), &session_id, &account_html, &web_token).await?;
+    if !completed {
+        tracing::info!("GamePass (JS IPC): bfWebToken not present yet — backend poll will retry");
+    }
+    Ok(())
+}
+
+/// Core GamePass completion, shared by the JS `gamepass_webview_done` IPC and the
+/// backend cookie poll. Pulls ALL WebView2 cookies (incl. HttpOnly `bfWebToken`),
+/// seeds the session jar, fetches accounts, emits `gamepass-login-complete`, and
+/// closes the window.
+///
+/// Returns `Ok(true)` once `bfWebToken` exists and the session is installed, or
+/// `Ok(false)` while it isn't there yet (the caller should keep waiting). The
+/// `GAMEPASS_DONE` guard ensures only the first caller to see the token finalizes.
+async fn try_finalize_gamepass(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    session_id: &str,
+    account_html: &str,
+    js_web_token: &str,
+) -> Result<bool, ErrorDto> {
     use tauri::Emitter;
 
-    tracing::info!("=== GamePass webview_done START (session: {session_id}) ===");
+    let ss = state.require_session(session_id).await?;
 
-    let ss = state.require_session(&session_id).await?;
+    // Extract ALL cookies from WebView2 via CookieManager (including HttpOnly).
+    let all_cookies = extract_webview2_cookies(app, "gamepass-login").await;
 
-    // Step 1: Extract ALL cookies from WebView2 via CookieManager (including HttpOnly)
-    let all_cookies = extract_webview2_cookies(&app, "gamepass-login").await;
-    tracing::info!(
-        "GamePass: extracted {} cookies from WebView2",
-        all_cookies.len()
-    );
-
-    // Find bfWebToken from the extracted cookies
+    // Find bfWebToken from the extracted cookies (fall back to the JS value only
+    // when it's a real token, not the "cookie_auth" placeholder).
     let real_web_token = all_cookies
         .iter()
         .find(|(name, _, _, _)| name == "bfWebToken")
         .map(|(_, value, _, _)| value.clone())
-        .unwrap_or_else(|| {
-            tracing::warn!("GamePass: bfWebToken not found in WebView2 cookies, using JS fallback");
-            if web_token != "cookie_auth" && !web_token.is_empty() {
-                web_token.clone()
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            if js_web_token != "cookie_auth" && !js_web_token.is_empty() {
+                Some(js_web_token.to_string())
             } else {
-                String::new()
+                None
             }
         });
 
-    if real_web_token.is_empty() {
-        tracing::error!("GamePass: no bfWebToken found anywhere");
-        let _ = app.emit(
-            "gamepass-login-error",
-            "GamePass login failed: no bfWebToken".to_string(),
-        );
-        return Ok(());
+    let Some(real_web_token) = real_web_token else {
+        // Not logged in yet — no token on any origin. Keep waiting.
+        return Ok(false);
+    };
+
+    // Only the first caller (poll vs JS IPC) that sees the token finalizes.
+    if GAMEPASS_DONE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Ok(true);
     }
 
     tracing::info!(
-        "GamePass: bfWebToken = {}...",
+        "GamePass: finalizing — {} cookies, bfWebToken = {}...",
+        all_cookies.len(),
         &real_web_token[..real_web_token.len().min(20)]
     );
 
-    // Step 2: Inject ALL cookies into the session's reqwest jar
+    // Inject ALL cookies into the session's reqwest jar
     let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
     let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
     let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
@@ -1462,12 +1517,12 @@ pub async fn gamepass_webview_done(
     .await
     .unwrap_or_else(|e| {
         tracing::warn!("GamePass: reqwest get_game_accounts failed: {e}, trying webview HTML");
-        crate::services::beanfun_service::parse_tw_account_list_html(&account_html)
+        crate::services::beanfun_service::parse_tw_account_list_html(account_html)
     });
 
     tracing::info!("GamePass: got {} accounts", accounts.len());
 
-    let dto = SessionDto::from_session(&session, &session_id);
+    let dto = SessionDto::from_session(&session, session_id);
     *ss.session.write().await = Some(session);
     *ss.game_accounts.write().await = accounts;
 
@@ -1477,8 +1532,8 @@ pub async fn gamepass_webview_done(
         let _ = win.destroy();
     }
 
-    tracing::info!("=== GamePass webview_done FINISHED ===");
-    Ok(())
+    tracing::info!("=== GamePass finalized (session installed) ===");
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -2035,6 +2090,11 @@ const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
 /// user closing the window. Without this, the destroy after phase 1 emits a
 /// spurious `recaptcha-cancelled` that can abort phase 2.
 static RECAPTCHA_DELIVERED: AtomicBool = AtomicBool::new(false);
+
+/// Set once a GamePass flow has been finalized, so the backend cookie poll and
+/// the JS `gamepass_webview_done` IPC (whichever wins the race) only complete the
+/// login once.
+static GAMEPASS_DONE: AtomicBool = AtomicBool::new(false);
 
 /// Consume the "token delivered" flag. `true` → the window closed because we
 /// captured a token (suppress cancel); `false` → user/close abort (emit cancel).
