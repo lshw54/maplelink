@@ -16,6 +16,7 @@ import type {
   WebLaunchTestCode,
   DnsStatus,
   DnsTestResult,
+  GameDownloadDto,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -148,6 +149,9 @@ export const commands = {
   // Cleanup (global)
   cleanupGameCache: () => invoke<string>("cleanup_game_cache"),
   resetWebviewData: () => invoke("reset_webview_data"),
+
+  // Official client download list (global)
+  getGameDownloadList: () => invoke<GameDownloadDto[]>("get_game_download_list"),
 
   // Network / DNS (global)
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),

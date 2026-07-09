@@ -29,6 +29,14 @@ export interface GameCredentialsDto {
   retrievedAt: string;
 }
 
+export interface GameDownloadDto {
+  id: number;
+  name: string;
+  size: string;
+  url: string;
+  kind: "game" | "patch" | "other";
+}
+
 export interface AppConfigDto {
   gamePath: string;
   locale: string;

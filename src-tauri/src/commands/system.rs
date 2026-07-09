@@ -1203,6 +1203,22 @@ async fn get_web_token_from_jar(
     Ok(token)
 }
 
+/// Fetch the official MapleStory TW client download list (full client + update
+/// patches). Read-only: returns official links only — MapleLink never downloads
+/// or replaces client files itself (issue #21).
+#[tauri::command]
+pub async fn get_game_download_list(
+) -> Result<Vec<crate::services::game_download::GameDownloadItem>, ErrorDto> {
+    crate::services::game_download::fetch_download_list()
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_DOWNLOAD_LIST_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Network,
+            details: None,
+        })
+}
+
 /// Clean up game cache directories, failed update leftovers, crash dumps,
 /// and stale DLL files from the game directory.
 ///
