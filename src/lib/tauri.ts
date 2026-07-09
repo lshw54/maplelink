@@ -153,6 +153,10 @@ export const commands = {
   // Official client download list (global)
   getGameDownloadList: () => invoke<GameDownloadDto[]>("get_game_download_list"),
 
+  // Announcement "seen" state (global; stored outside config.ini)
+  announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),
+  announcementMarkSeen: (id: string) => invoke("announcement_mark_seen", { id }),
+
   // Network / DNS (global)
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
   testDns: () => invoke<DnsTestResult>("test_dns"),

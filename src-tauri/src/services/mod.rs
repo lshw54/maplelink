@@ -1,6 +1,7 @@
 //! External interaction layer — file I/O, HTTP, process management.
 
 pub mod account_storage;
+pub mod announcement_service;
 pub mod autopaste_service;
 pub mod beanfun_service;
 pub mod config_service;
