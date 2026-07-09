@@ -10,5 +10,6 @@ export const ANNOUNCEMENT_ID = "2026-07-dual-track";
 /** Seconds the user must keep the announcement open before they can dismiss it. */
 export const ANNOUNCEMENT_FORCED_SECONDS = 30;
 
-/** External link opened from the announcement. */
+/** External links opened from the announcement. */
 export const ANNOUNCEMENT_MORE_INFO_URL = "https://github.com/pungin/Beanfun/issues/323";
+export const ANNOUNCEMENT_BEANFUN_URL = "https://github.com/pungin/Beanfun";

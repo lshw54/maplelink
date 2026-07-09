@@ -215,6 +215,9 @@ pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), Er
         "main" => (760.0, 530.0 + ANNOUNCEMENT_BAR),
         "toolbox" => (750.0, 490.0 + ANNOUNCEMENT_BAR),
         "web_launch" => (560.0, 640.0 + ANNOUNCEMENT_BAR),
+        // Temporarily enlarged while the announcement overlay is open so the
+        // wide notice card has room (restored to the page size on close).
+        "announcement" => (640.0, 700.0),
         _ => {
             return Err(ErrorDto {
                 code: "SYS_INVALID_PAGE".to_string(),

@@ -110,25 +110,34 @@ export function App() {
   // Announcement: forced-read on first launch, then a permanent reopen banner.
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [announcementForced, setAnnouncementForced] = useState(false);
+  // Enlarge the window while the wide notice is open; restore to the page size.
+  const openAnnouncementWindow = () => {
+    setAnnouncementOpen(true);
+    commands.resizeWindow("announcement").catch(() => {});
+  };
+  const closeAnnouncementWindow = () => {
+    setAnnouncementOpen(false);
+    commands.resizeWindow(useUiStore.getState().currentPage).catch(() => {});
+  };
   useEffect(() => {
     commands
       .announcementIsSeen(ANNOUNCEMENT_ID)
       .then((seen) => {
         if (!seen) {
           setAnnouncementForced(true);
-          setAnnouncementOpen(true);
+          openAnnouncementWindow();
         }
       })
       .catch(() => {});
   }, []);
   const openAnnouncement = () => {
     setAnnouncementForced(false);
-    setAnnouncementOpen(true);
+    openAnnouncementWindow();
   };
   const dismissAnnouncement = () => {
     commands.announcementMarkSeen(ANNOUNCEMENT_ID).catch(() => {});
     setAnnouncementForced(false);
-    setAnnouncementOpen(false);
+    closeAnnouncementWindow();
   };
 
   // Patcher killed notification
@@ -254,7 +263,7 @@ export function App() {
       {announcementOpen && (
         <AnnouncementModal
           forced={announcementForced}
-          onClose={() => setAnnouncementOpen(false)}
+          onClose={closeAnnouncementWindow}
           onMarkSeen={dismissAnnouncement}
         />
       )}

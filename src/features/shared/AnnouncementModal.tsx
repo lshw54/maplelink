@@ -1,18 +1,48 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { ANNOUNCEMENT_FORCED_SECONDS, ANNOUNCEMENT_MORE_INFO_URL } from "../../lib/announcement";
+import {
+  ANNOUNCEMENT_BEANFUN_URL,
+  ANNOUNCEMENT_FORCED_SECONDS,
+  ANNOUNCEMENT_MORE_INFO_URL,
+} from "../../lib/announcement";
 
 function openExternal(url: string) {
   import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
 }
 
+/** One project row: coloured dot + bold name (+ optional tag), description below. */
+function ProjectRow({
+  dot,
+  name,
+  nameClass,
+  tag,
+  desc,
+}: {
+  dot: string;
+  name: string;
+  nameClass: string;
+  tag?: string;
+  desc: string;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--tb-border)] bg-[var(--surface)] px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        <span className={`text-[13px] font-semibold ${nameClass}`}>{name}</span>
+        {tag && <span className="text-[11px] text-text-dim">（{tag}）</span>}
+      </div>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-text-dim">{desc}</p>
+    </div>
+  );
+}
+
 /**
- * Announcement overlay. Mounted fresh each time it opens (parent renders it
- * conditionally), so the countdown state initialises correctly.
+ * Announcement overlay. Mounted fresh each open (parent renders it
+ * conditionally), so the countdown initialises correctly.
  *
- * - `forced` (first launch, not yet read): a mandatory countdown runs; the modal
- *   cannot be closed until it hits zero, then the only action is "read &
- *   don't show again" which persists the seen-state.
+ * - `forced` (first launch, unread): a mandatory countdown runs; the overlay
+ *   can't be closed until it hits zero, then the only action is "read & don't
+ *   show again", which persists the seen-state.
  * - not forced (reopened from the banner): plain content with a Close button.
  */
 export function AnnouncementModal({
@@ -33,68 +63,83 @@ export function AnnouncementModal({
     return () => clearInterval(iv);
   }, [forced]);
 
-  // During the mandatory countdown the overlay is not dismissable.
   const locked = forced && secondsLeft > 0;
   const backdropClose = () => {
-    if (!locked && !forced) onClose();
+    if (!forced) onClose();
   };
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 backdrop-blur-[6px]"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 p-5 backdrop-blur-[6px]"
       onMouseDown={backdropClose}
     >
       <div
-        className="w-[380px] max-w-[92vw] rounded-[14px] border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_12px_40px_rgba(0,0,0,0.35)]"
+        className="flex w-[540px] max-w-full flex-col overflow-hidden rounded-2xl border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-[var(--tb-border)] px-5 py-3">
-          <span className="flex-1 text-sm font-bold text-[var(--text)]">
-            {t("announcement.title")}
-          </span>
+        {/* Header */}
+        <div className="flex items-center gap-2.5 border-b border-[var(--tb-border)] px-6 py-4">
+          <span className="text-lg">📢</span>
+          <span className="text-base font-bold text-[var(--text)]">{t("announcement.title")}</span>
         </div>
 
-        <div className="flex flex-col gap-3 px-5 py-4">
-          <p className="text-[12px] leading-relaxed text-text-dim">{t("announcement.intro")}</p>
+        {/* Body */}
+        <div className="flex flex-col gap-4 px-6 py-5">
+          <p className="text-[13px] leading-relaxed text-[var(--text)]">
+            {t("announcement.intro")}
+          </p>
 
-          <ul className="flex flex-col gap-2">
-            <li className="rounded-[10px] border border-[var(--tb-border)] bg-[var(--surface)] px-3 py-2 text-[12px] leading-relaxed text-[var(--text)]">
-              <span className="font-semibold text-accent">MapleLink</span>
-              <span className="text-text-dim">（{t("announcement.this_project")}）</span>：
-              {t("announcement.maplelink")}
-            </li>
-            <li className="rounded-[10px] border border-[var(--tb-border)] bg-[var(--surface)] px-3 py-2 text-[12px] leading-relaxed text-[var(--text)]">
-              <span className="font-semibold">Beanfun</span>：{t("announcement.beanfun")}
-            </li>
-          </ul>
-
-          <button
-            onClick={() => openExternal(ANNOUNCEMENT_MORE_INFO_URL)}
-            className="self-start text-[12px] text-accent underline-offset-2 transition-opacity hover:underline hover:opacity-80"
-          >
-            {t("announcement.more_info_link")} ↗
-          </button>
-
-          <div className="mt-1 flex justify-end">
-            {forced ? (
-              <button
-                disabled={locked}
-                onClick={onMarkSeen}
-                className="rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {locked
-                  ? t("announcement.reading", { seconds: String(secondsLeft) })
-                  : t("announcement.dismiss")}
-              </button>
-            ) : (
-              <button
-                onClick={onClose}
-                className="rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
-              >
-                {t("announcement.close")}
-              </button>
-            )}
+          <div className="flex flex-col gap-2.5">
+            <ProjectRow
+              dot="bg-accent"
+              name="MapleLink"
+              nameClass="text-accent"
+              tag={t("announcement.this_project")}
+              desc={t("announcement.maplelink")}
+            />
+            <ProjectRow
+              dot="bg-blue-400"
+              name="Beanfun"
+              nameClass="text-[var(--text)]"
+              desc={t("announcement.beanfun")}
+            />
           </div>
+
+          {/* Links */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+            <button
+              onClick={() => openExternal(ANNOUNCEMENT_BEANFUN_URL)}
+              className="text-[12px] font-semibold text-accent transition-opacity hover:opacity-80"
+            >
+              Beanfun ↗
+            </button>
+            <button
+              onClick={() => openExternal(ANNOUNCEMENT_MORE_INFO_URL)}
+              className="text-[12px] font-semibold text-accent transition-opacity hover:opacity-80"
+            >
+              {t("announcement.more_info_link")} ↗
+            </button>
+          </div>
+
+          {/* Action */}
+          {forced ? (
+            <button
+              disabled={locked}
+              onClick={onMarkSeen}
+              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {locked
+                ? t("announcement.reading", { seconds: String(secondsLeft) })
+                : t("announcement.dismiss")}
+            </button>
+          ) : (
+            <button
+              onClick={onClose}
+              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("announcement.close")}
+            </button>
+          )}
         </div>
       </div>
     </div>
