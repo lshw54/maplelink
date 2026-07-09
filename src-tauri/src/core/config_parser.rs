@@ -108,6 +108,14 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.skip_play_confirm =
                 parse_bool(v, "skip_play_confirm", defaults.skip_play_confirm);
         }
+        if let Some(v) = game.get("web_launch_auto_launch") {
+            config.web_launch_auto_launch =
+                parse_bool(v, "web_launch_auto_launch", defaults.web_launch_auto_launch);
+        }
+        if let Some(v) = game.get("web_launch_auto_paste") {
+            config.web_launch_auto_paste =
+                parse_bool(v, "web_launch_auto_paste", defaults.web_launch_auto_paste);
+        }
     }
 
     // --- [appearance] ---
@@ -183,6 +191,14 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "skip_play_confirm = {}\n",
         config.skip_play_confirm
+    ));
+    out.push_str(&format!(
+        "web_launch_auto_launch = {}\n",
+        config.web_launch_auto_launch
+    ));
+    out.push_str(&format!(
+        "web_launch_auto_paste = {}\n",
+        config.web_launch_auto_paste
     ));
     out.push('\n');
 
@@ -467,6 +483,8 @@ x = not_a_number
             account_view_mode: crate::models::config::AccountViewMode::List,
             auto_login: false,
             auto_launch_game: false,
+            web_launch_auto_launch: false,
+            web_launch_auto_paste: true,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

@@ -46,6 +46,8 @@ const KEY_MAP: Record<string, string> = {
   windowY: "window_y",
   windowWidth: "window_width",
   windowHeight: "window_height",
+  webLaunchAutoLaunch: "web_launch_auto_launch",
+  webLaunchAutoPaste: "web_launch_auto_paste",
   __reset__: "__reset__",
 };
 

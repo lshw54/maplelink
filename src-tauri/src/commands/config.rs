@@ -180,6 +180,12 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "autoLaunchGame" | "auto_launch_game" => {
             config.auto_launch_game = parse_bool(value)?;
         }
+        "webLaunchAutoLaunch" | "web_launch_auto_launch" => {
+            config.web_launch_auto_launch = parse_bool(value)?;
+        }
+        "webLaunchAutoPaste" | "web_launch_auto_paste" => {
+            config.web_launch_auto_paste = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

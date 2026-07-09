@@ -47,6 +47,8 @@ export interface AppConfigDto {
   accountViewMode: "card" | "list";
   autoLogin: boolean;
   autoLaunchGame: boolean;
+  webLaunchAutoLaunch: boolean;
+  webLaunchAutoPaste: boolean;
 }
 
 export interface ErrorDto {

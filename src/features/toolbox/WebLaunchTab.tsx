@@ -88,10 +88,61 @@ function TestRow({
   );
 }
 
+const GAMANIA_DOWNLOAD_URL = "https://tw.beanfun.com/ggm/index.aspx";
+
+function openExternal(url: string) {
+  import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+}
+
+/** A labelled on/off switch row for a web-launch behaviour preference. */
+function PrefToggle({
+  title,
+  hint,
+  checked,
+  onChange,
+}: {
+  title: string;
+  hint: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-3">
+      <div className="flex min-w-0 flex-col pr-3">
+        <span className="text-xs font-semibold text-[var(--text)]">{title}</span>
+        <span className="text-[11px] leading-relaxed text-text-dim">{hint}</span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-accent" : "bg-[var(--border)]"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export function WebLaunchTab() {
   const { t } = useTranslation();
   const setConfig = useSetConfig();
   const gamePath = useConfigStore((s) => s.config?.gamePath ?? "");
+  const autoLaunch = useConfigStore((s) => s.config?.webLaunchAutoLaunch ?? true);
+  const autoPaste = useConfigStore((s) => s.config?.webLaunchAutoPaste ?? true);
+
+  function setPref(key: "webLaunchAutoLaunch" | "webLaunchAutoPaste", next: boolean) {
+    const store = useConfigStore.getState();
+    if (store.config) useConfigStore.setState({ config: { ...store.config, [key]: next } });
+    setConfig.mutate({ key, value: String(next) });
+  }
   const [status, setStatus] = useState<WebLaunchStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -237,6 +288,27 @@ export function WebLaunchTab() {
       </div>
       {toggleMsg && <p className="-mt-3 px-1 text-[11px] text-text-dim">{toggleMsg}</p>}
 
+      {/* Launch behaviour preferences */}
+      <div>
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
+          {t("web_launch.section_behavior")}
+        </div>
+        <div className="flex flex-col gap-2">
+          <PrefToggle
+            title={t("web_launch.auto_launch")}
+            hint={t("web_launch.auto_launch_hint")}
+            checked={autoLaunch}
+            onChange={(next) => setPref("webLaunchAutoLaunch", next)}
+          />
+          <PrefToggle
+            title={t("web_launch.auto_paste")}
+            hint={t("web_launch.auto_paste_hint")}
+            checked={autoPaste}
+            onChange={(next) => setPref("webLaunchAutoPaste", next)}
+          />
+        </div>
+      </div>
+
       {/* Self-check list */}
       <div>
         <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
@@ -300,6 +372,16 @@ export function WebLaunchTab() {
               status?.gamaniaInstalled
                 ? t("web_launch.check_gamania_ok")
                 : t("web_launch.check_gamania_bad")
+            }
+            action={
+              !status?.gamaniaInstalled && (
+                <button
+                  onClick={() => openExternal(GAMANIA_DOWNLOAD_URL)}
+                  className="shrink-0 rounded-lg border border-accent px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-[rgba(232,162,58,0.08)]"
+                >
+                  {t("web_launch.gamania_download")}
+                </button>
+              )
             }
           />
         </div>

@@ -107,6 +107,8 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 account_view_mode: maplelink_lib::models::config::AccountViewMode::Card,
                 auto_login: false,
                 auto_launch_game: false,
+                web_launch_auto_launch: true,
+                web_launch_auto_paste: true,
             }
         },
     )

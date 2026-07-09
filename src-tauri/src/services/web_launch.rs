@@ -499,35 +499,54 @@ pub fn run_intercept(creds: InterceptCreds, quiet: bool) {
         "web-launch interception: handling beanfun game start"
     );
 
+    let (auto_launch, auto_paste) = load_web_launch_prefs();
+    tracing::info!(auto_launch, auto_paste, "web-launch: preferences");
     let game_path = load_game_path();
 
-    if !quiet {
+    // Surface the account/OTP (file + popup) whenever we are NOT going to type it
+    // in for the user — auto-paste off, or we're not opening the game at all — or
+    // when invoked directly (the .bat's own console covers the normal auto path).
+    let want_popup = !quiet || !auto_paste || !auto_launch;
+
+    if want_popup {
         // Expose the account + OTP for the user's own script (best effort).
         write_creds_file(&creds, game_path.as_deref());
     }
 
-    // Launch the real game with the exact args beanfun gave us.
-    let launched = match &game_path {
-        Some(path) => launch_game(path, &creds.raw_args),
-        None => {
-            tracing::warn!("web-launch: game_path not configured; cannot launch game");
-            false
+    // Launch the real game with the exact args beanfun gave us — unless the user
+    // opted out of auto-open.
+    let launched = if auto_launch {
+        match &game_path {
+            Some(path) => launch_game(path, &creds.raw_args),
+            None => {
+                tracing::warn!("web-launch: game_path not configured; cannot launch game");
+                false
+            }
         }
+    } else {
+        tracing::info!("web-launch: auto-open disabled by config; not launching the game");
+        false
     };
 
-    // Auto-paste in the background so any popup can appear immediately.
-    let paste_handle = if launched {
+    // Auto-paste in the background so any popup can appear immediately — unless
+    // the user opted out of auto-fill.
+    let paste_handle = if launched && auto_paste {
         let account = creds.account.clone();
         let otp = creds.otp.clone();
         Some(std::thread::spawn(move || {
             auto_paste_when_ready(&account, &otp)
         }))
     } else {
+        if launched && !auto_paste {
+            tracing::info!(
+                "web-launch: auto-fill disabled by config; leaving credentials to the user"
+            );
+        }
         None
     };
 
-    // Only prompt when invoked directly; the .bat's console handles this.
-    if !quiet {
+    // Prompt when we're not doing the full silent auto flow.
+    if want_popup {
         show_creds_popup(&creds.account, &creds.otp);
     }
 
@@ -572,6 +591,26 @@ fn show_creds_popup(account: &str, otp: &str) {
 
 #[cfg(not(target_os = "windows"))]
 fn show_creds_popup(_account: &str, _otp: &str) {}
+
+/// Read the web-launch (auto-open, auto-fill) preferences from the on-disk
+/// config without spinning up Tauri. Falls back to (on, on) if unreadable so the
+/// behaviour matches the historical always-on default.
+fn load_web_launch_prefs() -> (bool, bool) {
+    let defaults = (true, true);
+    let Ok(appdata) = std::env::var("APPDATA") else {
+        return defaults;
+    };
+    let config_path = std::path::Path::new(&appdata)
+        .join("com.maplelink.app")
+        .join("config.ini");
+    let Ok(text) = std::fs::read_to_string(&config_path) else {
+        return defaults;
+    };
+    match crate::core::config_parser::parse_ini(&text) {
+        Ok(c) => (c.web_launch_auto_launch, c.web_launch_auto_paste),
+        Err(_) => defaults,
+    }
+}
 
 /// Read `game_path` from the on-disk config without spinning up Tauri.
 fn load_game_path() -> Option<String> {

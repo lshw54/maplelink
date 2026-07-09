@@ -43,6 +43,13 @@ pub struct AppConfig {
     /// Auto-launch game after successful login (default: false).
     #[serde(default)]
     pub auto_launch_game: bool,
+    /// Web-launch (official-site one-click): auto-open the game (default: true).
+    #[serde(default = "default_true")]
+    pub web_launch_auto_launch: bool,
+    /// Web-launch (official-site one-click): auto-fill account/OTP into the game
+    /// login window (default: true).
+    #[serde(default = "default_true")]
+    pub web_launch_auto_paste: bool,
 }
 
 fn default_true() -> bool {
@@ -77,6 +84,8 @@ impl Default for AppConfig {
             account_view_mode: AccountViewMode::Card,
             auto_login: false,
             auto_launch_game: false,
+            web_launch_auto_launch: true,
+            web_launch_auto_paste: true,
         }
     }
 }
