@@ -2,7 +2,7 @@
   "app.name": "MapleLink",
   "app.loading": "載入中...",
   "app.update_banner": "v{{version}} 可用 — 點擊更新",
-  "announcement.title": "📢 開發狀態與雙線更新公告",
+  "announcement.title": "開發狀態與雙線更新公告",
   "announcement.intro": "MapleLink 目前與原版 Beanfun 維持雙線並行開發，旨在為玩家提供更具彈性的選擇。兩個專案各有明確定位：",
   "announcement.this_project": "本專案",
   "announcement.maplelink": "專為純《新楓之谷》玩家打造，採用由零重寫的輕量化架構，作為新技術實驗與快速排查登入異常問題的先行區。",

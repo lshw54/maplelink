@@ -2,7 +2,7 @@
   "app.name": "MapleLink",
   "app.loading": "Loading...",
   "app.update_banner": "v{{version}} available — click to update",
-  "announcement.title": "📢 Development Status & Parallel-Track Notice",
+  "announcement.title": "Development Status & Parallel-Track Notice",
   "announcement.intro": "MapleLink is developed in parallel with the original Beanfun, to give players a more flexible choice. The two projects have distinct goals:",
   "announcement.this_project": "this project",
   "announcement.maplelink": "Built purely for MapleStory players; a lightweight rewrite-from-scratch that serves as the proving ground for new tech experiments and fast triage of login issues.",

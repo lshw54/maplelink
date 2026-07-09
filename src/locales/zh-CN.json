@@ -2,7 +2,7 @@
   "app.name": "MapleLink",
   "app.loading": "加载中...",
   "app.update_banner": "v{{version}} 可用 — 点击更新",
-  "announcement.title": "📢 开发状态与双线更新公告",
+  "announcement.title": "开发状态与双线更新公告",
   "announcement.intro": "MapleLink 目前与原版 Beanfun 维持双线并行开发，旨在为玩家提供更具弹性的选择。两个项目各有明确定位：",
   "announcement.this_project": "本项目",
   "announcement.maplelink": "专为纯《冒险岛》玩家打造，采用由零重写的轻量化架构，作为新技术实验与快速排查登录异常问题的先行区。",
