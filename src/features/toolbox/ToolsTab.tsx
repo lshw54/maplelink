@@ -3,6 +3,7 @@ import { useTranslation } from "../../lib/i18n";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Modal } from "../shared/Modal";
+import { GameDownloadModal } from "./GameDownloadModal";
 
 const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WEEKDAYS_ZH = ["日", "一", "二", "三", "四", "五", "六"];
@@ -56,6 +57,7 @@ export function ToolsTab() {
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showWebviewConfirm, setShowWebviewConfirm] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
 
   async function doResetWebview() {
     setShowWebviewConfirm(false);
@@ -109,6 +111,24 @@ export function ToolsTab() {
               t("toolbox.tools.no_maintenance")
             )}
           </span>
+        </div>
+      </div>
+
+      {/* Game client */}
+      <div>
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
+          {t("toolbox.tools.section_client")}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <ToolCardItem
+            card={{
+              icon: "⬇️",
+              iconBg: "bg-[rgba(34,197,94,0.1)]",
+              name: t("toolbox.tools.download_client"),
+              desc: t("toolbox.tools.download_client_desc"),
+              onClick: () => setShowDownload(true),
+            }}
+          />
         </div>
       </div>
 
@@ -217,6 +237,9 @@ export function ToolsTab() {
           />
         </div>
       </div>
+
+      {/* Official client download list */}
+      <GameDownloadModal isOpen={showDownload} onClose={() => setShowDownload(false)} />
 
       {/* Cleanup confirm modal */}
       <Modal
