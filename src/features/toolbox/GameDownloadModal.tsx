@@ -20,23 +20,28 @@ function DownloadRow({ item }: { item: GameDownloadDto }) {
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-3 py-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-semibold text-[var(--text)]">{item.name}</span>
+    <div className="flex flex-col gap-2 rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-3.5 py-3">
+      {/* Full-width name so version numbers are never truncated */}
+      <span className="text-sm leading-snug font-semibold break-words text-[var(--text)]">
+        {item.name}
+      </span>
+      <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-text-dim">{item.size}</span>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={copy}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+          >
+            {copied ? t("toolbox.download.copied") : t("toolbox.download.copy")}
+          </button>
+          <button
+            onClick={() => openExternal(item.url)}
+            className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 active:scale-95"
+          >
+            {t("toolbox.download.download")}
+          </button>
+        </div>
       </div>
-      <button
-        onClick={copy}
-        className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
-      >
-        {copied ? t("toolbox.download.copied") : t("toolbox.download.copy")}
-      </button>
-      <button
-        onClick={() => openExternal(item.url)}
-        className="shrink-0 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 active:scale-95"
-      >
-        {t("toolbox.download.download")}
-      </button>
     </div>
   );
 }
