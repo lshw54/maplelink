@@ -16,7 +16,8 @@
         "label": "main",
         "title": "MAPLELINK",
         "width": 350,
-        "height": 620,
+        // 620 login page + 28 permanent announcement banner (see resize_window).
+        "height": 648,
         "decorations": false,
         "transparent": true,
         "resizable": false,

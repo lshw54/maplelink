@@ -9,6 +9,9 @@ import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
 import { Modal } from "./features/shared/Modal";
+import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
+import { AnnouncementModal } from "./features/shared/AnnouncementModal";
+import { ANNOUNCEMENT_ID } from "./lib/announcement";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -104,6 +107,30 @@ export function App() {
   // Show banner on all pages when update available and dialog dismissed
   const showBanner = !pendingUpdate && availableUpdate && !bannerDismissed;
 
+  // Announcement: forced-read on first launch, then a permanent reopen banner.
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [announcementForced, setAnnouncementForced] = useState(false);
+  useEffect(() => {
+    commands
+      .announcementIsSeen(ANNOUNCEMENT_ID)
+      .then((seen) => {
+        if (!seen) {
+          setAnnouncementForced(true);
+          setAnnouncementOpen(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+  const openAnnouncement = () => {
+    setAnnouncementForced(false);
+    setAnnouncementOpen(true);
+  };
+  const dismissAnnouncement = () => {
+    commands.announcementMarkSeen(ANNOUNCEMENT_ID).catch(() => {});
+    setAnnouncementForced(false);
+    setAnnouncementOpen(false);
+  };
+
   // Patcher killed notification
   const [patcherInfo, setPatcherInfo] = useState<{
     clientVersion: string;
@@ -192,6 +219,7 @@ export function App() {
   return (
     <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
+      <AnnouncementBanner onOpen={openAnnouncement} />
       {showBanner && (
         <div className="flex shrink-0 items-center justify-between bg-[rgba(232,162,58,0.12)] px-3 py-1.5 backdrop-blur-sm">
           <button
@@ -223,6 +251,13 @@ export function App() {
         <PageRouter />
       </main>
       <ErrorToastContainer />
+      {announcementOpen && (
+        <AnnouncementModal
+          forced={announcementForced}
+          onClose={() => setAnnouncementOpen(false)}
+          onMarkSeen={dismissAnnouncement}
+        />
+      )}
       {pendingUpdate && (
         <UpdateDialog update={pendingUpdate} onClose={() => setPendingUpdate(null)} />
       )}

@@ -331,6 +331,8 @@ pub fn run() {
             commands::system::get_web_token,
             commands::system::cleanup_game_cache,
             commands::system::get_game_download_list,
+            commands::system::announcement_is_seen,
+            commands::system::announcement_mark_seen,
             commands::auth::open_gamepass_login,
             commands::auth::gamepass_webview_done,
             commands::auth::open_regular_web_login,
