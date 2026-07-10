@@ -38,6 +38,8 @@ uuid = { version = "1", features = ["v4"] }
 # Passphrase-protected data export/import (pure Rust, no C toolchain needed).
 aes-gcm = "0.10"
 argon2 = "0.5"
+# Move an imported backup file to the OS recycle bin (user's choice).
+trash = "5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"

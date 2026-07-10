@@ -399,25 +399,44 @@ pub async fn open_import_dialog(app: tauri::AppHandle) -> Result<Option<String>,
 pub async fn import_data(
     path: String,
     passphrase: Option<String>,
+    disposal: String,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<usize, ErrorDto> {
     let result = do_import(&path, passphrase.as_deref(), state.inner()).await;
 
-    // Destroy the source backup file once the import concludes — it contains
-    // passwords in the clear (plaintext files) and has served its purpose,
-    // whether the import succeeded OR the data was invalid. Keep it ONLY while a
-    // passphrase retry may still need to re-read it (encrypted file, missing /
-    // wrong passphrase).
+    // Handle the source backup file once the import concludes (it can contain
+    // plaintext passwords). Keep it ONLY while a passphrase retry may still need
+    // to re-read it (encrypted file, missing / wrong passphrase); otherwise apply
+    // the user's chosen disposal: "delete" (permanent), "recycle" (OS trash), or
+    // "keep".
     let retryable = matches!(
         result.as_ref().err().map(|e| e.code.as_str()),
         Some("IMPORT_PASSPHRASE_REQUIRED") | Some("IMPORT_WRONG_PASSPHRASE")
     );
     if !retryable {
-        if let Err(e) = tokio::fs::remove_file(&path).await {
-            tracing::warn!("could not delete import file {path}: {e}");
-        }
+        dispose_import_file(&path, &disposal).await;
     }
     result
+}
+
+/// Apply the user's chosen disposal to the imported backup file.
+async fn dispose_import_file(path: &str, disposal: &str) {
+    match disposal {
+        "keep" => {}
+        "recycle" => {
+            let p = path.to_string();
+            let res = tokio::task::spawn_blocking(move || trash::delete(&p)).await;
+            if let Ok(Err(e)) = res {
+                tracing::warn!("could not move import file {path} to recycle bin: {e}");
+            }
+        }
+        // "delete" (and any unexpected value) → permanent delete.
+        _ => {
+            if let Err(e) = tokio::fs::remove_file(path).await {
+                tracing::warn!("could not delete import file {path}: {e}");
+            }
+        }
+    }
 }
 
 async fn do_import(

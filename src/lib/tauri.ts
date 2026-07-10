@@ -164,8 +164,8 @@ export const commands = {
   exportData: (passphrase?: string) =>
     invoke<boolean>("export_data", { passphrase: passphrase ?? null }),
   openImportDialog: () => invoke<string | null>("open_import_dialog"),
-  importData: (path: string, passphrase?: string) =>
-    invoke<number>("import_data", { path, passphrase: passphrase ?? null }),
+  importData: (path: string, disposal: "delete" | "recycle" | "keep", passphrase?: string) =>
+    invoke<number>("import_data", { path, disposal, passphrase: passphrase ?? null }),
 
   // Network / DNS (global)
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),

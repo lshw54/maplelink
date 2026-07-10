@@ -16,6 +16,10 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
   const [encrypt, setEncrypt] = useState(false);
   const [exportPass, setExportPass] = useState("");
 
+  // Disposal choice (shown after picking a file, before importing)
+  const [disposalPath, setDisposalPath] = useState<string | null>(null);
+  const [disposal, setDisposal] = useState<"recycle" | "delete" | "keep">("recycle");
+
   // Import passphrase modal (opened only when the file is encrypted)
   const [importPath, setImportPath] = useState<string | null>(null);
   const [importPass, setImportPass] = useState("");
@@ -47,13 +51,17 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
 
   async function startImport() {
     const path = await commands.openImportDialog().catch(() => null);
-    if (path) await runImport(path, undefined);
+    if (path) {
+      setDisposal("recycle");
+      setDisposalPath(path); // open the disposal-choice modal first
+    }
   }
 
-  async function runImport(path: string, passphrase?: string) {
+  async function runImport(path: string, disp: "recycle" | "delete" | "keep", passphrase?: string) {
     setBusy(true);
     try {
-      const n = await commands.importData(path, passphrase);
+      const n = await commands.importData(path, disp, passphrase);
+      setDisposalPath(null);
       setImportPath(null);
       setImportPass("");
       setImportErr(null);
@@ -62,11 +70,13 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
     } catch (e) {
       const code = (e as { code?: string })?.code;
       if (code === "IMPORT_PASSPHRASE_REQUIRED") {
-        setImportPath(path); // prompt for the passphrase
+        setDisposalPath(null); // encrypted → move on to the passphrase prompt
+        setImportPath(path);
         setImportErr(null);
       } else if (code === "IMPORT_WRONG_PASSPHRASE") {
         setImportErr(t("data.import_wrong_pass"));
       } else {
+        setDisposalPath(null);
         setImportPath(null);
         flash(false, t("data.import_failed"));
       }
@@ -175,6 +185,55 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
         </div>
       </Modal>
 
+      {/* Disposal choice — how to handle the source file after importing */}
+      <Modal
+        isOpen={disposalPath !== null}
+        onClose={() => setDisposalPath(null)}
+        title={t("data.import_title")}
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-[12px] leading-relaxed text-text-dim">
+            {t("data.import_disposal_hint")}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {(["recycle", "delete", "keep"] as const).map((opt) => (
+              <label
+                key={opt}
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-[12px] transition-colors select-none ${
+                  disposal === opt
+                    ? "border-accent bg-[var(--surface-hover)] text-[var(--text)]"
+                    : "border-border text-text-dim hover:border-accent/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="disposal"
+                  checked={disposal === opt}
+                  onChange={() => setDisposal(opt)}
+                  className="mt-0.5 accent-[var(--accent)]"
+                />
+                <span>{t(`data.disposal_${opt}`)}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setDisposalPath(null)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={() => disposalPath && runImport(disposalPath, disposal)}
+              disabled={busy}
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {t("data.import_btn")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Import passphrase */}
       <Modal
         isOpen={importPath !== null}
@@ -189,7 +248,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
             placeholder={t("data.pass_placeholder")}
             autoComplete="off"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && importPath) runImport(importPath, importPass);
+              if (e.key === "Enter" && importPath) runImport(importPath, disposal, importPass);
             }}
             autoFocus
             className="w-full rounded-lg border border-border bg-[var(--surface)] py-2 pr-9 pl-3 text-xs text-[var(--text)] outline-none focus:border-accent"
@@ -203,7 +262,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
               {t("common.cancel")}
             </button>
             <button
-              onClick={() => importPath && runImport(importPath, importPass)}
+              onClick={() => importPath && runImport(importPath, disposal, importPass)}
               disabled={busy || !importPass}
               className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
