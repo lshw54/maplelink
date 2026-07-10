@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { ImportExportBar } from "./ImportExportBar";
 import type { SavedAccountDto } from "../../lib/types";
 
 type RegionFilter = "" | "HK" | "TW";
@@ -11,12 +12,13 @@ export function AccountManagerTab() {
   const [filter, setFilter] = useState<RegionFilter>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    commands
-      .getAllSavedAccounts()
-      .then(setAllAccounts)
-      .catch(() => {});
+  const refresh = useCallback(() => {
+    commands.getAllSavedAccounts().then(setAllAccounts).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const filtered = filter ? allAccounts.filter((a) => a.region === filter) : allAccounts;
 
@@ -40,28 +42,31 @@ export function AccountManagerTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Header + filter */}
+      {/* Header: title + export / import */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-[var(--text)]">
           {t("toolbox.account_manager.saved")}
         </span>
-        <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-          {FILTERS.map((f, i) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`px-2.5 py-1 text-[12px] font-semibold tracking-[0.3px] transition-all ${
-                i < FILTERS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-              } ${
-                filter === f.value
-                  ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
-                  : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <ImportExportBar onImported={refresh} />
+      </div>
+
+      {/* Region filter */}
+      <div className="flex self-start overflow-hidden rounded-lg border border-[var(--tb-border)]">
+        {FILTERS.map((f, i) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            className={`px-2.5 py-1 text-[12px] font-semibold tracking-[0.3px] transition-all ${
+              i < FILTERS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
+            } ${
+              filter === f.value
+                ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
+                : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* Account list */}

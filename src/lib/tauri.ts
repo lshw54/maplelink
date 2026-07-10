@@ -160,6 +160,13 @@ export const commands = {
   // Window close behaviour ("quit" | "tray")
   resolveAppClose: (action: "quit" | "tray") => invoke("resolve_app_close", { action }),
 
+  // Data export / import (accounts + display overrides)
+  exportData: (passphrase?: string) =>
+    invoke<boolean>("export_data", { passphrase: passphrase ?? null }),
+  openImportDialog: () => invoke<string | null>("open_import_dialog"),
+  importData: (path: string, passphrase?: string) =>
+    invoke<number>("import_data", { path, passphrase: passphrase ?? null }),
+
   // Network / DNS (global)
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
   testDns: () => invoke<DnsTestResult>("test_dns"),

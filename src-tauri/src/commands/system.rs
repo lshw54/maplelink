@@ -314,6 +314,157 @@ pub async fn open_file_dialog(
     })
 }
 
+/// Export saved accounts + display overrides to a portable file the user picks.
+/// `passphrase = None` writes plaintext JSON; `Some(p)` writes an AES-256-GCM
+/// encrypted envelope. Returns `false` if the user cancelled the save dialog.
+#[tauri::command]
+pub async fn export_data(
+    passphrase: Option<String>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<bool, ErrorDto> {
+    use crate::services::data_transfer::{build_export, ExportPayload};
+
+    let payload = ExportPayload {
+        accounts: state.saved_accounts.read().await.clone(),
+        display_overrides: state.display_overrides.read().await.clone(),
+    };
+    let contents = build_export(&payload, passphrase.as_deref()).map_err(|e| ErrorDto {
+        code: "SYS_EXPORT_FAILED".to_string(),
+        message: e,
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+
+    let default_name = format!(
+        "maplelink-backup-{}.json",
+        chrono::Local::now().format("%Y%m%d")
+    );
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    app.dialog()
+        .file()
+        .add_filter("JSON", &["json"])
+        .set_title("Export MapleLink data")
+        .set_file_name(&default_name)
+        .save_file(move |path| {
+            let _ = tx.send(path.map(|p| p.to_string()));
+        });
+    let path = rx.await.map_err(|_| ErrorDto {
+        code: "SYS_DIALOG_FAILED".to_string(),
+        message: "Save dialog was cancelled unexpectedly".to_string(),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+    let Some(path) = path else {
+        return Ok(false);
+    };
+
+    tokio::fs::write(&path, contents)
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_EXPORT_WRITE_FAILED".to_string(),
+            message: format!("failed to write export file: {e}"),
+            category: ErrorCategory::FileSystem,
+            details: None,
+        })?;
+    tracing::info!("exported {} accounts to {path}", payload.accounts.len());
+    Ok(true)
+}
+
+/// Open a file picker to choose a backup to import. Returns the path, or `None`
+/// if cancelled.
+#[tauri::command]
+pub async fn open_import_dialog(app: tauri::AppHandle) -> Result<Option<String>, ErrorDto> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    app.dialog()
+        .file()
+        .add_filter("JSON", &["json"])
+        .set_title("Import MapleLink data")
+        .pick_file(move |path| {
+            let _ = tx.send(path.map(|p| p.to_string()));
+        });
+    rx.await.map_err(|_| ErrorDto {
+        code: "SYS_DIALOG_FAILED".to_string(),
+        message: "File dialog was cancelled unexpectedly".to_string(),
+        category: ErrorCategory::Process,
+        details: None,
+    })
+}
+
+/// Import accounts + display overrides from a backup file at `path`. Merges into
+/// existing data (imported entries upsert by region+account). Returns the number
+/// of accounts imported. Error code `IMPORT_PASSPHRASE_REQUIRED` when the file is
+/// encrypted and no passphrase was given; `IMPORT_WRONG_PASSPHRASE` on a bad one.
+#[tauri::command]
+pub async fn import_data(
+    path: String,
+    passphrase: Option<String>,
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<usize, ErrorDto> {
+    let contents = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_IMPORT_READ_FAILED".to_string(),
+            message: format!("failed to read backup file: {e}"),
+            category: ErrorCategory::FileSystem,
+            details: None,
+        })?;
+
+    let payload = crate::services::data_transfer::parse_import(&contents, passphrase.as_deref())
+        .map_err(|e| {
+            let code = match e.as_str() {
+                "PASSPHRASE_REQUIRED" => "IMPORT_PASSPHRASE_REQUIRED",
+                "WRONG_PASSPHRASE" => "IMPORT_WRONG_PASSPHRASE",
+                _ => "SYS_IMPORT_PARSE_FAILED",
+            };
+            ErrorDto {
+                code: code.to_string(),
+                message: e,
+                category: ErrorCategory::Configuration,
+                details: None,
+            }
+        })?;
+
+    // Merge saved accounts (imported upsert by region + account).
+    {
+        let mut accounts = state.saved_accounts.write().await;
+        for imported in &payload.accounts {
+            accounts.retain(|a| !(a.region == imported.region && a.account == imported.account));
+            accounts.push(imported.clone());
+        }
+        crate::services::account_storage::save_accounts(&state.accounts_path, &accounts)
+            .await
+            .map_err(|e| ErrorDto {
+                code: "SYS_IMPORT_SAVE_FAILED".to_string(),
+                message: e,
+                category: ErrorCategory::FileSystem,
+                details: None,
+            })?;
+    }
+
+    // Merge display overrides (names override; order replaced if the import has one).
+    {
+        let mut ov = state.display_overrides.write().await;
+        for (k, v) in &payload.display_overrides.names {
+            ov.names.insert(k.clone(), v.clone());
+        }
+        if !payload.display_overrides.order.is_empty() {
+            ov.order = payload.display_overrides.order.clone();
+        }
+        crate::services::account_storage::save_display_overrides(&state.overrides_path, &ov)
+            .await
+            .map_err(|e| ErrorDto {
+                code: "SYS_IMPORT_SAVE_FAILED".to_string(),
+                message: e,
+                category: ErrorCategory::FileSystem,
+                details: None,
+            })?;
+    }
+
+    tracing::info!("imported {} accounts from {path}", payload.accounts.len());
+    Ok(payload.accounts.len())
+}
+
 /// Return the application version from `Cargo.toml`.
 #[tauri::command]
 pub fn get_app_version() -> String {
