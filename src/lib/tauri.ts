@@ -157,6 +157,9 @@ export const commands = {
   announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),
   announcementMarkSeen: (id: string) => invoke("announcement_mark_seen", { id }),
 
+  // Window close behaviour ("quit" | "tray")
+  resolveAppClose: (action: "quit" | "tray") => invoke("resolve_app_close", { action }),
+
   // Network / DNS (global)
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
   testDns: () => invoke<DnsTestResult>("test_dns"),

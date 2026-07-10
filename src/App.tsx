@@ -4,13 +4,14 @@ import { useTranslation } from "./lib/i18n";
 import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
-import { useConfig } from "./lib/hooks/use-config";
+import { useConfig, useSetConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
 import { Modal } from "./features/shared/Modal";
 import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
 import { AnnouncementModal } from "./features/shared/AnnouncementModal";
+import { CloseDialog } from "./features/shared/CloseDialog";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
@@ -140,6 +141,24 @@ export function App() {
     closeAnnouncementWindow();
   };
 
+  // Close behaviour: when set to "ask", the backend intercepts the close and
+  // emits this event so we can prompt quit vs. minimize-to-tray.
+  const setConfig = useSetConfig();
+  const [closePrompt, setClosePrompt] = useState(false);
+  useEffect(() => {
+    const unlisten = listen("app-close-requested", () => setClosePrompt(true));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+  const handleCloseChoice = async (action: "quit" | "tray", remember: boolean) => {
+    if (remember) {
+      await setConfig.mutateAsync({ key: "closeBehavior", value: action }).catch(() => {});
+    }
+    setClosePrompt(false);
+    commands.resolveAppClose(action).catch(() => {});
+  };
+
   // Patcher killed notification
   const [patcherInfo, setPatcherInfo] = useState<{
     clientVersion: string;
@@ -266,6 +285,9 @@ export function App() {
           onClose={closeAnnouncementWindow}
           onMarkSeen={dismissAnnouncement}
         />
+      )}
+      {closePrompt && (
+        <CloseDialog onCancel={() => setClosePrompt(false)} onChoose={handleCloseChoice} />
       )}
       {pendingUpdate && (
         <UpdateDialog update={pendingUpdate} onClose={() => setPendingUpdate(null)} />

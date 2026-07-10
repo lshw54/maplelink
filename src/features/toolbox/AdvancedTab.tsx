@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
@@ -109,6 +109,22 @@ export function AdvancedTab() {
       <p className="px-1 text-[11px] leading-relaxed text-text-faint">
         {t("settings.traditional_login_desc")}
       </p>
+
+      {/* Window close behaviour */}
+      <SettingRow label={t("settings.close_behavior")}>
+        <Dropdown
+          value={config?.closeBehavior ?? "ask"}
+          options={[
+            { value: "ask", label: t("settings.close_ask") },
+            { value: "quit", label: t("settings.close_quit") },
+            { value: "tray", label: t("settings.close_tray") },
+          ]}
+          onChange={(v) => setConfig.mutate({ key: "close_behavior", value: v })}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.close_behavior_desc")}
+      </p>
     </div>
   );
 }
@@ -118,6 +134,71 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
     <div className="flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-3 transition-all hover:translate-y-[-1px]">
       <span className="text-xs font-semibold text-[var(--text)]">{label}</span>
       {children}
+    </div>
+  );
+}
+
+/** Theme-styled dropdown (the native <select> popup ignores the dark theme). */
+function Dropdown({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-lg border border-border bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text)] transition-colors hover:border-accent"
+      >
+        {current?.label ?? value}
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="text-text-dim">
+          <path
+            d="M3 4.5L6 7.5L9 4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-hover)] ${
+                o.value === value ? "font-semibold text-accent" : "text-[var(--text)]"
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

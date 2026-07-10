@@ -94,6 +94,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("auto_launch_game") {
             config.auto_launch_game = parse_bool(v, "auto_launch_game", defaults.auto_launch_game);
         }
+        if let Some(v) = general.get("close_behavior") {
+            config.close_behavior = parse_close_behavior(v);
+        }
     }
 
     // --- [game] ---
@@ -182,6 +185,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     ));
     out.push_str(&format!("auto_login = {}\n", config.auto_login));
     out.push_str(&format!("auto_launch_game = {}\n", config.auto_launch_game));
+    out.push_str(&format!(
+        "close_behavior = {}\n",
+        close_behavior_to_str(&config.close_behavior)
+    ));
     out.push('\n');
 
     // [game]
@@ -385,6 +392,24 @@ fn account_view_mode_to_str(mode: &AccountViewMode) -> &'static str {
     }
 }
 
+fn parse_close_behavior(value: &str) -> crate::models::config::CloseBehavior {
+    use crate::models::config::CloseBehavior;
+    match value.to_lowercase().as_str() {
+        "quit" => CloseBehavior::Quit,
+        "tray" => CloseBehavior::Tray,
+        _ => CloseBehavior::Ask,
+    }
+}
+
+fn close_behavior_to_str(mode: &crate::models::config::CloseBehavior) -> &'static str {
+    use crate::models::config::CloseBehavior;
+    match mode {
+        CloseBehavior::Ask => "ask",
+        CloseBehavior::Quit => "quit",
+        CloseBehavior::Tray => "tray",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -485,6 +510,7 @@ x = not_a_number
             auto_launch_game: false,
             web_launch_auto_launch: false,
             web_launch_auto_paste: true,
+            close_behavior: crate::models::config::CloseBehavior::Tray,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

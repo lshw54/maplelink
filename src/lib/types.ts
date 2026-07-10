@@ -57,6 +57,7 @@ export interface AppConfigDto {
   autoLaunchGame: boolean;
   webLaunchAutoLaunch: boolean;
   webLaunchAutoPaste: boolean;
+  closeBehavior: "ask" | "quit" | "tray";
 }
 
 export interface ErrorDto {
