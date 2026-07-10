@@ -117,6 +117,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 web_launch_auto_launch: true,
                 web_launch_auto_paste: true,
                 close_behavior: maplelink_lib::models::config::CloseBehavior::Ask,
+                hide_account_names: false,
             }
         },
     )

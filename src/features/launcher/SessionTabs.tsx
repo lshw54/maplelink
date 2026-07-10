@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useAuthStore, type SessionEntry } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 
 export function SessionTabs() {
@@ -11,6 +12,11 @@ export function SessionTabs() {
   const setActiveSessionId = useAuthStore((s) => s.setActiveSessionId);
   const removeSession = useAuthStore((s) => s.removeSession);
   const setPage = useUiStore((s) => s.setPage);
+  const mask = useConfigStore((s) =>
+    s.config?.hideAccountNames
+      ? "blur-[5px] transition-[filter] duration-150 select-none hover:blur-none"
+      : "",
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -160,7 +166,7 @@ export function SessionTabs() {
                 autoFocus
               />
             ) : (
-              <span className="max-w-[100px] truncate">{entry.session.accountName}</span>
+              <span className={`max-w-[100px] truncate ${mask}`}>{entry.session.accountName}</span>
             )}
             <span className="text-[9px] text-text-faint">{entry.session.region}</span>
             {!isEditing && (
