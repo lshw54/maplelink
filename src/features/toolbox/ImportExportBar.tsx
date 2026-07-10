@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { Modal } from "../shared/Modal";
+import { PasswordInput } from "../shared/PasswordInput";
 
 /** Export / import saved accounts + display overrides (plaintext or passphrase-
  *  encrypted). `onImported` re-fetches the account list after a successful import. */
@@ -148,13 +149,12 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
             {t("data.export_encrypt")}
           </label>
           {encrypt && (
-            <input
-              type="password"
+            <PasswordInput
               value={exportPass}
               onChange={(e) => setExportPass(e.target.value)}
               placeholder={t("data.pass_placeholder")}
               autoComplete="new-password"
-              className="rounded-lg border border-border bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-accent"
+              className="w-full rounded-lg border border-border bg-[var(--surface)] py-2 pr-9 pl-3 text-xs text-[var(--text)] outline-none focus:border-accent"
             />
           )}
           <div className="flex justify-end gap-2">
@@ -183,8 +183,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
       >
         <div className="flex flex-col gap-3">
           <p className="text-[12px] leading-relaxed text-text-dim">{t("data.import_pass_hint")}</p>
-          <input
-            type="password"
+          <PasswordInput
             value={importPass}
             onChange={(e) => setImportPass(e.target.value)}
             placeholder={t("data.pass_placeholder")}
@@ -193,7 +192,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
               if (e.key === "Enter" && importPath) runImport(importPath, importPass);
             }}
             autoFocus
-            className="rounded-lg border border-border bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-accent"
+            className="w-full rounded-lg border border-border bg-[var(--surface)] py-2 pr-9 pl-3 text-xs text-[var(--text)] outline-none focus:border-accent"
           />
           {importErr && <p className="text-[11px] text-red-400">{importErr}</p>}
           <div className="flex justify-end gap-2">

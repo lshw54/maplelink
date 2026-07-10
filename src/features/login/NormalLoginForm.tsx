@@ -3,6 +3,7 @@ import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
+import { PasswordInput } from "../shared/PasswordInput";
 import type { SavedAccountDto } from "../../lib/types";
 
 const FORGOT_PWD_URLS: Record<string, string> = {
@@ -325,16 +326,15 @@ export function NormalLoginForm({
         >
           {t("login.password")}
         </label>
-        <input
+        <PasswordInput
           id="login-password"
-          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={isLoading}
           placeholder={t("login.password_placeholder")}
           autoComplete="new-password"
           data-form-type="other"
-          className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-border bg-[var(--surface)] py-2.5 pr-9 pl-3.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
         />
       </div>
 
