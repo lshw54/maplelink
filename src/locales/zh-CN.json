@@ -232,7 +232,6 @@
   "toolbox.account_manager.remember": "记住密码",
   "toolbox.account_manager.region": "地区",
   "toolbox.account_manager.delete": "删除账号",
-  "data.section": "数据备份（导出／导入）",
   "data.export": "导出数据",
   "data.import": "导入数据",
   "data.export_title": "导出数据",

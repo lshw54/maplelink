@@ -93,7 +93,12 @@ pub fn parse_import(data: &str, passphrase: Option<&str>) -> Result<ExportPayloa
         .unwrap_or(false);
 
     if !encrypted {
-        // Extra envelope fields (app/version/...) are ignored by ExportPayload.
+        // Beanfun's own export uses parallel arrays — detect + convert it.
+        if value.get("accountList").is_some() {
+            return parse_beanfun(&value).ok_or_else(|| "bad Beanfun export file".to_string());
+        }
+        // Otherwise our own plaintext envelope (extra fields like app/version are
+        // ignored by ExportPayload).
         return serde_json::from_value(value).map_err(|e| format!("bad backup payload: {e}"));
     }
 
@@ -114,6 +119,56 @@ pub fn parse_import(data: &str, passphrase: Option<&str>) -> Result<ExportPayloa
     let key = derive_key(pass, &salt)?;
     let plain = aes_decrypt(&key, &nonce, &ciphertext)?;
     serde_json::from_slice(&plain).map_err(|e| format!("bad backup payload: {e}"))
+}
+
+/// Convert Beanfun's own export (parallel arrays) into our payload. Fields we
+/// don't have (`accountNameList`, `methodList`, `autoLoginList`, `lastLoginAtList`)
+/// are ignored.
+fn parse_beanfun(value: &serde_json::Value) -> Option<ExportPayload> {
+    let accounts = value.get("accountList")?.as_array()?;
+    let arr = |k: &str| value.get(k).and_then(|v| v.as_array());
+    let regions = arr("regionList");
+    let passwords = arr("passwdList");
+    let verifies = arr("verifyList");
+    let str_at = |a: Option<&Vec<serde_json::Value>>, i: usize| -> String {
+        a.and_then(|a| a.get(i))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+
+    let mut out = Vec::new();
+    for (i, acc) in accounts.iter().enumerate() {
+        let account = acc.as_str().unwrap_or("").trim().to_string();
+        if account.is_empty() {
+            continue;
+        }
+        let region = {
+            let r = str_at(regions, i);
+            if r == "HK" || r == "TW" {
+                r
+            } else {
+                "HK".to_string()
+            }
+        };
+        let password = str_at(passwords, i);
+        let verify = str_at(verifies, i);
+        out.push(SavedAccount {
+            region,
+            account,
+            remember_password: !password.is_empty(),
+            password,
+            verify_info: if verify.is_empty() {
+                None
+            } else {
+                Some(verify)
+            },
+        });
+    }
+    Some(ExportPayload {
+        accounts: out,
+        display_overrides: DisplayOverrides::default(),
+    })
 }
 
 fn random_bytes(n: usize) -> Vec<u8> {
@@ -174,6 +229,28 @@ mod tests {
         let back = parse_import(&s, None).unwrap();
         assert_eq!(back.accounts.len(), 1);
         assert_eq!(back.accounts[0].password, "s3cret");
+    }
+
+    #[test]
+    fn imports_beanfun_export() {
+        let beanfun = r#"{
+            "regionList": ["HK", "TW"],
+            "accountList": ["a@x.com", "user2"],
+            "accountNameList": ["", ""],
+            "passwdList": ["pw1", "pw2"],
+            "verifyList": ["", "vf@x.com"],
+            "methodList": [0, 0],
+            "autoLoginList": [false, false],
+            "lastLoginAtList": ["2026-07-10T13:59:44.877Z", ""]
+        }"#;
+        let p = parse_import(beanfun, None).unwrap();
+        assert_eq!(p.accounts.len(), 2);
+        assert_eq!(p.accounts[0].region, "HK");
+        assert_eq!(p.accounts[0].account, "a@x.com");
+        assert_eq!(p.accounts[0].password, "pw1");
+        assert_eq!(p.accounts[0].verify_info, None);
+        assert_eq!(p.accounts[1].region, "TW");
+        assert_eq!(p.accounts[1].verify_info.as_deref(), Some("vf@x.com"));
     }
 
     #[test]

@@ -232,7 +232,6 @@
   "toolbox.account_manager.remember": "Remember Password",
   "toolbox.account_manager.region": "Region",
   "toolbox.account_manager.delete": "Delete Account",
-  "data.section": "Backup (export / import)",
   "data.export": "Export data",
   "data.import": "Import data",
   "data.export_title": "Export data",

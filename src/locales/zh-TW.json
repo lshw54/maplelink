@@ -232,7 +232,6 @@
   "toolbox.account_manager.remember": "記住密碼",
   "toolbox.account_manager.region": "地區",
   "toolbox.account_manager.delete": "刪除帳號",
-  "data.section": "資料備份（匯出／匯入）",
   "data.export": "匯出資料",
   "data.import": "匯入資料",
   "data.export_title": "匯出資料",

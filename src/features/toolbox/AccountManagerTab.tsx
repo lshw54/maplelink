@@ -42,28 +42,31 @@ export function AccountManagerTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Header + filter */}
+      {/* Header: title + export / import */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-[var(--text)]">
           {t("toolbox.account_manager.saved")}
         </span>
-        <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-          {FILTERS.map((f, i) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`px-2.5 py-1 text-[12px] font-semibold tracking-[0.3px] transition-all ${
-                i < FILTERS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-              } ${
-                filter === f.value
-                  ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
-                  : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <ImportExportBar onImported={refresh} />
+      </div>
+
+      {/* Region filter */}
+      <div className="flex self-start overflow-hidden rounded-lg border border-[var(--tb-border)]">
+        {FILTERS.map((f, i) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            className={`px-2.5 py-1 text-[12px] font-semibold tracking-[0.3px] transition-all ${
+              i < FILTERS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
+            } ${
+              filter === f.value
+                ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
+                : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* Account list */}
@@ -157,14 +160,6 @@ export function AccountManagerTab() {
           })}
         </div>
       )}
-
-      {/* Backup: export / import all saved data */}
-      <div className="mt-1 border-t border-[var(--tb-border)] pt-3">
-        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
-          {t("data.section")}
-        </div>
-        <ImportExportBar onImported={refresh} />
-      </div>
     </div>
   );
 }

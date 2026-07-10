@@ -75,27 +75,39 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex gap-2">
-        <button
-          onClick={() => setExportOpen(true)}
-          disabled={busy}
-          className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
-        >
-          {t("data.export")}
-        </button>
-        <button
-          onClick={startImport}
-          disabled={busy}
-          className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
-        >
-          {t("data.import")}
-        </button>
-      </div>
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => setExportOpen(true)}
+        disabled={busy}
+        title={t("data.export")}
+        className="flex items-center gap-1 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+      >
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 8V2M6 2L3.5 4.5M6 2l2.5 2.5M2.5 9.5h7" />
+        </svg>
+        {t("data.export")}
+      </button>
+      <button
+        onClick={startImport}
+        disabled={busy}
+        title={t("data.import")}
+        className="flex items-center gap-1 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+      >
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2v6M6 8L3.5 5.5M6 8l2.5-2.5M2.5 9.5h7" />
+        </svg>
+        {t("data.import")}
+      </button>
       {msg && (
-        <p className={`px-1 text-[11px] ${msg.ok ? "text-green-500" : "text-red-400"}`}>
+        <div
+          className={`fixed bottom-4 left-1/2 z-[130] -translate-x-1/2 rounded-lg px-3 py-1.5 text-[12px] font-semibold shadow-lg ${
+            msg.ok
+              ? "bg-[rgba(34,197,94,0.15)] text-green-500"
+              : "bg-[rgba(239,68,68,0.15)] text-red-400"
+          }`}
+        >
           {msg.text}
-        </p>
+        </div>
       )}
 
       {/* Export options */}
