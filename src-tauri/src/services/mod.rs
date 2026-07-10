@@ -6,6 +6,7 @@ pub mod autopaste_service;
 pub mod beanfun_service;
 pub mod config_service;
 pub mod cookie_native;
+pub mod data_transfer;
 pub mod game_download;
 pub mod log_service;
 pub mod lr_service;

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { ImportExportBar } from "./ImportExportBar";
 import type { SavedAccountDto } from "../../lib/types";
 
 type RegionFilter = "" | "HK" | "TW";
@@ -11,12 +12,13 @@ export function AccountManagerTab() {
   const [filter, setFilter] = useState<RegionFilter>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    commands
-      .getAllSavedAccounts()
-      .then(setAllAccounts)
-      .catch(() => {});
+  const refresh = useCallback(() => {
+    commands.getAllSavedAccounts().then(setAllAccounts).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const filtered = filter ? allAccounts.filter((a) => a.region === filter) : allAccounts;
 
@@ -155,6 +157,14 @@ export function AccountManagerTab() {
           })}
         </div>
       )}
+
+      {/* Backup: export / import all saved data */}
+      <div className="mt-1 border-t border-[var(--tb-border)] pt-3">
+        <div className="mb-2 text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
+          {t("data.section")}
+        </div>
+        <ImportExportBar onImported={refresh} />
+      </div>
     </div>
   );
 }
