@@ -175,6 +175,80 @@ pub fn register_new_window_handler(_webview_window: &tauri::WebviewWindow) -> Re
     Ok(())
 }
 
+/// Register a `NewWindowRequested` handler that lets WebView2 open a REAL popup
+/// window (with a proper `window.opener`) instead of navigating or blocking.
+///
+/// Popup-based OAuth (Google / Facebook / Apple on the GamePass login) opens a
+/// popup, completes the sign-in, then `postMessage`s back to its opener and
+/// `window.close()`s. That only works if the popup is a genuine WebView2 popup.
+/// wry's default handler blocks `window.open` (sets `Handled = true`, so the page
+/// logs `POPUP_MAYBE_BLOCKED_OAUTH`); our handler runs afterwards and sets
+/// `Handled = false`, which reverts the block and lets WebView2 open its default
+/// popup in the SAME profile/session — so the opener + `postMessage` + `close`
+/// all work and the login can complete.
+#[cfg(target_os = "windows")]
+pub fn register_native_popup_handler(webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+    use std::sync::Mutex;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+
+    let result = webview_window.with_webview(move |wv| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+
+        unsafe {
+            let controller = wv.controller();
+            let core: ICoreWebView2 = controller
+                .CoreWebView2()
+                .expect("failed to get CoreWebView2");
+
+            let handler = webview2_com::NewWindowRequestedEventHandler::create(Box::new(
+                move |_sender, args| -> windows_core::Result<()> {
+                    if let Some(args) = args {
+                        // Read the URI for diagnostics.
+                        let mut uri = windows_core::PWSTR::null();
+                        let _ = args.Uri(&mut uri);
+                        let url = uri.to_string().unwrap_or_default();
+                        if !uri.is_null() {
+                            windows_core::imp::CoTaskMemFree(uri.as_ptr() as _);
+                        }
+                        // Revert wry's block → WebView2 opens a real popup with an
+                        // opener, in the same session.
+                        args.SetHandled(false)?;
+                        tracing::info!("NewWindowRequested → allowing native popup: {url}");
+                    }
+                    Ok(())
+                },
+            ));
+
+            let mut token: i64 = 0;
+            core.add_NewWindowRequested(&handler, &mut token)
+                .expect("failed to register NewWindowRequested (popup) handler");
+
+            tracing::info!("native popup NewWindowRequested handler registered (token={token})");
+
+            if let Some(sender) = tx.lock().unwrap().take() {
+                let _ = sender.send(Ok(()));
+            }
+        }
+    });
+
+    if result.is_err() {
+        return Err("with_webview failed for native popup handler".to_string());
+    }
+
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("native popup handler registration timed out".to_string()),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn register_native_popup_handler(_webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
 /// Register a native `NavigationCompleted` event handler that signals via
 /// a tokio oneshot when the next navigation finishes loading.
 ///

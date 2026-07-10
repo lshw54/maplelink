@@ -1345,8 +1345,11 @@ pub async fn open_gamepass_login(
     // tracking prevention and route window.open through the main window so the
     // provider login page loads instead of being blocked.
     disable_tracking_prevention(&window);
-    if let Err(e) = crate::services::cookie_native::register_new_window_handler(&window) {
-        tracing::warn!("GamePass: failed to register new-window handler: {e}");
+    // Let OAuth popups open as real popup windows (with window.opener) so
+    // Google/Facebook/Apple sign-in can postMessage + close back to the opener.
+    // Navigating the main window instead breaks that final step.
+    if let Err(e) = crate::services::cookie_native::register_native_popup_handler(&window) {
+        tracing::warn!("GamePass: failed to register native popup handler: {e}");
     }
 
     // Backend completion poll (the robust path). The injected JS tries to reach
