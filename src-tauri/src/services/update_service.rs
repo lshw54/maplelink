@@ -107,53 +107,68 @@ pub async fn check_for_update(
     ensure_proxy_resolved(client).await;
 
     if include_prerelease {
-        let url =
-            maybe_proxy_url("https://api.github.com/repos/lshw54/maplelink/releases?per_page=10");
+        // Collect candidates from the releases LIST (which includes pre-releases)
+        // AND from /releases/latest. GitHub's /releases list has been observed to
+        // omit a freshly-published stable release (e.g. v0.4.0 was returned by
+        // /releases/latest and /releases/tags/v0.4.0 but was absent from the list),
+        // so relying on the list alone can miss the newest stable build on the
+        // pre-release channel. Take the highest version across both sources.
+        let mut candidates: Vec<UpdateInfo> = Vec::new();
 
-        let response = github_get(client, &url).await?;
-        let response = match response {
-            Some(r) => r,
-            None => return Ok(None),
-        };
-
-        let body: serde_json::Value =
-            response
-                .json()
-                .await
-                .map_err(|e| UpdateError::CheckFailed {
-                    reason: format!("invalid response: {e}"),
-                })?;
-
-        let releases = body.as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-        if releases.is_empty() {
-            return Ok(None);
-        }
-
-        let mut best: Option<(&serde_json::Value, Vec<u32>)> = None;
-        for release in releases {
-            let tag = release["tag_name"]
-                .as_str()
-                .unwrap_or("")
-                .trim_start_matches('v');
-            if tag.is_empty() {
-                continue;
-            }
-            let parsed = parse_version(tag);
-            if parsed.is_empty() || !is_newer(tag, current_version) {
-                continue;
-            }
-            if best.as_ref().is_none_or(|(_, bv)| parsed > *bv) {
-                best = Some((release, parsed));
+        let list_url =
+            maybe_proxy_url("https://api.github.com/repos/lshw54/maplelink/releases?per_page=30");
+        if let Some(response) = github_get(client, &list_url).await? {
+            let body: serde_json::Value =
+                response
+                    .json()
+                    .await
+                    .map_err(|e| UpdateError::CheckFailed {
+                        reason: format!("invalid response: {e}"),
+                    })?;
+            for release in body.as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
+                let tag = release["tag_name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim_start_matches('v');
+                if tag.is_empty() || !is_newer(tag, current_version) {
+                    continue;
+                }
+                if let Some(info) = extract_update_info(release)? {
+                    candidates.push(info);
+                }
             }
         }
 
-        match best {
-            Some((release, _)) => extract_update_info(release),
-            None => {
-                tracing::info!("no update available (checked all releases)");
-                Ok(None)
+        // Newest stable — covers the list-omission quirk above.
+        let latest_url = maybe_proxy_url(GITHUB_API_URL);
+        if let Some(response) = github_get(client, &latest_url).await? {
+            let release: serde_json::Value =
+                response
+                    .json()
+                    .await
+                    .map_err(|e| UpdateError::CheckFailed {
+                        reason: format!("invalid response: {e}"),
+                    })?;
+            if !release.is_null() {
+                let tag = release["tag_name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim_start_matches('v');
+                if !tag.is_empty() && is_newer(tag, current_version) {
+                    if let Some(info) = extract_update_info(&release)? {
+                        candidates.push(info);
+                    }
+                }
             }
         }
+
+        let best = candidates
+            .into_iter()
+            .max_by(|a, b| parse_version(&a.version).cmp(&parse_version(&b.version)));
+        if best.is_none() {
+            tracing::info!("no update available (checked all releases + latest)");
+        }
+        Ok(best)
     } else {
         let url = maybe_proxy_url(GITHUB_API_URL);
         let response = github_get(client, &url).await?;
