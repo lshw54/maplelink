@@ -183,10 +183,14 @@ pub async fn tw_login_check(
         });
     }
 
-    let (skey, form_token) =
-        beanfun_service::tw_login_check(&ss.http_client, &account, recaptcha_check.as_deref())
-            .await
-            .map_err(login_err_to_dto)?;
+    let (skey, form_token) = beanfun_service::tw_login_check(
+        &ss.http_client,
+        &account,
+        recaptcha_check.as_deref(),
+        &ss.cookie_jar,
+    )
+    .await
+    .map_err(login_err_to_dto)?;
 
     *ss.pending_tw_login.write().await = Some(crate::models::session_state::PendingTwLogin {
         skey,
@@ -299,7 +303,7 @@ pub async fn qr_login_start(
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    qr_login_start_with_native_fallback(&app, &ss.http_client, &region)
+    qr_login_start_with_native_fallback(&app, &ss.http_client, &region, &ss.cookie_jar)
         .await
         .map_err(login_err_to_dto)
 }
@@ -832,8 +836,9 @@ async fn qr_login_start_with_native_fallback(
     app: &tauri::AppHandle,
     client: &reqwest::Client,
     region: &crate::models::session::Region,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
 ) -> Result<QrCodeData, beanfun_service::LoginError> {
-    match beanfun_service::qr_login_start(client, region).await {
+    match beanfun_service::qr_login_start(client, region, cookie_jar).await {
         Ok(data) => Ok(data),
         Err(err) if should_try_session_key_fallback(&err) => {
             tracing::warn!(region = ?region, "QR start failed before session key bootstrap; trying native fallbacks");
