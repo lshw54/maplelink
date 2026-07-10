@@ -110,6 +110,23 @@ export function AdvancedTab() {
         {t("settings.traditional_login_desc")}
       </p>
 
+      {/* Hide account names (privacy) */}
+      <SettingRow label={t("settings.hide_account_names")}>
+        <Toggle
+          checked={config?.hideAccountNames ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "hide_account_names",
+              value: String(!config.hideAccountNames),
+            });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.hide_account_names_desc")}
+      </p>
+
       {/* Window close behaviour */}
       <SettingRow label={t("settings.close_behavior")}>
         <Dropdown

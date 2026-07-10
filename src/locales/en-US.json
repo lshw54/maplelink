@@ -97,6 +97,8 @@
   "settings.skip_play_confirm_desc": "Auto-close the game's Play button window and skip relaunch confirmation",
   "settings.traditional_login": "Traditional Login Mode",
   "settings.traditional_login_desc": "Launch the game without passing server connection args. Disable this to pass server/port/account/OTP directly to the game.",
+  "settings.hide_account_names": "Hide account names",
+  "settings.hide_account_names_desc": "Blur account names / IDs in the account list and tabs so they aren't leaked in screenshots (hover to reveal).",
   "settings.close_behavior": "On window close",
   "settings.close_behavior_desc": "What happens when you close the window; “Ask every time” shows a prompt on close.",
   "settings.close_ask": "Ask every time",

@@ -53,6 +53,10 @@ pub struct AppConfig {
     /// What to do when the window is closed (default: ask each time).
     #[serde(default)]
     pub close_behavior: CloseBehavior,
+    /// Blur game-account / session names in the UI so they aren't leaked in
+    /// screenshots (revealed on hover). Default: false.
+    #[serde(default)]
+    pub hide_account_names: bool,
 }
 
 fn default_true() -> bool {
@@ -90,6 +94,7 @@ impl Default for AppConfig {
             web_launch_auto_launch: true,
             web_launch_auto_paste: true,
             close_behavior: CloseBehavior::Ask,
+            hide_account_names: false,
         }
     }
 }

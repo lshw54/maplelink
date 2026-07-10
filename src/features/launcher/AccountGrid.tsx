@@ -7,6 +7,10 @@ import { commands } from "../../lib/tauri";
 import { AccountContextMenu } from "./AccountContextMenu";
 import type { GameAccountDto } from "../../lib/types";
 
+/** Applied to account name/id text when the "hide account names" privacy
+ *  setting is on: blurred by default, revealed on hover. */
+const MASK_CLASS = "blur-[5px] transition-[filter] duration-150 select-none hover:blur-none";
+
 interface AccountGridProps {
   selectedAccountId: string | null;
   onSelectAccount: (account: GameAccountDto) => void;
@@ -257,6 +261,7 @@ function CardItem({
   copyTitle: string;
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
+  const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
   return (
     <button
       data-acct-idx={idx}
@@ -298,8 +303,9 @@ function CardItem({
       >
         {initial}
       </div>
-      <span className="truncate text-xs font-medium text-[var(--text)]">{account.displayName}</span>
-      <span className="truncate font-mono text-[12px] text-text-faint">{account.id}</span>
+      <span className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
+        {account.displayName}
+      </span>
     </button>
   );
 }
@@ -331,6 +337,7 @@ function ListItem({
   copyTitle: string;
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
+  const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
   return (
     <button
       data-acct-idx={idx}
@@ -367,8 +374,9 @@ function ListItem({
         {initial}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium text-[var(--text)]">{account.displayName}</div>
-        <div className="truncate font-mono text-[11px] text-text-faint">{account.id}</div>
+        <div className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
+          {account.displayName}
+        </div>
       </div>
       <CopyIcon isCopied={isCopied} onClick={onCopy} title={copyTitle} position="" />
     </button>

@@ -97,6 +97,8 @@
   "settings.skip_play_confirm_desc": "自動關閉遊戲的 Play 按鈕視窗，並跳過重啟確認",
   "settings.traditional_login": "傳統模式登入",
   "settings.traditional_login_desc": "啟動遊戲時不傳送伺服器連線參數。關閉此選項會將伺服器/連接埠/帳號/OTP 直接傳給遊戲。",
+  "settings.hide_account_names": "隱藏帳號名稱",
+  "settings.hide_account_names_desc": "將帳號列表與分頁的名稱／編號模糊處理，避免截圖時外洩（滑鼠移上去可暫時顯示）。",
   "settings.close_behavior": "關閉視窗時",
   "settings.close_behavior_desc": "設定按下關閉時的行為；選「每次詢問」會在關閉時彈出選項。",
   "settings.close_ask": "每次詢問",

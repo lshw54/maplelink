@@ -97,6 +97,10 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("close_behavior") {
             config.close_behavior = parse_close_behavior(v);
         }
+        if let Some(v) = general.get("hide_account_names") {
+            config.hide_account_names =
+                parse_bool(v, "hide_account_names", defaults.hide_account_names);
+        }
     }
 
     // --- [game] ---
@@ -188,6 +192,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "close_behavior = {}\n",
         close_behavior_to_str(&config.close_behavior)
+    ));
+    out.push_str(&format!(
+        "hide_account_names = {}\n",
+        config.hide_account_names
     ));
     out.push('\n');
 
@@ -511,6 +519,7 @@ x = not_a_number
             web_launch_auto_launch: false,
             web_launch_auto_paste: true,
             close_behavior: crate::models::config::CloseBehavior::Tray,
+            hide_account_names: true,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

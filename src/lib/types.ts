@@ -58,6 +58,7 @@ export interface AppConfigDto {
   webLaunchAutoLaunch: boolean;
   webLaunchAutoPaste: boolean;
   closeBehavior: "ask" | "quit" | "tray";
+  hideAccountNames: boolean;
 }
 
 export interface ErrorDto {
