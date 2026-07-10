@@ -401,7 +401,31 @@ pub async fn import_data(
     passphrase: Option<String>,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<usize, ErrorDto> {
-    let contents = tokio::fs::read_to_string(&path)
+    let result = do_import(&path, passphrase.as_deref(), state.inner()).await;
+
+    // Destroy the source backup file once the import concludes — it contains
+    // passwords in the clear (plaintext files) and has served its purpose,
+    // whether the import succeeded OR the data was invalid. Keep it ONLY while a
+    // passphrase retry may still need to re-read it (encrypted file, missing /
+    // wrong passphrase).
+    let retryable = matches!(
+        result.as_ref().err().map(|e| e.code.as_str()),
+        Some("IMPORT_PASSPHRASE_REQUIRED") | Some("IMPORT_WRONG_PASSPHRASE")
+    );
+    if !retryable {
+        if let Err(e) = tokio::fs::remove_file(&path).await {
+            tracing::warn!("could not delete import file {path}: {e}");
+        }
+    }
+    result
+}
+
+async fn do_import(
+    path: &str,
+    passphrase: Option<&str>,
+    state: &crate::models::app_state::AppState,
+) -> Result<usize, ErrorDto> {
+    let contents = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| ErrorDto {
             code: "SYS_IMPORT_READ_FAILED".to_string(),
@@ -410,8 +434,8 @@ pub async fn import_data(
             details: None,
         })?;
 
-    let payload = crate::services::data_transfer::parse_import(&contents, passphrase.as_deref())
-        .map_err(|e| {
+    let payload =
+        crate::services::data_transfer::parse_import(&contents, passphrase).map_err(|e| {
             let code = match e.as_str() {
                 "PASSPHRASE_REQUIRED" => "IMPORT_PASSPHRASE_REQUIRED",
                 "WRONG_PASSPHRASE" => "IMPORT_WRONG_PASSPHRASE",
