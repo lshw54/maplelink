@@ -133,9 +133,13 @@ pub async fn login_with_session_key(
 /// Start a QR-code login flow (TW region only).
 ///
 /// Gets a session key, then fetches the QR code image from the TW login API.
-pub async fn qr_login_start(client: &Client, region: &Region) -> Result<QrCodeData, LoginError> {
+pub async fn qr_login_start(
+    client: &Client,
+    region: &Region,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<QrCodeData, LoginError> {
     match region {
-        Region::TW => tw_qr_start(client).await,
+        Region::TW => tw_qr_start(client, cookie_jar).await,
         Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
             reason: "QR login is only available for TW region".into(),
         })),
@@ -1161,48 +1165,73 @@ async fn hk_wait_for_registered_device_approval(
 // TW Login Implementation
 // ---------------------------------------------------------------------------
 
-/// Get TW session key by following the redirect from bflogin/default.aspx.
-async fn tw_get_session_key(client: &Client) -> Result<String, LoginError> {
+/// Get the TW session key (pSKey) from the first redirect of bflogin/default.aspx.
+///
+/// Beanfun puts the pSKey in the **first** redirect's `Location`. The session
+/// client follows redirects, so it can only see the END of the chain — which
+/// sometimes lands on a check-in / `BlockIPMessage` page with no key, producing
+/// spurious "no session key" failures. So do this one request with a
+/// non-following client (sharing the session cookie jar) and read that first
+/// `Location` directly.
+async fn tw_get_session_key(
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<String, LoginError> {
     let url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
     tracing::info!(url, "TW session-key request start");
 
-    let resp = client
+    let noredirect = Client::builder()
+        .cookie_provider(cookie_jar.clone())
+        .redirect(reqwest::redirect::Policy::none())
+        .http1_only()
+        .timeout(std::time::Duration::from_secs(30))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| map_reqwest_error(url, e))?;
+
+    // Match the session client's browser fingerprint so the request isn't
+    // bot-flagged (UA + client hints), while overriding Accept/Accept-Encoding.
+    let resp = noredirect
         .get(url)
         .header("User-Agent", USER_AGENT)
+        .header("sec-ch-ua", SEC_CH_UA)
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("Accept-Language", "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7")
         .header("Accept", "text/html")
         .header("Accept-Encoding", "identity")
         .send()
         .await
         .map_err(|e| map_reqwest_error(url, e))?;
 
-    let final_url = resp.url().to_string();
+    let status = resp.status();
     let location = resp
         .headers()
         .get(reqwest::header::LOCATION)
         .and_then(|h| h.to_str().ok())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .to_string();
+    let final_url = resp.url().to_string();
     tracing::info!(
+        status = %status,
+        location = %location,
         final_url = %final_url,
-        location = location,
-        "TW session-key redirect received"
+        "TW session-key response received"
     );
 
-    // Beanfun places the session key in the first redirect.  Following the
-    // whole check-in chain can end on a block/check page with no key.
-    extract_tw_session_key(location)
+    extract_tw_session_key(&location)
         .or_else(|| extract_tw_session_key(&final_url))
         .ok_or_else(|| {
             let target = if location.is_empty() {
                 final_url.as_str()
             } else {
-                location
+                location.as_str()
             };
-            tracing::error!("no pSKey found in TW redirect target: {target}");
+            tracing::error!("no pSKey found in TW session-key response: {target}");
 
             let reason = if target.contains("BlockIPMessage") {
-                "Beanfun blocked the QR login request before issuing a session key".into()
+                "Beanfun temporarily blocked this IP (too many attempts) — please wait a few minutes and try again".into()
             } else {
-                "failed to extract TW session key".into()
+                "failed to obtain TW session key".into()
             };
 
             LoginError::Auth(AuthError::InvalidCredentials { reason })
@@ -1224,7 +1253,7 @@ async fn tw_login(
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
     tokens: &RecaptchaTokens,
 ) -> Result<Session, LoginError> {
-    let skey = tw_get_session_key(client).await?;
+    let skey = tw_get_session_key(cookie_jar).await?;
     tracing::debug!("TW session key: {}", &skey[..skey.len().min(20)]);
 
     tw_login_with_session_key(client, account, password, cookie_jar, &skey, tokens).await
@@ -1272,8 +1301,9 @@ pub async fn tw_login_check(
     client: &Client,
     account: &str,
     check_token: Option<&str>,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
 ) -> Result<(String, String), LoginError> {
-    let skey = tw_get_session_key(client).await?;
+    let skey = tw_get_session_key(cookie_jar).await?;
     tracing::debug!("TW (phase 1) session key obtained");
 
     let api_base = "https://login.beanfun.com";
@@ -1714,8 +1744,11 @@ async fn tw_send_login_flow(
 }
 
 /// Start TW QR code login flow.
-async fn tw_qr_start(client: &Client) -> Result<QrCodeData, LoginError> {
-    let skey = tw_get_session_key(client).await?;
+async fn tw_qr_start(
+    client: &Client,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<QrCodeData, LoginError> {
+    let skey = tw_get_session_key(cookie_jar).await?;
     tw_qr_start_with_session_key(client, &skey).await
 }
 
