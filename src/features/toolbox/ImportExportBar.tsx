@@ -82,7 +82,16 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
         title={t("data.export")}
         className="flex items-center gap-1 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       >
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M6 8V2M6 2L3.5 4.5M6 2l2.5 2.5M2.5 9.5h7" />
         </svg>
         {t("data.export")}
@@ -93,7 +102,16 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
         title={t("data.import")}
         className="flex items-center gap-1 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       >
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M6 2v6M6 8L3.5 5.5M6 8l2.5-2.5M2.5 9.5h7" />
         </svg>
         {t("data.import")}
@@ -111,7 +129,11 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
       )}
 
       {/* Export options */}
-      <Modal isOpen={exportOpen} onClose={() => setExportOpen(false)} title={t("data.export_title")}>
+      <Modal
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={t("data.export_title")}
+      >
         <div className="flex flex-col gap-3">
           <p className="rounded-[10px] border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2 text-[11px] leading-relaxed text-yellow-500">
             {t("data.export_warn")}

@@ -13,7 +13,10 @@ export function AccountManagerTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    commands.getAllSavedAccounts().then(setAllAccounts).catch(() => {});
+    commands
+      .getAllSavedAccounts()
+      .then(setAllAccounts)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
