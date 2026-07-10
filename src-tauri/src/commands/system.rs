@@ -1210,6 +1210,21 @@ async fn get_web_token_from_jar(
     Ok(token)
 }
 
+/// Act on the user's window-close choice from the "quit vs. minimize to tray"
+/// dialog. `action` is "quit" or "tray". Remembering the choice is done on the
+/// frontend via `set_config` (close_behavior) before calling this.
+#[tauri::command]
+pub async fn resolve_app_close(action: String, app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    if action == "tray" {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.hide();
+        }
+    } else {
+        app.exit(0);
+    }
+    Ok(())
+}
+
 /// Whether the given announcement id has already been read-and-dismissed.
 #[tauri::command]
 pub async fn announcement_is_seen(id: String, app: tauri::AppHandle) -> Result<bool, ErrorDto> {

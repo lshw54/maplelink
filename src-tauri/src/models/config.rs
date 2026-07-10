@@ -50,6 +50,9 @@ pub struct AppConfig {
     /// login window (default: true).
     #[serde(default = "default_true")]
     pub web_launch_auto_paste: bool,
+    /// What to do when the window is closed (default: ask each time).
+    #[serde(default)]
+    pub close_behavior: CloseBehavior,
 }
 
 fn default_true() -> bool {
@@ -86,8 +89,22 @@ impl Default for AppConfig {
             auto_launch_game: false,
             web_launch_auto_launch: true,
             web_launch_auto_paste: true,
+            close_behavior: CloseBehavior::Ask,
         }
     }
+}
+
+/// What happens when the user closes the main window.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CloseBehavior {
+    /// Ask the user each time (quit vs. minimize to tray).
+    #[default]
+    Ask,
+    /// Quit the app.
+    Quit,
+    /// Minimize to the system tray.
+    Tray,
 }
 
 /// UI theme selection.

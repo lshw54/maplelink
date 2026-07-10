@@ -109,6 +109,22 @@ export function AdvancedTab() {
       <p className="px-1 text-[11px] leading-relaxed text-text-faint">
         {t("settings.traditional_login_desc")}
       </p>
+
+      {/* Window close behaviour */}
+      <SettingRow label={t("settings.close_behavior")}>
+        <select
+          value={config?.closeBehavior ?? "ask"}
+          onChange={(e) => setConfig.mutate({ key: "close_behavior", value: e.target.value })}
+          className="rounded-lg border border-border bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text)] outline-none focus:border-accent"
+        >
+          <option value="ask">{t("settings.close_ask")}</option>
+          <option value="quit">{t("settings.close_quit")}</option>
+          <option value="tray">{t("settings.close_tray")}</option>
+        </select>
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.close_behavior_desc")}
+      </p>
     </div>
   );
 }

@@ -333,6 +333,7 @@ pub fn run() {
             commands::system::get_game_download_list,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
+            commands::system::resolve_app_close,
             commands::auth::open_gamepass_login,
             commands::auth::gamepass_webview_done,
             commands::auth::open_regular_web_login,
@@ -583,6 +584,11 @@ pub fn run() {
                 }
             }
 
+            // System-tray icon (lets "minimize to tray" on close work).
+            if let Err(e) = setup_tray(app.handle()) {
+                tracing::warn!("failed to create system tray: {e}");
+            }
+
             tracing::info!("startup complete — showing login page");
             Ok(())
         })
@@ -616,6 +622,31 @@ pub fn run() {
                             &color as *const _ as *const _,
                             std::mem::size_of::<u32>() as u32,
                         );
+                    }
+                }
+            }
+
+            // Intercept the main window close (titlebar X or Alt+F4) and honour
+            // the configured behaviour: quit, minimize to tray, or ask.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    let behavior = window
+                        .app_handle()
+                        .try_state::<AppState>()
+                        .and_then(|s| s.config.try_read().ok().map(|c| c.close_behavior))
+                        .unwrap_or(models::config::CloseBehavior::Ask);
+                    match behavior {
+                        models::config::CloseBehavior::Quit => {
+                            window.app_handle().exit(0);
+                        }
+                        models::config::CloseBehavior::Tray => {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        }
+                        models::config::CloseBehavior::Ask => {
+                            api.prevent_close();
+                            let _ = window.emit("app-close-requested", ());
+                        }
                     }
                 }
             }
@@ -666,4 +697,59 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run MapleLink");
+}
+
+/// Build the system-tray icon + menu (Show / Quit). Enables "minimize to tray".
+fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    // Best-effort localisation of the two labels to the configured language.
+    let lang = app
+        .try_state::<AppState>()
+        .and_then(|s| s.config.try_read().ok().map(|c| c.language.clone()))
+        .unwrap_or(models::config::Language::ZhTW);
+    let (show_label, quit_label) = match lang {
+        models::config::Language::EnUS => ("Show MapleLink", "Quit"),
+        models::config::Language::ZhCN => ("显示主窗口", "退出"),
+        models::config::Language::ZhTW => ("顯示主視窗", "結束"),
+    };
+
+    let show_i = MenuItem::with_id(app, "tray_show", show_label, true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "tray_quit", quit_label, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+    let mut builder = TrayIconBuilder::with_id("main-tray")
+        .tooltip("MapleLink")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray_show" => show_main_window(app),
+            "tray_quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
+/// Show, unminimize and focus the main window (from the tray).
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
 }

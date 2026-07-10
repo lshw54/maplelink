@@ -186,6 +186,18 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "webLaunchAutoPaste" | "web_launch_auto_paste" => {
             config.web_launch_auto_paste = parse_bool(value)?;
         }
+        "closeBehavior" | "close_behavior" => {
+            config.close_behavior = match value.to_lowercase().as_str() {
+                "quit" => crate::models::config::CloseBehavior::Quit,
+                "tray" => crate::models::config::CloseBehavior::Tray,
+                "ask" => crate::models::config::CloseBehavior::Ask,
+                _ => {
+                    return Err(ConfigError::ParseError {
+                        reason: format!("unknown close_behavior value: {value}"),
+                    });
+                }
+            };
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

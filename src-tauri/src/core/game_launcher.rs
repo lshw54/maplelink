@@ -260,6 +260,7 @@ mod tests {
                         auto_launch_game: false,
                         web_launch_auto_launch: true,
                         web_launch_auto_paste: true,
+                        close_behavior: crate::models::config::CloseBehavior::Ask,
                     }
                 },
             )

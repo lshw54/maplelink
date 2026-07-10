@@ -48,6 +48,7 @@ const KEY_MAP: Record<string, string> = {
   windowHeight: "window_height",
   webLaunchAutoLaunch: "web_launch_auto_launch",
   webLaunchAutoPaste: "web_launch_auto_paste",
+  closeBehavior: "close_behavior",
   __reset__: "__reset__",
 };
 
