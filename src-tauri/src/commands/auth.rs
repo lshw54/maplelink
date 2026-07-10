@@ -2187,40 +2187,48 @@ const RECAPTCHA_INIT_SCRIPT: &str = r#"
     //     page (or, once the reload budget is spent, close so the frontend isn't
     //     stuck on a blank helper — closing fires `recaptcha-cancelled`).
     let placed = false;
+    // Reveal the real reCAPTCHA page (remove the opaque overlay). This is the
+    // graceful fallback for slow accelerator/VPN connections where the widget
+    // loads late or our selectors miss it: the user is NEVER left stuck on a
+    // spinner, and never depends on an IPC close that beanfun's CSP can block —
+    // they just solve the reCAPTCHA on the visible page (the token harvest below
+    // still works). Less pretty than the reparent, but always usable.
+    const reveal = () => {
+      if (placed) return;
+      placed = true; clearInterval(rt);
+      try { if (store) store.removeItem(RKEY); } catch (e) {}
+      ov.remove();
+    };
     const place = () => {
       if (placed) return;
       const w = findWidget();
       if (w && w !== document.body && w !== document.documentElement) {
         placed = true; clearInterval(rt);
+        try { if (store) store.removeItem(RKEY); } catch (e) {}
         w.style.position = 'relative';
         w.style.zIndex = String(OVERLAY_Z + 2);
         sp.remove();
         lb.textContent = '請完成「我不是機器人」驗證';
         ov.appendChild(w); // reparent → iframe reload → fresh checkbox
-        return;
-      }
-      // Safety-net path (no widget yet). Only give up once the reload has run.
-      if (store && store.getItem(RKEY)) {
-        placed = true; clearInterval(rt);
-        try { store.removeItem(RKEY); } catch (e) {}
-        console.warn('[reCAPTCHA] widget did not render (reload budget spent) — closing');
-        if (window.__TAURI_INTERNALS__) {
-          window.__TAURI_INTERNALS__.invoke('close_recaptcha_window').catch(() => {});
-        }
       }
     };
     const rt = setInterval(() => { if (anchor()) place(); }, 200);
-    setTimeout(place, 6000); // safety net so the spinner never sticks forever
 
-    // (3b) Self-heal beanfun's first-load render race: no reCAPTCHA iframe after
-    //      3.5s → reload once (guarded so it can't loop).
+    // (3b) Self-heal beanfun's first-load render race: ONLY if there is no
+    //      reCAPTCHA iframe at all after 4s (genuine render fail), reload once.
+    //      Slow connections keep the iframe present, so they skip this and just
+    //      wait for the widget → they don't get a disruptive reload.
     setTimeout(() => {
-      if (!document.querySelector("iframe[src*='recaptcha']") && store && !store.getItem(RKEY)) {
+      if (!placed && !document.querySelector("iframe[src*='recaptcha']") && store && !store.getItem(RKEY)) {
         store.setItem(RKEY, '1');
-        console.warn('[reCAPTCHA] widget did not render — reloading once');
+        console.warn('[reCAPTCHA] no widget — reloading once');
         location.reload();
       }
-    }, 3500);
+    }, 4000);
+
+    // Final fallback: if the widget still isn't reparented, reveal the real page
+    // rather than hide it behind the spinner forever.
+    setTimeout(reveal, 6500);
 
     // (4) Harvest the Enterprise token once the human ticks the checkbox.
     //     Primary source is grecaptcha.enterprise.getResponse() — beanfun is an
