@@ -594,36 +594,19 @@ pub fn run() {
         })
         // -- Window lifecycle -----------------------------------------------
         .on_window_event(|window, event| {
-            // Remove Windows 11 DWM border on every focus gain.
-            // Must be re-applied because Windows can restore it.
+            // Strip the Windows 11 DWM frame border (the accent-coloured top
+            // hairline) + round the corners. Windows RESTORES the border after a
+            // resize/move (e.g. resize_window on page navigation), and those
+            // don't fire Focused, so re-apply on those events too — otherwise the
+            // top border reappears and stays until the next focus change.
             #[cfg(target_os = "windows")]
-            if let tauri::WindowEvent::Focused(true) = event {
-                if let Ok(hwnd) = window.hwnd() {
-                    unsafe {
-                        const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
-                        const DWMWA_BORDER_COLOR: u32 = 34;
-                        const DWMWCP_ROUND: u32 = 2;
-                        const DWM_COLOR_NONE: u32 = 0xFFFFFFFE;
-                        // Round the window corners so the DWM shadow follows the
-                        // rounded shape (the window is transparent, so the CSS
-                        // border-radius defines the visible edge — no black corner).
-                        let round = DWMWCP_ROUND;
-                        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
-                            hwnd.0,
-                            DWMWA_WINDOW_CORNER_PREFERENCE,
-                            &round as *const _ as *const _,
-                            std::mem::size_of::<u32>() as u32,
-                        );
-                        // Remove the DWM border colour (no black hairline border).
-                        let color: u32 = DWM_COLOR_NONE;
-                        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
-                            hwnd.0,
-                            DWMWA_BORDER_COLOR,
-                            &color as *const _ as *const _,
-                            std::mem::size_of::<u32>() as u32,
-                        );
-                    }
-                }
+            if matches!(
+                event,
+                tauri::WindowEvent::Focused(true)
+                    | tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::Moved(_)
+            ) {
+                apply_borderless_dwm(window);
             }
 
             // Intercept the main window close (titlebar X or Alt+F4) and honour
@@ -700,6 +683,38 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run MapleLink");
+}
+
+/// Strip the Windows 11 DWM frame border (accent-coloured top hairline) and
+/// round the corners on the borderless transparent window. Must be re-applied
+/// whenever Windows might restore the frame (focus gain, resize, move).
+#[cfg(target_os = "windows")]
+fn apply_borderless_dwm(window: &tauri::Window) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    unsafe {
+        const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+        const DWMWA_BORDER_COLOR: u32 = 34;
+        const DWMWCP_ROUND: u32 = 2;
+        const DWM_COLOR_NONE: u32 = 0xFFFFFFFE;
+        // Round the corners so the DWM shadow follows the CSS border-radius.
+        let round = DWMWCP_ROUND;
+        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+            hwnd.0,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &round as *const _ as *const _,
+            std::mem::size_of::<u32>() as u32,
+        );
+        // No border colour → no accent/black hairline around the window.
+        let color: u32 = DWM_COLOR_NONE;
+        let _ = windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+            hwnd.0,
+            DWMWA_BORDER_COLOR,
+            &color as *const _ as *const _,
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
 }
 
 /// Set once a real quit is in progress, so the close interceptor stops

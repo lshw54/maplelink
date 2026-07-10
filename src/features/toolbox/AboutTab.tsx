@@ -66,7 +66,7 @@ export function AboutTab() {
     <div className="flex flex-col gap-3 py-2">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <img src="/app-icon.png" alt="MapleLink" className="h-11 w-11 rounded-[10px] shadow-lg" />
+        <img src="/app-logo.png" alt="MapleLink" className="h-11 w-11 rounded-[10px] shadow-lg" />
         <div>
           <div className="text-sm font-bold text-[var(--text)]">{t("app.name")}</div>
           <div className="flex items-center gap-1.5">

@@ -90,7 +90,7 @@ function useTextScaleCompensation() {
 function SplashScreen() {
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-[var(--bg)]">
-      <img src="/app-icon.png" alt="" className="mb-4 h-16 w-16 animate-pulse rounded-[16px]" />
+      <img src="/app-logo.png" alt="" className="mb-4 h-16 w-16 animate-pulse rounded-[16px]" />
       <div className="text-[12px] tracking-[2px] text-text-dim">MAPLELINK</div>
     </div>
   );

@@ -19,9 +19,16 @@
         // 620 login page + 28 permanent announcement banner (see resize_window).
         "height": 648,
         "decorations": false,
-        "transparent": true,
+        // Opaque window: DWM rounds the corners + draws the shadow (see
+        // apply_borderless_dwm). A transparent borderless window on Windows 11
+        // leaves an accent-coloured top hairline that DWMWA_BORDER_COLOR can't
+        // remove; an opaque window doesn't.
+        "transparent": false,
         "resizable": false,
-        "shadow": true,
+        // The window shadow needs WS_THICKFRAME, whose top edge is the 1px accent
+        // hairline on Windows 11 (DWMWA_BORDER_COLOR can't remove it). Dropping
+        // the shadow removes that frame → no top line.
+        "shadow": false,
         "center": true,
         "additionalBrowserArgs": "--disable-features=msSmartScreenProtection,msPasswordManagerAutoFill,msAutofillEdge --edge-webview-enable-builtin-background-extensions=0"
       }

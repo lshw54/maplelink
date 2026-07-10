@@ -71,7 +71,9 @@
     user-select: none;
     -webkit-user-select: none;
     border: none;
-    border-radius: var(--radius);
+    /* The opaque window is rounded by DWM (apply_borderless_dwm); rounding the
+       body too would reveal a sliver of the html background at the corners. */
+    border-radius: 0;
     position: relative;
     transition:
       background 0.3s,

@@ -76,6 +76,16 @@ export function MainPage() {
     }
   }, [isAuthenticated, setPage]);
 
+  // The resize from setPage("main") on login can be dropped while the login→main
+  // view is still swapping (window stays at the login size until the next page
+  // change). Re-assert the main window size once this page has actually mounted.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      commands.resizeWindow("main").catch(() => {});
+    }, 60);
+    return () => clearTimeout(id);
+  }, []);
+
   // Fetch remain points on mount + auto-detect game path if empty
   useEffect(() => {
     commands
