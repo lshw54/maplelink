@@ -1220,7 +1220,7 @@ pub async fn resolve_app_close(action: String, app: tauri::AppHandle) -> Result<
             let _ = w.hide();
         }
     } else {
-        app.exit(0);
+        crate::request_quit(&app);
     }
     Ok(())
 }

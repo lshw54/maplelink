@@ -629,7 +629,9 @@ pub fn run() {
             // Intercept the main window close (titlebar X or Alt+F4) and honour
             // the configured behaviour: quit, minimize to tray, or ask.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+                if window.label() == "main"
+                    && !QUIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
+                {
                     let behavior = window
                         .app_handle()
                         .try_state::<AppState>()
@@ -637,7 +639,8 @@ pub fn run() {
                         .unwrap_or(models::config::CloseBehavior::Ask);
                     match behavior {
                         models::config::CloseBehavior::Quit => {
-                            window.app_handle().exit(0);
+                            api.prevent_close();
+                            request_quit(window.app_handle());
                         }
                         models::config::CloseBehavior::Tray => {
                             api.prevent_close();
@@ -699,6 +702,21 @@ pub fn run() {
         .expect("failed to run MapleLink");
 }
 
+/// Set once a real quit is in progress, so the close interceptor stops
+/// intercepting and lets the windows close.
+static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Quit gracefully: mark quitting and close every window so Tauri exits through
+/// its normal teardown. This avoids `app.exit(0)`'s abrupt process exit, which on
+/// Windows logs a benign "Failed to unregister class Chrome_WidgetWin_0" error
+/// from WebView2's Chromium during shutdown.
+pub fn request_quit(app: &tauri::AppHandle) {
+    QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    for (_, win) in app.webview_windows() {
+        let _ = win.close();
+    }
+}
+
 /// Build the system-tray icon + menu (Show / Quit). Enables "minimize to tray".
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
@@ -725,7 +743,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "tray_show" => show_main_window(app),
-            "tray_quit" => app.exit(0),
+            "tray_quit" => request_quit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
