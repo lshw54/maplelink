@@ -306,7 +306,6 @@ function CardItem({
       <span className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
         {account.displayName}
       </span>
-      <span className={`truncate font-mono text-[12px] text-text-faint ${mask}`}>{account.id}</span>
     </button>
   );
 }
@@ -378,7 +377,6 @@ function ListItem({
         <div className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
           {account.displayName}
         </div>
-        <div className={`truncate font-mono text-[11px] text-text-faint ${mask}`}>{account.id}</div>
       </div>
       <CopyIcon isCopied={isCopied} onClick={onCopy} title={copyTitle} position="" />
     </button>
