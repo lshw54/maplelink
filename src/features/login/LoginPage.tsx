@@ -113,7 +113,7 @@ export function LoginPage() {
           <>
             <div className="mb-6 flex flex-col items-center">
               <img
-                src="/app-icon.png"
+                src="/app-logo.png"
                 alt="MapleLink"
                 className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
               />
@@ -162,7 +162,7 @@ export function LoginPage() {
         {view === "gamepass" && (
           <div className="flex w-full flex-col items-center gap-4">
             <img
-              src="/app-icon.png"
+              src="/app-logo.png"
               alt="MapleLink"
               className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
             />

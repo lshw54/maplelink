@@ -129,7 +129,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       {/* Header */}
       <div className={`flex flex-col items-center ${enlarged ? "mb-3" : "mb-5"}`}>
         <img
-          src="/app-icon.png"
+          src="/app-logo.png"
           alt="MapleLink"
           className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
         />
