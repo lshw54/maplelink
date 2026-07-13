@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "../../lib/i18n";
 import { useAuthStore, type SessionEntry } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
@@ -123,9 +124,18 @@ export function SessionTabs() {
     document.addEventListener("mouseup", onUp);
   }
 
+  // Grabbing the empty part of the tab strip drags the window — the 34px
+  // titlebar alone is a tiny target, so this doubles the usable drag area.
+  function handleStripDrag(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("[data-tab-id], button, input")) return;
+    getCurrentWindow().startDragging();
+  }
+
   return (
     <div
       ref={containerRef}
+      onMouseDown={handleStripDrag}
       className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border bg-[var(--bg)] px-1 py-0.5"
     >
       {entries.map((entry, idx) => {
