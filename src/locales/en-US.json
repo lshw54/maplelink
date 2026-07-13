@@ -337,6 +337,7 @@
   "launcher.fetching_otp": "Fetching...",
   "launcher.auto_input": "Auto Input",
   "launcher.game_info": "MapleStory",
+  "launcher.game_subtitle": "Gamania · MMORPG",
   "launcher.select_account": "Select an account",
   "launcher.context.get_otp": "Get OTP",
   "launcher.context.launch": "Launch Game",

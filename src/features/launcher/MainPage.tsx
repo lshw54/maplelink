@@ -312,7 +312,7 @@ export function MainPage() {
               {t("launcher.game_info")}
             </div>
             <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">
-              Gamania · MMORPG
+              {t("launcher.game_subtitle")}
             </div>
 
             {/* Circular PLAY button */}

@@ -304,13 +304,14 @@ pub async fn qr_login_poll(
                 });
 
         let dto = SessionDto::from_session(&session, &session_id);
+        let session_for_result = session.clone();
         *ss.session.write().await = Some(session);
         *ss.game_accounts.write().await = accounts;
         tracing::info!("user logged in via QR: {}", dto.account_name);
 
         return Ok(QrPollResult {
             status: beanfun_service::QrPollStatus::Confirmed,
-            session: Some(ss.session.read().await.clone().unwrap()),
+            session: Some(session_for_result),
         });
     }
 
