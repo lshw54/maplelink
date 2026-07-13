@@ -514,6 +514,13 @@ mod tests {
         assert!(!current_version().is_empty());
     }
 
+    // Feature: maplelink-rewrite, Property 11: Disabled auto-update skips update check
+    //
+    // For any AppConfig where auto_update is false, the startup sequence shall not
+    // invoke the update check endpoint. `should_check_on_startup` is the pure gate
+    // the startup sequence (lib.rs) and the check_update command both consult.
+    //
+    // **Validates: Requirements 8.6**
     proptest! {
         #[test]
         fn prop_disabled_auto_update_skips_check(_dummy in 0u8..10) {

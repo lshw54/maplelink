@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useUpdateStore } from "../../lib/stores/update-store";
-import { Modal } from "./Modal";
+import { Modal } from "../../components/Modal";
 import type { UpdateInfoDto } from "../../lib/types";
 
 interface Props {

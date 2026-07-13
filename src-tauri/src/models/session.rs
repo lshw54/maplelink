@@ -36,3 +36,26 @@ pub enum Region {
     TW,
     HK,
 }
+
+/// Subset of [`Session`] safe to send to the frontend (no refresh token).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDto {
+    pub session_id: String,
+    pub token: String,
+    pub region: String,
+    pub account_name: String,
+    pub expires_at: String,
+}
+
+impl SessionDto {
+    pub fn from_session(s: &Session, session_id: &str) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            token: s.token.clone(),
+            region: format!("{:?}", s.region),
+            account_name: s.account_name.clone(),
+            expires_at: s.expires_at.to_rfc3339(),
+        }
+    }
+}

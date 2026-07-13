@@ -3,7 +3,7 @@ import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
-import { PasswordInput } from "../shared/PasswordInput";
+import { PasswordInput } from "../../components/PasswordInput";
 import type { SavedAccountDto } from "../../lib/types";
 
 const FORGOT_PWD_URLS: Record<string, string> = {

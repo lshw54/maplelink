@@ -5,12 +5,13 @@ import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
 import { SessionTabs } from "./SessionTabs";
 import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
-import { Modal } from "../shared/Modal";
+import { Modal } from "../../components/Modal";
 import type { GameAccountDto } from "../../lib/types";
 
 export function MainPage() {
@@ -205,12 +206,15 @@ export function MainPage() {
           setGameRunning(true);
         }
       } catch (err) {
-        // Show error via toast
         const msg =
           typeof err === "object" && err !== null && "message" in err
             ? String((err as Record<string, unknown>).message)
             : String(err);
-        console.error("launch failed:", msg); // eslint-disable-line no-console
+        useErrorToastStore.getState().addToast({
+          message: msg,
+          category: "process",
+          critical: false,
+        });
       } finally {
         setLaunching(false);
       }
@@ -308,7 +312,7 @@ export function MainPage() {
               {t("launcher.game_info")}
             </div>
             <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">
-              Gamania · MMORPG
+              {t("launcher.game_subtitle")}
             </div>
 
             {/* Circular PLAY button */}

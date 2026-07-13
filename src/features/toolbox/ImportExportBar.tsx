@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
-import { Modal } from "../shared/Modal";
-import { PasswordInput } from "../shared/PasswordInput";
+import { Modal } from "../../components/Modal";
+import { PasswordInput } from "../../components/PasswordInput";
 
 /** Export / import saved accounts + display overrides (plaintext or passphrase-
  *  encrypted). `onImported` re-fetches the account list after a successful import. */

@@ -7,7 +7,7 @@ import { commands } from "../../lib/tauri";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
-import { Modal } from "../shared/Modal";
+import { Modal } from "../../components/Modal";
 import { NormalLoginForm } from "./NormalLoginForm";
 import { QrLoginForm } from "./QrLoginForm";
 import { TotpForm } from "./TotpForm";

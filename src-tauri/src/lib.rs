@@ -674,7 +674,7 @@ pub fn run() {
                         // Only a real user/abort close signals cancellation — not
                         // when we closed the window ourselves after capturing a
                         // token (that would abort the next login phase).
-                        if !commands::auth::recaptcha_take_delivered() {
+                        if !services::recaptcha_window::recaptcha_take_delivered() {
                             let _ = app_handle.emit("recaptcha-cancelled", ());
                         }
                     } else if label == "web-login" {

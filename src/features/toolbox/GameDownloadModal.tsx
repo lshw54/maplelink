@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import type { GameDownloadDto } from "../../lib/types";
-import { Modal } from "../shared/Modal";
+import { Modal } from "../../components/Modal";
 
 function openExternal(url: string) {
   import("@tauri-apps/plugin-shell").then(({ open }) => open(url));

@@ -1,18 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { useUiStore } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
-import { Modal } from "../shared/Modal";
+import { Modal } from "../../components/Modal";
 import { GameDownloadModal } from "./GameDownloadModal";
 
-const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKDAYS_ZH = ["日", "一", "二", "三", "四", "五", "六"];
-
-function getMaintenanceInfo(lang: string) {
+function getMaintenanceInfo(t: (key: string) => string) {
   const now = new Date();
   const day = now.getDay();
-  const weekdays = lang.startsWith("en") ? WEEKDAYS_EN : WEEKDAYS_ZH;
-  const weekday = weekdays[day] ?? "";
+  const weekday = t(`toolbox.tools.weekday_${day}`);
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
@@ -51,8 +46,7 @@ function ToolCardItem({ card }: { card: ToolCard }) {
 
 export function ToolsTab() {
   const { t } = useTranslation();
-  const language = useUiStore((s) => s.language);
-  const { weekday, date, isMaintenanceDay } = getMaintenanceInfo(language);
+  const { weekday, date, isMaintenanceDay } = getMaintenanceInfo(t);
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -95,7 +89,6 @@ export function ToolsTab() {
         <span className="text-xl">🔧</span>
         <div className="flex flex-col">
           <span className="text-xs font-semibold text-[var(--text)]">
-            {t("toolbox.tools.weekday_prefix")}
             {weekday} · {date}
           </span>
           <span className="text-[11px] text-text-dim">
