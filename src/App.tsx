@@ -8,7 +8,7 @@ import { useConfig, useSetConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
-import { Modal } from "./features/shared/Modal";
+import { Modal } from "./components/Modal";
 import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
 import { AnnouncementModal } from "./features/shared/AnnouncementModal";
 import { CloseDialog } from "./features/shared/CloseDialog";

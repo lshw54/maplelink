@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
-import { Modal } from "../shared/Modal";
+import { Modal } from "../../components/Modal";
 import type { GameAccountDto } from "../../lib/types";
 
 interface ContextMenuPosition {
