@@ -330,6 +330,8 @@ pub fn run() {
             commands::system::open_auth_popup,
             commands::system::get_web_token,
             commands::system::cleanup_game_cache,
+            commands::system::check_beanfun_rename,
+            commands::system::apply_beanfun_rename,
             commands::system::get_game_download_list,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,

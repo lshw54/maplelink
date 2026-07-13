@@ -201,6 +201,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "hideAccountNames" | "hide_account_names" => {
             config.hide_account_names = parse_bool(value)?;
         }
+        "beanfunRenameDismissed" | "beanfun_rename_dismissed" => {
+            config.beanfun_rename_dismissed = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

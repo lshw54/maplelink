@@ -57,6 +57,10 @@ pub struct AppConfig {
     /// screenshots (revealed on hover). Default: false.
     #[serde(default)]
     pub hide_account_names: bool,
+    /// The user dismissed ("don't ask again") the China-IP prompt suggesting the
+    /// exe be renamed to `Beanfun.exe` for accelerator compatibility. Default: false.
+    #[serde(default)]
+    pub beanfun_rename_dismissed: bool,
 }
 
 fn default_true() -> bool {
@@ -95,6 +99,7 @@ impl Default for AppConfig {
             web_launch_auto_paste: true,
             close_behavior: CloseBehavior::Ask,
             hide_account_names: false,
+            beanfun_rename_dismissed: false,
         }
     }
 }

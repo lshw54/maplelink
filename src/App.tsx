@@ -12,12 +12,14 @@ import { Modal } from "./components/Modal";
 import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
 import { AnnouncementModal } from "./features/shared/AnnouncementModal";
 import { CloseDialog } from "./features/shared/CloseDialog";
+import { BeanfunRenameDialog } from "./features/shared/BeanfunRenameDialog";
+import { useErrorToastStore } from "./lib/stores/error-toast-store";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
 import { WebLaunchPage } from "./features/toolbox/WebLaunchPage";
-import type { UpdateInfoDto } from "./lib/types";
+import type { UpdateInfoDto, BeanfunRenameCheck } from "./lib/types";
 
 function PageRouter() {
   const currentPage = useUiStore((s) => s.currentPage);
@@ -159,6 +161,26 @@ export function App() {
     commands.resolveAppClose(action).catch(() => {});
   };
 
+  // China-IP exe-rename suggestion (rename to Beanfun.exe for accelerators).
+  const [renameCheck, setRenameCheck] = useState<BeanfunRenameCheck | null>(null);
+  useEffect(() => {
+    commands
+      .checkBeanfunRename()
+      .then((check) => {
+        if (check.suggest) {
+          setRenameCheck(check);
+        } else if (check.collision) {
+          useErrorToastStore.getState().addToast({
+            message: t("beanfun_rename.collision"),
+            category: "process",
+            critical: false,
+          });
+        }
+      })
+      .catch(() => {});
+    // Run once on mount; t() is stable enough for a one-shot startup check.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Patcher killed notification
   const [patcherInfo, setPatcherInfo] = useState<{
     clientVersion: string;
@@ -288,6 +310,28 @@ export function App() {
       )}
       {closePrompt && (
         <CloseDialog onCancel={() => setClosePrompt(false)} onChoose={handleCloseChoice} />
+      )}
+      {renameCheck && (
+        <BeanfunRenameDialog
+          currentName={renameCheck.currentName}
+          targetName={renameCheck.targetName}
+          onConfirm={() => {
+            // Renames the exe and relaunches; this process then exits.
+            commands.applyBeanfunRename().catch((err) => {
+              setRenameCheck(null);
+              useErrorToastStore.getState().addToast({
+                message: err instanceof Error ? err.message : String(err),
+                category: "process",
+                critical: false,
+              });
+            });
+          }}
+          onDismiss={() => {
+            setConfig.mutate({ key: "beanfunRenameDismissed", value: "true" });
+            setRenameCheck(null);
+          }}
+          onCancel={() => setRenameCheck(null)}
+        />
       )}
       {pendingUpdate && (
         <UpdateDialog update={pendingUpdate} onClose={() => setPendingUpdate(null)} />
