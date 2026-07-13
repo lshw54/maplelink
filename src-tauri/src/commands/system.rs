@@ -823,3 +823,34 @@ pub async fn cleanup_game_cache(
 ) -> Result<String, ErrorDto> {
     game_env_service::cleanup_game_cache(state.inner()).await
 }
+
+/// Startup check: should we offer to rename the exe to `Beanfun.exe`?
+///
+/// Suggests the rename only for mainland-China IPs when the exe isn't already
+/// `Beanfun.exe`, the user hasn't dismissed it, and no other `Beanfun.exe`
+/// occupies the folder (that case is reported as a `collision` for the UI to
+/// warn about instead of auto-renaming).
+#[tauri::command]
+pub async fn check_beanfun_rename(
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<crate::services::exe_rename_service::BeanfunRenameCheck, ErrorDto> {
+    let dismissed = state.config.read().await.beanfun_rename_dismissed;
+    Ok(crate::services::exe_rename_service::check(&state.http_client, dismissed).await)
+}
+
+/// Rename the running exe to `Beanfun.exe` and relaunch (called after the user
+/// confirms the prompt). Exits the current process on success.
+#[tauri::command]
+pub async fn apply_beanfun_rename(app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    crate::services::exe_rename_service::rename_to_beanfun_and_relaunch().map_err(|e| {
+        ErrorDto {
+            code: "SYS_RENAME_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Process,
+            details: None,
+        }
+    })?;
+    // The renamed copy is now running; exit this instance.
+    app.exit(0);
+    Ok(())
+}

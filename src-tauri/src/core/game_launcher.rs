@@ -262,6 +262,7 @@ mod tests {
                         web_launch_auto_paste: true,
                         close_behavior: crate::models::config::CloseBehavior::Ask,
                         hide_account_names: false,
+                        beanfun_rename_dismissed: false,
                     }
                 },
             )

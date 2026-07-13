@@ -59,6 +59,15 @@ export interface AppConfigDto {
   webLaunchAutoPaste: boolean;
   closeBehavior: "ask" | "quit" | "tray";
   hideAccountNames: boolean;
+  beanfunRenameDismissed: boolean;
+}
+
+/** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */
+export interface BeanfunRenameCheck {
+  suggest: boolean;
+  collision: boolean;
+  currentName: string;
+  targetName: string;
 }
 
 export interface ErrorDto {

@@ -101,6 +101,13 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.hide_account_names =
                 parse_bool(v, "hide_account_names", defaults.hide_account_names);
         }
+        if let Some(v) = general.get("beanfun_rename_dismissed") {
+            config.beanfun_rename_dismissed = parse_bool(
+                v,
+                "beanfun_rename_dismissed",
+                defaults.beanfun_rename_dismissed,
+            );
+        }
     }
 
     // --- [game] ---
@@ -196,6 +203,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "hide_account_names = {}\n",
         config.hide_account_names
+    ));
+    out.push_str(&format!(
+        "beanfun_rename_dismissed = {}\n",
+        config.beanfun_rename_dismissed
     ));
     out.push('\n');
 
@@ -520,6 +531,7 @@ x = not_a_number
             web_launch_auto_paste: true,
             close_behavior: crate::models::config::CloseBehavior::Tray,
             hide_account_names: true,
+            beanfun_rename_dismissed: true,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

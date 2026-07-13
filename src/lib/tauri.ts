@@ -17,6 +17,7 @@ import type {
   DnsStatus,
   DnsTestResult,
   GameDownloadDto,
+  BeanfunRenameCheck,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -148,6 +149,8 @@ export const commands = {
 
   // Cleanup (global)
   cleanupGameCache: () => invoke<string>("cleanup_game_cache"),
+  checkBeanfunRename: () => invoke<BeanfunRenameCheck>("check_beanfun_rename"),
+  applyBeanfunRename: () => invoke("apply_beanfun_rename"),
   resetWebviewData: () => invoke("reset_webview_data"),
 
   // Official client download list (global)

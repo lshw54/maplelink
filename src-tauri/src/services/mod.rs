@@ -7,6 +7,7 @@ pub mod beanfun_service;
 pub mod config_service;
 pub mod cookie_native;
 pub mod data_transfer;
+pub mod exe_rename_service;
 pub mod game_download;
 pub mod game_env_service;
 pub mod game_launch_service;

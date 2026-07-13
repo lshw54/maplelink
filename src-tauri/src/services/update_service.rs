@@ -440,6 +440,10 @@ pub async fn apply_update(
     update_bytes: &[u8],
     _staging_dir: &std::path::Path,
 ) -> Result<std::path::PathBuf, UpdateError> {
+    // Use current_exe() as the target so the update writes back to WHATEVER name
+    // the user is running under (e.g. accelerator users rename to Beanfun.exe).
+    // This is intentional — do not hardcode "MapleLink.exe" here, or auto-update
+    // would silently revert a user's rename.
     let current_exe = std::env::current_exe().map_err(|e| UpdateError::DownloadFailed {
         reason: format!("failed to get current exe path: {e}"),
     })?;

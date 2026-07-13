@@ -134,6 +134,37 @@ jobs:
           Write-Host "SHA256: $hash"
           Write-Host "Size: $size bytes"
 
+      - name: Build self-extracting package (new users)
+        id: sfx
+        shell: pwsh
+        run: |
+          # Bundle the app + the WebView2 troubleshooting note into a folder, then
+          # wrap it in a 7-Zip self-extracting archive. This is the NEW-USER
+          # download: running it extracts a "MapleLink" folder containing the app
+          # and the "看这" note. Existing users keep auto-updating the bare exe.
+          $sevenZip  = "C:\Program Files\7-Zip\7z.exe"
+          $sfxModule = "C:\Program Files\7-Zip\7z.sfx"
+          # The self-extractor unpacks this folder (Chinese: "MapleLink 登陆器").
+          $folder = "MapleLink登陸器"
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          Copy-Item "MapleLink.exe" (Join-Path $folder "MapleLink.exe")
+          # Copy the note by glob so the CJK filename isn't spelled in the script.
+          Copy-Item "installer\*.txt" $folder
+
+          # Compress the folder, then concatenate the SFX module + archive so the
+          # output is a double-click self-extractor.
+          & $sevenZip a -t7z -mx=9 "MapleLink.7z" $folder | Out-Null
+          $sfxBytes = [System.IO.File]::ReadAllBytes($sfxModule)
+          $arcBytes = [System.IO.File]::ReadAllBytes("MapleLink.7z")
+          [System.IO.File]::WriteAllBytes("MapleLink-Setup.exe", $sfxBytes + $arcBytes)
+
+          if (-not (Test-Path "MapleLink-Setup.exe")) {
+            Write-Error "SFX build failed: MapleLink-Setup.exe not produced"
+            exit 1
+          }
+          $sfxSize = (Get-Item "MapleLink-Setup.exe").Length
+          Write-Host "SFX size: $sfxSize bytes"
+
       - name: Prepare release notes
         id: notes
         shell: pwsh
@@ -220,7 +251,9 @@ jobs:
             ---
 
             ### Download
-            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — standalone, no installation needed
+            **新用户（推荐 / New users）→ [MapleLink-Setup.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink-Setup.exe)** — 自解压包，附「WebView2 报错看这」说明 / self-extracting package with a WebView2 troubleshooting note
+
+            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — 单文件绿色版 / standalone, no installation needed
 
             ### Changes
             ${{ steps.notes.outputs.commits }}
@@ -244,7 +277,9 @@ jobs:
             | Commit | [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
 
             </details>
-          files: MapleLink.exe
+          files: |
+            MapleLink.exe
+            MapleLink-Setup.exe
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
           make_latest: ${{ github.event.inputs.release_type == 'release' && 'true' || 'false' }}
