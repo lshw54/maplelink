@@ -1,4 +1,11 @@
-import { useState, useRef, useCallback, type KeyboardEvent, type ClipboardEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type KeyboardEvent,
+  type ClipboardEvent,
+} from "react";
 import { useTotpVerify } from "../../lib/hooks/use-auth";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
@@ -16,6 +23,12 @@ export function TotpForm({ onBack }: TotpFormProps) {
 
   const setRef = useCallback((el: HTMLInputElement | null, idx: number) => {
     inputRefs.current[idx] = el;
+  }, []);
+
+  // Focus the first digit box on mount so the user can type right away — the
+  // two-factor screen otherwise opens with nothing selected (needs a manual click).
+  useEffect(() => {
+    inputRefs.current[0]?.focus();
   }, []);
 
   function handleInput(idx: number, value: string) {
