@@ -8,9 +8,7 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::models::error::{ErrorCategory, ErrorDto};
-
-/// User-Agent for WebView2 windows and HTTP requests.
-const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
+use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
 /// Forward a frontend log entry to the backend tracing system.
 #[tauri::command]
