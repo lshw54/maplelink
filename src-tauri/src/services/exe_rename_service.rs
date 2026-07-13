@@ -190,7 +190,10 @@ mod tests {
     #[test]
     fn non_cn_regions_do_not_suggest() {
         for c in ["HK", "US", "JP", ""] {
-            assert!(!decide(c, false, false, false, name()).suggest, "country {c}");
+            assert!(
+                !decide(c, false, false, false, name()).suggest,
+                "country {c}"
+            );
         }
     }
 }
