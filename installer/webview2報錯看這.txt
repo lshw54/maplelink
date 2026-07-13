@@ -1,0 +1,25 @@
+【MapleLink 打不开 / 白屏 / 提示 WebView2 报错？看这里】
+
+本程序需要「Microsoft Edge WebView2 运行时」才能显示界面。
+Windows 10 / 11 通常已自带；如果打开后白屏、闪退，或提示缺少
+WebView2，请按以下步骤手动安装：
+
+────────────────────────────────────────
+1. 打开微软官方下载页：
+   https://developer.microsoft.com/microsoft-edge/webview2/
+
+2. 或使用官方直链直接下载「常青版引导安装程序」：
+   https://go.microsoft.com/fwlink/p/?LinkId=2124703
+   下载到的文件名为 MicrosoftEdgeWebView2Setup.exe
+
+3. 双击运行 MicrosoftEdgeWebView2Setup.exe，按提示安装完成。
+
+4. 装好后重新打开 MapleLink（或你改名后的 Beanfun.exe）即可。
+────────────────────────────────────────
+
+小提示：
+· 若在中国大陆下载缓慢，可先挂加速器 / VPN 再下载。
+· 使用网游加速器的玩家，建议把程序改名为 Beanfun.exe，
+  首次启动时程序也会提示你一键改名。
+· 更多问题可到项目主页反馈：
+  https://github.com/lshw54/maplelink
