@@ -1,10 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTranslation } from "../i18n";
 import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
 import type { SessionDto, QrPollResult } from "../types";
+
+/** Translate outside React render (mutation callbacks) using the current language. */
+const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
 
 /** Login with account + password. Creates a new session, then authenticates. */
 export function useLogin() {
@@ -101,7 +105,7 @@ export function useLogin() {
           // User closed the login/verification window, or it never completed —
           // treat as a quiet abort so the button doesn't hang on "登入中...".
           useAuthStore.getState().setPendingCredentials(null);
-          throw new Error("登入已取消,請再試一次", { cause: err });
+          throw new Error(tr("login.cancelled"), { cause: err });
         }
         if (errStr.includes("TOTP") || errStr.includes("totp") || errStr.includes("Totp")) {
           const totpError = new Error("TOTP_REQUIRED") as Error & { sessionId: string };
@@ -115,7 +119,7 @@ export function useLogin() {
           // repeated attempts are what trips beanfun's IP lock.
           if (resuming) {
             useAuthStore.getState().setPendingCredentials(null);
-            throw new Error("beanfun 要求重複人機驗證,請稍後再試", { cause: err });
+            throw new Error(tr("login.advance_check_repeat"), { cause: err });
           }
           const errObj =
             typeof err === "object" && err !== null ? (err as Record<string, unknown>) : null;
@@ -162,7 +166,7 @@ export function useLogin() {
       // tester notices + reports it (and can retry) rather than it looking broken.
       if (accountCount === 0) {
         useErrorToastStore.getState().addToast({
-          message: "登入成功，但暫時載入唔到遊戲帳號列表，可到主頁按「重新整理」再試",
+          message: tr("login.accounts_load_failed"),
           category: "authentication",
           critical: false,
         });
