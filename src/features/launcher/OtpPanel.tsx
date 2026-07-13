@@ -4,7 +4,7 @@ import { useGameCredentials } from "../../lib/hooks/use-accounts";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { commands } from "../../lib/tauri";
-import type { GameCredentialsDto } from "../../lib/types";
+import type { ErrorDto, GameCredentialsDto } from "../../lib/types";
 
 interface OtpPanelProps {
   selectedAccountId: string | null;
@@ -22,12 +22,13 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
 
   function handleOtpError(error: Error) {
     const msg = error.message || t("launcher.otp_error");
+    // Tauri rejects with the raw ErrorDto object, so the machine-readable
+    // code is available even though the mutation types the error as Error.
+    const code = (error as Partial<ErrorDto>).code ?? "";
     const isSessionGone =
-      msg.includes("Not authenticated") ||
-      msg.includes("expired") ||
-      msg.includes("閒置過久") ||
-      msg.includes("重新登入") ||
-      msg.includes("Invalid credentials");
+      code === "AUTH_NOT_AUTHENTICATED" ||
+      code === "AUTH_SESSION_EXPIRED" ||
+      code === "AUTH_INVALID_CREDENTIALS";
 
     if (isSessionGone) {
       // Session is dead — remove it and redirect to login

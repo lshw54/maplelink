@@ -970,9 +970,7 @@ async fn hk_get_otp(
         return Err(parse_error_str("OTP response format invalid"));
     }
     if parts[0] != "1" {
-        return Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: format!("OTP retrieval failed: {}", parts.get(1).unwrap_or(&"")),
-        }));
+        return Err(otp_failure_error(parts.get(1).unwrap_or(&"")));
     }
 
     let data = parts[1];
@@ -1453,6 +1451,20 @@ fn map_beanfun_error(result_msg: &str) -> String {
         "AccountLock" => "帳號已被鎖定，可聯繫客服人員了解原因".to_string(),
         "Token Expired" => "連線逾時，請重新登入".to_string(),
         other => other.to_string(),
+    }
+}
+
+/// Classify a failed `get_webstart_otp` server reply. beanfun's idle-timeout
+/// wording ("閒置過久" / "請重新登入") means the web session is dead, so it maps
+/// to [`AuthError::SessionExpired`] (→ `AUTH_SESSION_EXPIRED`) and the frontend
+/// can route on the error code instead of sniffing the server's message text.
+fn otp_failure_error(server_msg: &str) -> LoginError {
+    if server_msg.contains("閒置過久") || server_msg.contains("重新登入") {
+        LoginError::Auth(AuthError::SessionExpired)
+    } else {
+        LoginError::Auth(AuthError::InvalidCredentials {
+            reason: format!("OTP retrieval failed: {server_msg}"),
+        })
     }
 }
 
@@ -2118,9 +2130,7 @@ async fn tw_get_otp(
         return Err(parse_error_str("OTP response format invalid"));
     }
     if parts[0] != "1" {
-        return Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: format!("OTP retrieval failed: {}", parts.get(1).unwrap_or(&"")),
-        }));
+        return Err(otp_failure_error(parts.get(1).unwrap_or(&"")));
     }
 
     let data = parts[1];
