@@ -8,6 +8,7 @@ pub mod config_service;
 pub mod cookie_native;
 pub mod data_transfer;
 pub mod game_download;
+pub mod game_launch_service;
 pub mod log_service;
 pub mod lr_service;
 pub mod network_service;
