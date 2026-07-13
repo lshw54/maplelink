@@ -58,42 +58,52 @@ fn beanfun_target() -> Option<(std::path::PathBuf, bool)> {
     Some((target, exists))
 }
 
+/// Pure decision: given the geo country, the user's dismiss flag, whether we're
+/// already Beanfun.exe, and whether a target file already exists, decide what to
+/// surface. Only mainland-China (`CN`) triggers the offer.
+fn decide(
+    country: &str,
+    dismissed: bool,
+    already_beanfun: bool,
+    target_exists: bool,
+    current_name: String,
+) -> BeanfunRenameCheck {
+    let target_name = BEANFUN_EXE_NAME.to_string();
+
+    // Already Beanfun.exe, opted out, or not a mainland-China IP → nothing to do.
+    if already_beanfun || dismissed || country != "CN" {
+        return BeanfunRenameCheck {
+            suggest: false,
+            collision: false,
+            current_name,
+            target_name,
+        };
+    }
+
+    // A different Beanfun.exe already occupies the target name → warn instead of
+    // auto-renaming.
+    BeanfunRenameCheck {
+        suggest: !target_exists,
+        collision: target_exists,
+        current_name,
+        target_name,
+    }
+}
+
 /// Decide whether to offer the rename. `dismissed` is the user's persisted
 /// "don't ask again" choice. Best-effort: any lookup failure yields no suggestion.
 pub async fn check(client: &reqwest::Client, dismissed: bool) -> BeanfunRenameCheck {
     let current_name = current_exe_name();
-    let target_name = BEANFUN_EXE_NAME.to_string();
+    let already = is_already_beanfun();
 
-    // Already Beanfun.exe, or the user opted out → nothing to do.
-    if is_already_beanfun() || dismissed {
-        return BeanfunRenameCheck {
-            suggest: false,
-            collision: false,
-            current_name,
-            target_name,
-        };
+    // Short-circuit before the network call when the answer is already known.
+    if already || dismissed {
+        return decide("", dismissed, already, false, current_name);
     }
 
-    // Only suggest for mainland-China IPs.
     let (_ip, country) = network_service::geo_lookup(client).await;
-    if country != "CN" {
-        return BeanfunRenameCheck {
-            suggest: false,
-            collision: false,
-            current_name,
-            target_name,
-        };
-    }
-
-    // A different Beanfun.exe already occupies the target name → don't auto-rename.
-    let collision = beanfun_target().map(|(_, exists)| exists).unwrap_or(false);
-
-    BeanfunRenameCheck {
-        suggest: !collision,
-        collision,
-        current_name,
-        target_name,
-    }
+    let target_exists = beanfun_target().map(|(_, exists)| exists).unwrap_or(false);
+    decide(&country, dismissed, already, target_exists, current_name)
 }
 
 /// Rename the running exe to `Beanfun.exe`, spawn the renamed copy, and signal the
@@ -125,4 +135,62 @@ pub fn rename_to_beanfun_and_relaunch() -> Result<(), String> {
 
     tracing::info!("renamed exe to {BEANFUN_EXE_NAME} and relaunched");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name() -> String {
+        "MapleLink.exe".to_string()
+    }
+
+    // Mock a Taiwan IP: not mainland China → never suggest the rename.
+    #[test]
+    fn tw_ip_does_not_suggest() {
+        let r = decide("TW", false, false, false, name());
+        assert!(!r.suggest);
+        assert!(!r.collision);
+    }
+
+    // Mainland-China IP, clean folder → suggest the rename.
+    #[test]
+    fn cn_ip_suggests_when_clean() {
+        let r = decide("CN", false, false, false, name());
+        assert!(r.suggest);
+        assert!(!r.collision);
+        assert_eq!(r.target_name, BEANFUN_EXE_NAME);
+    }
+
+    // China IP but a different Beanfun.exe already exists → warn, don't suggest.
+    #[test]
+    fn cn_ip_with_collision_warns_not_suggests() {
+        let r = decide("CN", false, false, true, name());
+        assert!(!r.suggest);
+        assert!(r.collision);
+    }
+
+    // "Don't ask again" wins even for a China IP.
+    #[test]
+    fn dismissed_never_suggests() {
+        let r = decide("CN", true, false, false, name());
+        assert!(!r.suggest);
+        assert!(!r.collision);
+    }
+
+    // Already Beanfun.exe → nothing to do.
+    #[test]
+    fn already_beanfun_never_suggests() {
+        let r = decide("CN", false, true, false, "Beanfun.exe".to_string());
+        assert!(!r.suggest);
+        assert!(!r.collision);
+    }
+
+    // Other regions (e.g. HK, US) also don't trigger — only CN does.
+    #[test]
+    fn non_cn_regions_do_not_suggest() {
+        for c in ["HK", "US", "JP", ""] {
+            assert!(!decide(c, false, false, false, name()).suggest, "country {c}");
+        }
+    }
 }

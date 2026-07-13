@@ -35,7 +35,7 @@ export function BeanfunRenameDialog({
       onMouseDown={handleClose}
     >
       <div
-        className="w-[340px] max-w-full rounded-2xl border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+        className="w-full max-w-[318px] rounded-2xl border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-[var(--tb-border)] px-5 py-3.5">
@@ -46,10 +46,10 @@ export function BeanfunRenameDialog({
         <div className="flex flex-col gap-3.5 px-5 py-4">
           <p className="text-[12px] leading-relaxed text-text-dim">{t("beanfun_rename.message")}</p>
 
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-input-bg)] px-3 py-2 font-mono text-[12px]">
-            <span className="text-text-dim">{currentName || "MapleLink.exe"}</span>
-            <span className="text-accent">→</span>
-            <span className="font-semibold text-[var(--text)]">{targetName}</span>
+          <div className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-input-bg)] px-2.5 py-2 font-mono text-[11px]">
+            <span className="truncate text-text-dim">{currentName || "MapleLink.exe"}</span>
+            <span className="shrink-0 text-accent">→</span>
+            <span className="shrink-0 font-semibold text-[var(--text)]">{targetName}</span>
           </div>
 
           <p className="text-[11px] leading-relaxed text-text-faint">{t("beanfun_rename.hint")}</p>

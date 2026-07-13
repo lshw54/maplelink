@@ -144,14 +144,16 @@ jobs:
           # and the "看这" note. Existing users keep auto-updating the bare exe.
           $sevenZip  = "C:\Program Files\7-Zip\7z.exe"
           $sfxModule = "C:\Program Files\7-Zip\7z.sfx"
-          New-Item -ItemType Directory -Force -Path "MapleLink" | Out-Null
-          Copy-Item "MapleLink.exe" "MapleLink\MapleLink.exe"
+          # The self-extractor unpacks this folder (Chinese: "MapleLink 登陆器").
+          $folder = "MapleLink登陸器"
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          Copy-Item "MapleLink.exe" (Join-Path $folder "MapleLink.exe")
           # Copy the note by glob so the CJK filename isn't spelled in the script.
-          Copy-Item "installer\*.txt" "MapleLink\"
+          Copy-Item "installer\*.txt" $folder
 
           # Compress the folder, then concatenate the SFX module + archive so the
           # output is a double-click self-extractor.
-          & $sevenZip a -t7z -mx=9 "MapleLink.7z" "MapleLink" | Out-Null
+          & $sevenZip a -t7z -mx=9 "MapleLink.7z" $folder | Out-Null
           $sfxBytes = [System.IO.File]::ReadAllBytes($sfxModule)
           $arcBytes = [System.IO.File]::ReadAllBytes("MapleLink.7z")
           [System.IO.File]::WriteAllBytes("MapleLink-Setup.exe", $sfxBytes + $arcBytes)
