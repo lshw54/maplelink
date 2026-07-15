@@ -109,7 +109,15 @@ export const commands = {
   setConfig: (key: string, value: string) => invoke("set_config", { key, value }),
 
   // Update (global)
-  checkUpdate: () => invoke<UpdateInfoDto | null>("check_update", { manual: true }),
+  /**
+   * Check for an update.
+   *
+   * `manual` means the user asked, and deliberately bypasses the `auto_update`
+   * setting — so only pass true from an explicit "check now" action. Background
+   * checks must pass false, or they report updates to users who turned the
+   * setting off.
+   */
+  checkUpdate: (manual = true) => invoke<UpdateInfoDto | null>("check_update", { manual }),
   applyUpdate: (downloadUrl: string, useProxy?: boolean) =>
     invoke<string>("apply_update", { downloadUrl, useProxy }),
   testGithubAccess: () => invoke<boolean>("test_github_access"),

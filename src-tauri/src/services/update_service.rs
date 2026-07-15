@@ -13,6 +13,14 @@ use crate::models::update::UpdateInfo;
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
 
+/// The release asset the self-replace update path consumes.
+///
+/// Every release also ships `MapleLink-Setup.exe`, a self-extracting archive
+/// meant for new users only. Matching on any `.exe` picked that one up (GitHub
+/// orders `MapleLink-Setup.exe` first — `-` sorts before `.`), so updating left
+/// users running the extractor, which unpacks a fresh copy on every launch.
+const UPDATE_ASSET: &str = "MapleLink.exe";
+
 /// Proxy mirrors to try (in order) when direct GitHub access fails. Each is
 /// probed in `ensure_proxy_resolved` before use, so unreachable ones are
 /// skipped — extra entries only add redundancy. (Old `ghproxy.com` is dead.)
@@ -250,7 +258,7 @@ fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>
         .and_then(|assets| {
             assets.iter().find_map(|a| {
                 let name = a["name"].as_str().unwrap_or("");
-                if name.to_lowercase().ends_with(".exe") {
+                if name.eq_ignore_ascii_case(UPDATE_ASSET) {
                     a["browser_download_url"].as_str().map(String::from)
                 } else {
                     None
@@ -258,6 +266,10 @@ fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>
             })
         })
         .unwrap_or_default();
+
+    if download_url.is_empty() {
+        tracing::warn!("release v{tag} ships no {UPDATE_ASSET} — it cannot be applied");
+    }
 
     let changelog = release["body"].as_str().unwrap_or("").to_string();
     let is_prerelease = release["prerelease"].as_bool().unwrap_or(false);
@@ -504,6 +516,50 @@ pub fn is_proxy_active() -> bool {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// A release JSON shaped like ours: GitHub lists `MapleLink-Setup.exe`
+    /// first, because `-` sorts before `.`.
+    fn release_json() -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": "v9.9.9",
+            "body": "notes",
+            "prerelease": false,
+            "assets": [
+                {
+                    "name": "MapleLink-Setup.exe",
+                    "browser_download_url": "https://example.com/MapleLink-Setup.exe"
+                },
+                {
+                    "name": "MapleLink.exe",
+                    "browser_download_url": "https://example.com/MapleLink.exe"
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn picks_the_standalone_exe_not_the_installer() {
+        let info = extract_update_info(&release_json()).unwrap().unwrap();
+        assert_eq!(info.download_url, "https://example.com/MapleLink.exe");
+    }
+
+    #[test]
+    fn download_url_is_empty_when_the_standalone_exe_is_missing() {
+        let release = serde_json::json!({
+            "tag_name": "v9.9.9",
+            "body": "",
+            "prerelease": false,
+            "assets": [
+                {
+                    "name": "MapleLink-Setup.exe",
+                    "browser_download_url": "https://example.com/MapleLink-Setup.exe"
+                }
+            ]
+        });
+        let info = extract_update_info(&release).unwrap().unwrap();
+        // Better to offer nothing than to hand the extractor to self-replace.
+        assert!(info.download_url.is_empty());
+    }
 
     #[test]
     fn is_newer_works() {

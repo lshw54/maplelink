@@ -247,11 +247,13 @@ export function App() {
       onUpdate(event.payload);
     });
 
-    // Fallback: if backend event was missed, check after a short delay
+    // Fallback: if backend event was missed, check after a short delay. Not a
+    // manual check — the backend must still honour the auto_update setting here,
+    // otherwise this notifies users who turned updates off.
     const timer = setTimeout(() => {
       if (useUpdateStore.getState().availableUpdate) return; // already got it
       commands
-        .checkUpdate()
+        .checkUpdate(false)
         .then((info) => {
           if (info) onUpdate(info);
         })
