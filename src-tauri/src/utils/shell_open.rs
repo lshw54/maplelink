@@ -21,16 +21,28 @@
 #[cfg(target_os = "windows")]
 pub fn shell_open(target: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    std::process::Command::new("explorer.exe")
+    match std::process::Command::new("explorer.exe")
         .arg(target)
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
         .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("failed to launch explorer.exe: {e}"))
+    {
+        Ok(child) => {
+            tracing::info!(
+                "shell_open: handed to explorer.exe (pid={}) so it opens unelevated: {target}",
+                child.id()
+            );
+            Ok(())
+        }
+        Err(e) => {
+            tracing::warn!("shell_open: could not launch explorer.exe for {target}: {e}");
+            Err(format!("failed to launch explorer.exe: {e}"))
+        }
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn shell_open(target: &str) -> Result<(), String> {
+    tracing::info!("shell_open: {target}");
     open::that(target).map_err(|e| format!("failed to open target: {e}"))
 }
 
@@ -41,6 +53,7 @@ pub fn shell_open(target: &str) -> Result<(), String> {
 /// before the string ever reaches the shell.
 pub fn open_external_url(url: &str) -> Result<(), String> {
     if !is_http_url(url) {
+        tracing::warn!("open_external_url: refusing non-http(s) target: {url}");
         return Err(format!("refusing to open non-http(s) URL: {url}"));
     }
     shell_open(url)
