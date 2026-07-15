@@ -486,7 +486,7 @@ pub fn run() {
             }
 
             // 4b. Auto-update check (non-blocking background task).
-            if update_service::should_check_on_startup(auto_update_enabled) {
+            if update_service::should_check(false, auto_update_enabled) {
                 let app_handle_for_update = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     // Delay to ensure WebView2 is fully rendered before

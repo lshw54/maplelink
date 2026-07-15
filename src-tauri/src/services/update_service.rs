@@ -498,8 +498,12 @@ fn is_newer(new: &str, current: &str) -> bool {
 }
 
 /// Determine whether an auto-update check should run.
-pub fn should_check_on_startup(auto_update_enabled: bool) -> bool {
-    auto_update_enabled
+pub fn should_check(is_manual: bool, auto_update_enabled: bool) -> bool {
+    // A manual check is the user asking outright, so it ignores the setting.
+    // Everything else — startup, the frontend's missed-event fallback — must
+    // stay silent when the user turned auto-update off, or the toggle does
+    // nothing.
+    is_manual || auto_update_enabled
 }
 
 /// Current application version from Cargo.toml.
@@ -576,20 +580,35 @@ mod tests {
 
     // Feature: maplelink-rewrite, Property 11: Disabled auto-update skips update check
     //
-    // For any AppConfig where auto_update is false, the startup sequence shall not
-    // invoke the update check endpoint. `should_check_on_startup` is the pure gate
-    // the startup sequence (lib.rs) and the check_update command both consult.
+    // For any AppConfig where auto_update is false, no background check may run —
+    // not at startup, and not from the frontend's missed-event fallback. Both go
+    // through `should_check`, which is the whole gate.
+    //
+    // The earlier version of this test only covered the auto_update argument, so
+    // it stayed green while every real check passed is_manual = true and skipped
+    // the gate entirely. The is_manual row below is the one that matters.
     //
     // **Validates: Requirements 8.6**
+    #[test]
+    fn should_check_truth_table() {
+        // Background check, user turned auto-update off — the toggle must hold.
+        assert!(!should_check(false, false));
+        // Background check, auto-update on.
+        assert!(should_check(false, true));
+        // The user pressed "check now"; the setting does not apply.
+        assert!(should_check(true, false));
+        assert!(should_check(true, true));
+    }
+
     proptest! {
         #[test]
-        fn prop_disabled_auto_update_skips_check(_dummy in 0u8..10) {
-            prop_assert!(!should_check_on_startup(false));
+        fn prop_disabled_auto_update_skips_background_check(_dummy in 0u8..10) {
+            prop_assert!(!should_check(false, false));
         }
 
         #[test]
-        fn prop_enabled_auto_update_allows_check(_dummy in 0u8..10) {
-            prop_assert!(should_check_on_startup(true));
+        fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
+            prop_assert!(should_check(false, true));
         }
     }
 }
