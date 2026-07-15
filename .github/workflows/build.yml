@@ -294,8 +294,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Stage version files and check if there are changes
-          git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json
+          # Stage version files and check if there are changes. Cargo.lock is in
+          # here because the build above rewrites the `maplelink` entry to match
+          # the new Cargo.toml version — leaving it out strands the committed lock
+          # a version behind, so every fresh clone rebuilds it and shows dirty.
+          git add src-tauri/Cargo.toml src-tauri/tauri.conf.json5 package.json src-tauri/Cargo.lock
           if (git diff --cached --quiet) { exit 0 }
 
           $repo = "${{ github.repository }}"
@@ -305,7 +308,8 @@ jobs:
           $files = @(
             "src-tauri/Cargo.toml",
             "src-tauri/tauri.conf.json5",
-            "package.json"
+            "package.json",
+            "src-tauri/Cargo.lock"
           )
 
           $treeEntries = @()
