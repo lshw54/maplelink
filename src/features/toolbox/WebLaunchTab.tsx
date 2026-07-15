@@ -91,7 +91,7 @@ function TestRow({
 const GAMANIA_DOWNLOAD_URL = "https://tw.beanfun.com/ggm/index.aspx";
 
 function openExternal(url: string) {
-  import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+  commands.openExternal(url).catch(() => {});
 }
 
 /** A labelled on/off switch row for a web-launch behaviour preference. */

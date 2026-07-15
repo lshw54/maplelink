@@ -59,7 +59,7 @@ export function AboutTab() {
   }
 
   function openExternal(url: string) {
-    import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+    commands.openExternal(url).catch(() => {});
   }
 
   return (

@@ -2,3 +2,4 @@
 
 pub mod crypto;
 pub mod dpapi;
+pub mod shell_open;

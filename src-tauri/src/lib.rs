@@ -321,6 +321,7 @@ pub fn run() {
             commands::system::detect_game_path,
             commands::system::toggle_debug_window,
             commands::system::open_log_folder,
+            commands::system::open_external,
             commands::system::get_recent_logs,
             commands::system::open_web_popup,
             commands::system::open_gash_popup,
@@ -389,6 +390,10 @@ pub fn run() {
                 }
             }
             tracing::info!("log directory: {}", log_dir.display());
+            // Elevated means every process we spawn inherits the admin token —
+            // external links must go through the shell, never straight from us.
+            #[cfg(target_os = "windows")]
+            tracing::info!("running elevated: {}", is_elevated());
 
             // 2. Load config from disk (create default if missing).
             let config_dir = app

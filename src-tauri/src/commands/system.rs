@@ -581,6 +581,21 @@ pub async fn detect_game_path(
     game_env_service::detect_game_path(&state).await
 }
 
+/// Open an external web link in the user's browser, unelevated.
+///
+/// MapleLink runs elevated, so anything it spawns inherits the admin token — a
+/// browser started that way corrupts the user's real profile. This routes the
+/// link through the desktop shell instead. Rejects non-http(s) targets.
+#[tauri::command]
+pub async fn open_external(url: String) -> Result<(), ErrorDto> {
+    crate::utils::shell_open::open_external_url(&url).map_err(|e| ErrorDto {
+        code: "SYS_OPEN_URL_FAILED".to_string(),
+        message: e,
+        category: ErrorCategory::Process,
+        details: Some(url),
+    })
+}
+
 /// Open the app's log directory in the system file explorer.
 #[tauri::command]
 pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), ErrorDto> {
@@ -591,7 +606,7 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), ErrorDto> {
         details: None,
     })?;
 
-    open::that(&log_dir).map_err(|e| ErrorDto {
+    crate::utils::shell_open::shell_open(&log_dir.to_string_lossy()).map_err(|e| ErrorDto {
         code: "SYS_OPEN_FOLDER_FAILED".to_string(),
         message: format!("Failed to open folder: {e}"),
         category: ErrorCategory::Process,

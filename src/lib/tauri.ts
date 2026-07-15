@@ -131,6 +131,14 @@ export const commands = {
   webLaunchTestGamania: () => invoke<WebLaunchTestCode>("web_launch_test_gamania"),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),
   openLogFolder: () => invoke("open_log_folder"),
+  /**
+   * Open an external http(s) link in the user's browser.
+   *
+   * Always use this instead of `@tauri-apps/plugin-shell`'s `open()`: MapleLink
+   * runs elevated, so a browser it spawns directly inherits the admin token and
+   * corrupts the user's real browser profile.
+   */
+  openExternal: (url: string) => invoke("open_external", { url }),
   getRecentLogs: () => invoke<string>("get_recent_logs"),
   openWebPopup: (url: string, title: string) => invoke("open_web_popup", { url, title }),
   getWebToken: (sessionId: string) => invoke<string>("get_web_token", { sessionId }),

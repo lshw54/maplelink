@@ -6,7 +6,7 @@ import type { GameDownloadDto } from "../../lib/types";
 import { Modal } from "../../components/Modal";
 
 function openExternal(url: string) {
-  import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+  commands.openExternal(url).catch(() => {});
 }
 
 function DownloadRow({ item }: { item: GameDownloadDto }) {
