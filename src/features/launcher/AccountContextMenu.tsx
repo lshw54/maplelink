@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { open } from "@tauri-apps/plugin-shell";
 import { commands } from "../../lib/tauri";
 import { useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -428,7 +427,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   }
 
   function handleWebsite() {
-    open("https://maplestory.beanfun.com/");
+    commands.openExternal("https://maplestory.beanfun.com/").catch(() => {});
     onClose();
   }
 

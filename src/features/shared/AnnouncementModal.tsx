@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { commands } from "../../lib/tauri";
 import {
   ANNOUNCEMENT_BEANFUN_URL,
   ANNOUNCEMENT_FORCED_SECONDS,
@@ -7,7 +8,7 @@ import {
 } from "../../lib/announcement";
 
 function openExternal(url: string) {
-  import("@tauri-apps/plugin-shell").then(({ open }) => open(url));
+  commands.openExternal(url).catch(() => {});
 }
 
 /** One project row: coloured dot + bold name (+ optional tag), description below. */

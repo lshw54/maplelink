@@ -3,7 +3,6 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useLogin } from "../../lib/hooks/use-auth";
-import { open } from "@tauri-apps/plugin-shell";
 import type { AdvanceCheckState } from "../../lib/types";
 
 interface VerifyFormProps {
@@ -207,7 +206,7 @@ export function VerifyForm({
           {t("login.verify.web_required")}
         </p>
         <button
-          onClick={() => open(webVerifyUrl)}
+          onClick={() => commands.openExternal(webVerifyUrl).catch(() => {})}
           className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95"
         >
           {t("login.verify.open_browser")}
