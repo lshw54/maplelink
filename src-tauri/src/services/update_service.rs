@@ -13,6 +13,14 @@ use crate::models::update::UpdateInfo;
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
 
+/// The release asset the self-replace update path consumes.
+///
+/// Every release also ships `MapleLink-Setup.exe`, a self-extracting archive
+/// meant for new users only. Matching on any `.exe` picked that one up (GitHub
+/// orders `MapleLink-Setup.exe` first — `-` sorts before `.`), so updating left
+/// users running the extractor, which unpacks a fresh copy on every launch.
+const UPDATE_ASSET: &str = "MapleLink.exe";
+
 /// Proxy mirrors to try (in order) when direct GitHub access fails. Each is
 /// probed in `ensure_proxy_resolved` before use, so unreachable ones are
 /// skipped — extra entries only add redundancy. (Old `ghproxy.com` is dead.)
@@ -250,7 +258,7 @@ fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>
         .and_then(|assets| {
             assets.iter().find_map(|a| {
                 let name = a["name"].as_str().unwrap_or("");
-                if name.to_lowercase().ends_with(".exe") {
+                if name.eq_ignore_ascii_case(UPDATE_ASSET) {
                     a["browser_download_url"].as_str().map(String::from)
                 } else {
                     None
@@ -258,6 +266,10 @@ fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>
             })
         })
         .unwrap_or_default();
+
+    if download_url.is_empty() {
+        tracing::warn!("release v{tag} ships no {UPDATE_ASSET} — it cannot be applied");
+    }
 
     let changelog = release["body"].as_str().unwrap_or("").to_string();
     let is_prerelease = release["prerelease"].as_bool().unwrap_or(false);
@@ -486,8 +498,12 @@ fn is_newer(new: &str, current: &str) -> bool {
 }
 
 /// Determine whether an auto-update check should run.
-pub fn should_check_on_startup(auto_update_enabled: bool) -> bool {
-    auto_update_enabled
+pub fn should_check(is_manual: bool, auto_update_enabled: bool) -> bool {
+    // A manual check is the user asking outright, so it ignores the setting.
+    // Everything else — startup, the frontend's missed-event fallback — must
+    // stay silent when the user turned auto-update off, or the toggle does
+    // nothing.
+    is_manual || auto_update_enabled
 }
 
 /// Current application version from Cargo.toml.
@@ -505,6 +521,50 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    /// A release JSON shaped like ours: GitHub lists `MapleLink-Setup.exe`
+    /// first, because `-` sorts before `.`.
+    fn release_json() -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": "v9.9.9",
+            "body": "notes",
+            "prerelease": false,
+            "assets": [
+                {
+                    "name": "MapleLink-Setup.exe",
+                    "browser_download_url": "https://example.com/MapleLink-Setup.exe"
+                },
+                {
+                    "name": "MapleLink.exe",
+                    "browser_download_url": "https://example.com/MapleLink.exe"
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn picks_the_standalone_exe_not_the_installer() {
+        let info = extract_update_info(&release_json()).unwrap().unwrap();
+        assert_eq!(info.download_url, "https://example.com/MapleLink.exe");
+    }
+
+    #[test]
+    fn download_url_is_empty_when_the_standalone_exe_is_missing() {
+        let release = serde_json::json!({
+            "tag_name": "v9.9.9",
+            "body": "",
+            "prerelease": false,
+            "assets": [
+                {
+                    "name": "MapleLink-Setup.exe",
+                    "browser_download_url": "https://example.com/MapleLink-Setup.exe"
+                }
+            ]
+        });
+        let info = extract_update_info(&release).unwrap().unwrap();
+        // Better to offer nothing than to hand the extractor to self-replace.
+        assert!(info.download_url.is_empty());
+    }
+
     #[test]
     fn is_newer_works() {
         assert!(is_newer("0.2.0", "0.1.0"));
@@ -520,20 +580,35 @@ mod tests {
 
     // Feature: maplelink-rewrite, Property 11: Disabled auto-update skips update check
     //
-    // For any AppConfig where auto_update is false, the startup sequence shall not
-    // invoke the update check endpoint. `should_check_on_startup` is the pure gate
-    // the startup sequence (lib.rs) and the check_update command both consult.
+    // For any AppConfig where auto_update is false, no background check may run —
+    // not at startup, and not from the frontend's missed-event fallback. Both go
+    // through `should_check`, which is the whole gate.
+    //
+    // The earlier version of this test only covered the auto_update argument, so
+    // it stayed green while every real check passed is_manual = true and skipped
+    // the gate entirely. The is_manual row below is the one that matters.
     //
     // **Validates: Requirements 8.6**
+    #[test]
+    fn should_check_truth_table() {
+        // Background check, user turned auto-update off — the toggle must hold.
+        assert!(!should_check(false, false));
+        // Background check, auto-update on.
+        assert!(should_check(false, true));
+        // The user pressed "check now"; the setting does not apply.
+        assert!(should_check(true, false));
+        assert!(should_check(true, true));
+    }
+
     proptest! {
         #[test]
-        fn prop_disabled_auto_update_skips_check(_dummy in 0u8..10) {
-            prop_assert!(!should_check_on_startup(false));
+        fn prop_disabled_auto_update_skips_background_check(_dummy in 0u8..10) {
+            prop_assert!(!should_check(false, false));
         }
 
         #[test]
-        fn prop_enabled_auto_update_allows_check(_dummy in 0u8..10) {
-            prop_assert!(should_check_on_startup(true));
+        fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
+            prop_assert!(should_check(false, true));
         }
     }
 }

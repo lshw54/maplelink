@@ -18,7 +18,7 @@ pub async fn check_update(
     let is_manual = manual.unwrap_or(false);
 
     let config = state.config.read().await;
-    if !is_manual && !update_service::should_check_on_startup(config.auto_update) {
+    if !update_service::should_check(is_manual, config.auto_update) {
         return Ok(None);
     }
 
