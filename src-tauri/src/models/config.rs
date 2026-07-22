@@ -61,6 +61,13 @@ pub struct AppConfig {
     /// exe be renamed to `Beanfun.exe` for accelerator compatibility. Default: false.
     #[serde(default)]
     pub beanfun_rename_dismissed: bool,
+    /// Café / shared-PC mode: closing the app wipes all local data (saved
+    /// accounts, display overrides, config, logs, and the webview session) so the
+    /// next user starts clean. Default: false. Because the wipe removes
+    /// `config.ini`, this flag naturally resets to off on the next launch — a
+    /// crash or hard-kill instead of a normal close leaves it on but unwiped.
+    #[serde(default)]
+    pub cafe_mode: bool,
 }
 
 fn default_true() -> bool {
@@ -100,6 +107,7 @@ impl Default for AppConfig {
             close_behavior: CloseBehavior::Ask,
             hide_account_names: false,
             beanfun_rename_dismissed: false,
+            cafe_mode: false,
         }
     }
 }

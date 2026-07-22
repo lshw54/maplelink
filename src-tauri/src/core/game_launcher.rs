@@ -263,6 +263,7 @@ mod tests {
                         close_behavior: crate::models::config::CloseBehavior::Ask,
                         hide_account_names: false,
                         beanfun_rename_dismissed: false,
+                        cafe_mode: false,
                     }
                 },
             )

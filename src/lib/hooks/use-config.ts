@@ -50,6 +50,7 @@ const KEY_MAP: Record<string, string> = {
   webLaunchAutoPaste: "web_launch_auto_paste",
   closeBehavior: "close_behavior",
   hideAccountNames: "hide_account_names",
+  cafeMode: "cafe_mode",
   __reset__: "__reset__",
 };
 

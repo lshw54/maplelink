@@ -108,6 +108,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
                 defaults.beanfun_rename_dismissed,
             );
         }
+        if let Some(v) = general.get("cafe_mode") {
+            config.cafe_mode = parse_bool(v, "cafe_mode", defaults.cafe_mode);
+        }
     }
 
     // --- [game] ---
@@ -208,6 +211,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         "beanfun_rename_dismissed = {}\n",
         config.beanfun_rename_dismissed
     ));
+    out.push_str(&format!("cafe_mode = {}\n", config.cafe_mode));
     out.push('\n');
 
     // [game]
@@ -532,6 +536,7 @@ x = not_a_number
             close_behavior: crate::models::config::CloseBehavior::Tray,
             hide_account_names: true,
             beanfun_rename_dismissed: true,
+            cafe_mode: true,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

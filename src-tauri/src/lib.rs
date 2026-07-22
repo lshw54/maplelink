@@ -625,9 +625,27 @@ pub fn run() {
                 if window.label() == "main"
                     && !QUIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
                 {
-                    let behavior = window
-                        .app_handle()
-                        .try_state::<AppState>()
+                    let state_opt = window.app_handle().try_state::<AppState>();
+                    // Café / shared-PC mode overrides the close behaviour entirely:
+                    // wipe every local trace and quit (never minimise to tray, which
+                    // would keep the session resident).
+                    let cafe = state_opt
+                        .as_ref()
+                        .and_then(|s| s.config.try_read().ok().map(|c| c.cafe_mode))
+                        .unwrap_or(false);
+                    if cafe {
+                        api.prevent_close();
+                        if let Some(state) = state_opt.as_ref() {
+                            services::cafe_service::wipe_local_data(
+                                window.app_handle(),
+                                state.inner(),
+                            );
+                        }
+                        request_quit(window.app_handle());
+                        return;
+                    }
+
+                    let behavior = state_opt
                         .and_then(|s| s.config.try_read().ok().map(|c| c.close_behavior))
                         .unwrap_or(models::config::CloseBehavior::Ask);
                     match behavior {
