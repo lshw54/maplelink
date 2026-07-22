@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::dpapi;
@@ -23,6 +24,14 @@ pub struct SavedAccount {
     /// older stored records (without this field) loadable.
     #[serde(default)]
     pub verify_info: Option<String>,
+    /// When this account was last logged in. Set on every successful login so
+    /// [`get_last_account`] can pick the genuinely most-recent one explicitly,
+    /// rather than inferring it from the record's position in the list (which any
+    /// reordering could silently break). `None` for records that predate this
+    /// field or were never used to log in (e.g. imported or verify-info-only).
+    /// Lives inside the DPAPI-encrypted store — never written to config.ini.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 /// Load saved accounts from encrypted storage.
@@ -160,6 +169,8 @@ pub fn upsert_account(
         password: pwd,
         remember_password: remember,
         verify_info,
+        // This call is a successful login, so stamp it as the most recent.
+        last_used_at: Some(Utc::now()),
     });
 }
 
@@ -188,6 +199,8 @@ pub fn set_verify_info(
             password: String::new(),
             remember_password: false,
             verify_info: value,
+            // Storing verify info is not a login — leave it out of "last used".
+            last_used_at: None,
         });
     }
 }
@@ -200,12 +213,21 @@ pub fn get_accounts_for_region<'a>(
     accounts.iter().filter(|a| a.region == region).collect()
 }
 
-/// Get the last saved account for a region.
+/// Get the most recently logged-in account for a region.
+///
+/// Picks by `last_used_at` rather than list position, so it stays correct no
+/// matter how the underlying list gets reordered. Records without a timestamp
+/// (legacy or never logged in) sort oldest; when every candidate lacks one,
+/// `max_by_key` returns the last match — the previous "last in list" behaviour,
+/// so existing data keeps working until the next login stamps a real time.
 pub fn get_last_account<'a>(
     accounts: &'a [SavedAccount],
     region: &str,
 ) -> Option<&'a SavedAccount> {
-    accounts.iter().rev().find(|a| a.region == region)
+    accounts
+        .iter()
+        .filter(|a| a.region == region)
+        .max_by_key(|a| a.last_used_at)
 }
 
 /// Get a specific saved account by region and account ID.
@@ -318,4 +340,50 @@ pub async fn save_display_overrides(
     tokio::fs::write(&key_path, &entropy)
         .await
         .map_err(|e| format!("failed to write overrides.key: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn acct(region: &str, account: &str, ts: Option<i64>) -> SavedAccount {
+        SavedAccount {
+            region: region.into(),
+            account: account.into(),
+            password: String::new(),
+            remember_password: false,
+            verify_info: None,
+            last_used_at: ts.map(|s| DateTime::<Utc>::from_timestamp(s, 0).unwrap()),
+        }
+    }
+
+    #[test]
+    fn last_account_follows_timestamp_not_list_position() {
+        // "B" logged in more recently but sits BEFORE "A" in the list — the old
+        // position-based lookup returned "A", which is the reported bug.
+        let accounts = vec![acct("TW", "B", Some(200)), acct("TW", "A", Some(100))];
+        assert_eq!(get_last_account(&accounts, "TW").unwrap().account, "B");
+    }
+
+    #[test]
+    fn last_account_falls_back_to_last_in_list_for_legacy_records() {
+        // No timestamps (records predate the field) → previous behaviour: last one.
+        let accounts = vec![acct("TW", "A", None), acct("TW", "B", None)];
+        assert_eq!(get_last_account(&accounts, "TW").unwrap().account, "B");
+    }
+
+    #[test]
+    fn last_account_is_scoped_to_the_region() {
+        // A newer HK login must not leak into the TW result.
+        let accounts = vec![acct("TW", "A", Some(100)), acct("HK", "C", Some(999))];
+        assert_eq!(get_last_account(&accounts, "TW").unwrap().account, "A");
+    }
+
+    #[test]
+    fn upsert_stamps_the_logged_in_account_as_most_recent() {
+        let mut accounts = vec![acct("TW", "A", Some(100))];
+        upsert_account(&mut accounts, "TW", "B", "pw", true);
+        // B was just "logged in", so it must win despite A having an older stamp.
+        assert_eq!(get_last_account(&accounts, "TW").unwrap().account, "B");
+    }
 }

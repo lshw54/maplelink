@@ -163,6 +163,8 @@ fn parse_beanfun(value: &serde_json::Value) -> Option<ExportPayload> {
             } else {
                 Some(verify)
             },
+            // Imported records carry no login history of their own.
+            last_used_at: None,
         });
     }
     Some(ExportPayload {
@@ -215,6 +217,7 @@ mod tests {
                 password: "s3cret".into(),
                 remember_password: true,
                 verify_info: Some("email".into()),
+                last_used_at: None,
             }],
             display_overrides: DisplayOverrides::default(),
         }
