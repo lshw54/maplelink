@@ -573,15 +573,21 @@ pub async fn get_last_saved_account(
     let region_str = format!("{region:?}");
 
     let accounts = state.saved_accounts.read().await;
-    let result =
-        crate::services::account_storage::get_last_account(&accounts, &region_str).map(|a| {
-            LastSavedAccountDto {
-                account: a.account.clone(),
-                password: a.password.clone(),
-                remember_password: a.remember_password,
-                verify_info: a.verify_info.clone(),
-            }
-        });
+    let picked = crate::services::account_storage::get_last_account(&accounts, &region_str);
+    let region_total = accounts.iter().filter(|a| a.region == region_str).count();
+    tracing::info!(
+        region = %region_str,
+        region_total,
+        picked = picked.map(|a| a.account.as_str()).unwrap_or("<none>"),
+        stamped = picked.is_some_and(|a| a.last_used_at.is_some()),
+        "get_last_saved_account"
+    );
+    let result = picked.map(|a| LastSavedAccountDto {
+        account: a.account.clone(),
+        password: a.password.clone(),
+        remember_password: a.remember_password,
+        verify_info: a.verify_info.clone(),
+    });
 
     Ok(result)
 }
