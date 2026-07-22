@@ -60,6 +60,7 @@ export interface AppConfigDto {
   closeBehavior: "ask" | "quit" | "tray";
   hideAccountNames: boolean;
   beanfunRenameDismissed: boolean;
+  cafeMode: boolean;
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */

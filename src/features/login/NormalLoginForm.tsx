@@ -4,6 +4,7 @@ import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 import { PasswordInput } from "../../components/PasswordInput";
+import { Modal } from "../../components/Modal";
 import type { SavedAccountDto } from "../../lib/types";
 
 const FORGOT_PWD_URLS: Record<string, string> = {
@@ -46,11 +47,19 @@ export function NormalLoginForm({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const accountInputRef = useRef<HTMLInputElement>(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+  const [cafeConfirm, setCafeConfirm] = useState(false);
 
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
+  const cafeMode = useConfigStore((s) => s.config?.cafeMode ?? false);
   const showQr = region === "TW";
+
+  function setCafeMode(on: boolean) {
+    commands.setConfig("cafe_mode", String(on)).catch(() => {});
+    const cfg = useConfigStore.getState().config;
+    if (cfg) useConfigStore.setState({ config: { ...cfg, cafeMode: on } });
+  }
 
   // Auto-fill from last saved account on mount and when region changes.
   const prevRegionRef = useRef(region);
@@ -96,7 +105,15 @@ export function NormalLoginForm({
   // Does NOT fire on logout, session switch, or re-mount.
   // Delayed slightly to ensure WebView2 is fully rendered before navigating.
   useEffect(() => {
-    if (autoLogin && !hasAutoLoginFired() && account.trim() && password.trim() && !isLoading) {
+    // Never auto-login in café mode — it must not sign in a previous user.
+    if (
+      autoLogin &&
+      !cafeMode &&
+      !hasAutoLoginFired() &&
+      account.trim() &&
+      password.trim() &&
+      !isLoading
+    ) {
       markAutoLoginFired();
       const timer = setTimeout(() => {
         login.mutate(
@@ -114,7 +131,7 @@ export function NormalLoginForm({
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [autoLogin, account, password]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoLogin, cafeMode, account, password]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close dropdown when clicking outside.
   useEffect(() => {
@@ -381,6 +398,31 @@ export function NormalLoginForm({
         </button>
       </div>
 
+      {/* Café / shared-PC mode — wipes all local data on close */}
+      <label
+        className={`mb-3 flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
+          cafeMode
+            ? "border-[rgba(232,162,58,0.45)] bg-[rgba(232,162,58,0.08)]"
+            : "border-border bg-[var(--surface)] hover:border-[rgba(232,162,58,0.3)]"
+        }`}
+      >
+        <input
+          type="checkbox"
+          name="cafe-mode"
+          checked={cafeMode}
+          onChange={(e) => (e.target.checked ? setCafeConfirm(true) : setCafeMode(false))}
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-accent"
+        />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1 text-[12px] font-semibold text-[var(--text)]">
+            🖥️ {t("login.cafe_mode")}
+          </span>
+          <span className="mt-0.5 block text-[11px] leading-snug text-text-dim">
+            {t("login.cafe_mode_hint")}
+          </span>
+        </span>
+      </label>
+
       {login.error && (
         <p className="mb-2 text-[12px] text-[var(--danger)]">{login.error.message}</p>
       )}
@@ -479,6 +521,36 @@ export function NormalLoginForm({
           </button>
         )}
       </div>
+
+      {/* Café-mode confirmation — enabling is destructive on every close */}
+      <Modal
+        isOpen={cafeConfirm}
+        onClose={() => setCafeConfirm(false)}
+        title={t("login.cafe_confirm_title")}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs leading-relaxed text-text-dim">{t("login.cafe_confirm_body")}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCafeConfirm(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCafeMode(true);
+                setCafeConfirm(false);
+              }}
+              className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("login.cafe_confirm_enable")}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </form>
   );
 }

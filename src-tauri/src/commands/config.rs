@@ -204,6 +204,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "beanfunRenameDismissed" | "beanfun_rename_dismissed" => {
             config.beanfun_rename_dismissed = parse_bool(value)?;
         }
+        "cafeMode" | "cafe_mode" => {
+            config.cafe_mode = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }
