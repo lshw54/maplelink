@@ -29,6 +29,9 @@ src-tauri/gen/schemas/
 # AI tool local settings
 .kiro/
 
+# Local LR DLL backups (originals kept aside before swapping in upstream builds)
+src-tauri/resources/lr/orig_backup/
+
 # Temp build artifacts
 app-icon-square.png
 app-icon.jpg
