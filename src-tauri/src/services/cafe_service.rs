@@ -19,17 +19,16 @@ pub fn wipe_local_data(app: &tauri::AppHandle, state: &AppState) {
     use tauri::Manager;
 
     // Credential store + display overrides (DPAPI .dat/.key pairs) and config.
-    let mut files = vec![
+    // Deliberately NOT announcement.json — it only records which announcement
+    // has been read (no user data), and wiping it would force every café user
+    // through the mandatory notice again.
+    let files = [
         state.accounts_path.with_extension("dat"),
         state.accounts_path.with_extension("key"),
         state.overrides_path.with_extension("dat"),
         state.overrides_path.with_extension("key"),
         state.config_path.clone(),
     ];
-    // The announcement-seen marker lives beside config in the app data dir.
-    if let Ok(dir) = app.path().app_data_dir() {
-        files.push(dir.join("announcement.json"));
-    }
     for f in &files {
         match std::fs::remove_file(f) {
             Ok(()) => tracing::info!("cafe wipe: removed {}", f.display()),
