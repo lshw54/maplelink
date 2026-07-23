@@ -5,12 +5,15 @@
 //! leaves a `bfWebToken` in the session cookie jar), then a cookie-seeded webview
 //! drives the galaxy SSO through to `maplestoryclassic.beanfun.com/Main`.
 //!
-//! From there the launch is fully automated: an injected script fetches the
-//! one-time launch info (`/api/Login/GetOneTimeWebInfo`) and hands it to the
-//! native side via `document.title` (the page's CSP usually blocks Tauri IPC, but
-//! the title is always readable). The backend then builds the `ngm://` URL the
-//! site would have used and invokes Nexon Game Manager's registered handler
-//! directly — no manual "start game" click, and no protocol-launch prompt.
+//! The Main page auto-fires its own `ngm://` launch, which WebView2 would show a
+//! "open Nexon Game Manager" prompt for. We intercept that at the WebView2 layer
+//! (`LaunchingExternalUriScheme`), cancel the prompt, and start Nexon Game
+//! Manager ourselves from its registered handler — so the whole thing runs in a
+//! hidden window with no manual click. If interception isn't available (old
+//! runtime) or NGM isn't installed, the portal is revealed for a manual launch.
+
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
@@ -21,121 +24,65 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
 /// Galaxy classic (mstc) login entry. Issues a fresh OTT, stores it in the page's
 /// localStorage and redirects to the init page (whose HK button we auto-click);
-/// SSO via the seeded `bfWebToken` then flows through to the portal.
+/// SSO via the seeded `bfWebToken` then flows through to the portal, which fires
+/// its own `ngm://` launch on arrival.
 const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/login/mstc?redirect_url=https://maplestoryclassic.beanfun.com/Main?af_click_id=";
 
-/// Marker prefix the injected script writes to `document.title` once it has the
-/// launch info, so the native poller can pick it up.
-const LAUNCH_MARKER: &str = "NGMLAUNCH:";
-
-/// Injected on every navigation. Two no-op-elsewhere behaviours:
-/// 1. On the OTT init page — click the HK button to drive the beanfun SSO.
-/// 2. On the classic portal Main page — POST the OTT to `GetOneTimeWebInfo` and
-///    publish the returned launch info through `document.title`.
-const INIT_SCRIPT: &str = r#"
+/// Injected on every navigation. On the OTT init page it clicks the HK button to
+/// drive the beanfun SSO; a no-op everywhere else.
+const AUTO_HK_SCRIPT: &str = r#"
 (function () {
   function driveHk() {
     if (location.href.indexOf('/login/init/mstc/') === -1) return;
     var btn = document.querySelector('.btnLogin-beanfun');
     if (btn) { btn.click(); }
   }
-  function fetchLaunch() {
-    if (location.href.indexOf('maplestoryclassic.beanfun.com/Main') === -1) return;
-    var ott = null;
-    try { ott = localStorage.getItem('LOGIN_OTT_mstc'); } catch (e) {}
-    if (!ott) ott = new URLSearchParams(location.search).get('OTT');
-    if (!ott) return;
-    fetch('/api/Login/GetOneTimeWebInfo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ OTT: ott })
-    }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.code === 1 && j.data) {
-        document.title = 'NGMLAUNCH:' + JSON.stringify(j.data);
-      }
-    }).catch(function () {});
-  }
-  function run() { driveHk(); fetchLaunch(); }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(run, 200); });
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(driveHk, 200); });
   } else {
-    setTimeout(run, 200);
+    setTimeout(driveHk, 200);
   }
 })();
 "#;
 
-/// The launch info returned by `GetOneTimeWebInfo` (its `data` object).
-#[derive(Debug, serde::Deserialize)]
-struct LaunchInfo {
-    game: String,
-    gid: String,
-    #[serde(rename = "userSessionToken")]
-    user_session_token: String,
-    #[serde(rename = "userObjectID")]
-    user_object_id: i64,
-    #[serde(rename = "galaxy_GameId")]
-    galaxy_game_id: i64,
-}
+// Launch state shared between the intercept callback and the poll task.
+const PENDING: u8 = 0;
+const LAUNCHED: u8 = 1;
+const FAILED: u8 = 2;
 
-/// Build the `ngm://` launch URL exactly as the classic portal does: the argument
-/// string after `ngm://launch/` is `encodeURIComponent`-encoded (single quotes
-/// kept literal, which `encodeURIComponent` also does).
-fn build_ngm_url(info: &LaunchInfo, timestamp_ms: i64) -> String {
-    let passarg = format!(
-        "{} {} {} {}",
-        info.user_object_id, info.user_session_token, info.gid, info.galaxy_game_id
-    );
-    let args = format!(
-        " -mode:launch -game:'{}' -passarg:'{}' -position:'GameWeb|https://maplestoryclassic.beanfun.com/Main?af_click_id=' -architectureplatform:'none' -timestamp:{}",
-        info.game, passarg, timestamp_ms
-    );
-    let encoded = urlencoding::encode(&args).replace("%27", "'");
-    format!("ngm://launch/{encoded}")
-}
-
-/// Launch the `ngm://` URL by invoking Nexon Game Manager's registered handler
-/// directly, rather than handing the protocol URL to the shell.
+/// Start Nexon Game Manager for a captured `ngm://` URL by invoking its
+/// registered handler directly (`HKCR\ngm\shell\open\command`).
 ///
-/// Going through the shell (`explorer.exe "ngm://…"`) makes Windows show its
-/// protocol-launch confirmation, which is exactly the manual "Open" click we're
-/// trying to remove. Instead we read the handler command from
-/// `HKCR\ngm\shell\open\command` (e.g. `"…\NexonGameManager.exe" "%1"`) and run
-/// that executable with the URL substituted for `%1` — no prompt. Falls back to
-/// the shell if the handler isn't registered.
+/// Deliberately no shell fallback: we're called from inside the intercept that
+/// just cancelled WebView2's prompt, and handing the URL to the shell would only
+/// pop the prompt straight back. If NGM isn't registered this fails, and the
+/// caller reveals the portal so the user can install / launch it by hand.
 #[cfg(target_os = "windows")]
 fn launch_ngm(url: &str) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
     use winreg::enums::HKEY_CLASSES_ROOT;
     use winreg::RegKey;
 
-    let command: Option<String> = RegKey::predef(HKEY_CLASSES_ROOT)
+    let command: String = RegKey::predef(HKEY_CLASSES_ROOT)
         .open_subkey(r"ngm\shell\open\command")
-        .and_then(|k| k.get_value::<String, _>(""))
-        .ok();
+        .and_then(|k| k.get_value(""))
+        .map_err(|e| {
+            format!("ngm handler not registered (is Nexon Game Manager installed?): {e}")
+        })?;
 
-    if let Some(command) = command {
-        if let Some((exe, args)) = parse_handler_command(&command, url) {
-            match std::process::Command::new(&exe).args(&args).spawn() {
-                Ok(_) => {
-                    tracing::info!("classic: launched NGM directly ({exe})");
-                    return Ok(());
-                }
-                Err(e) => tracing::warn!("classic: NGM exe spawn failed ({exe}): {e}"),
-            }
-        } else {
-            tracing::warn!("classic: could not parse ngm handler command: {command}");
-        }
-    } else {
-        tracing::warn!("classic: ngm handler not registered — is Nexon Game Manager installed?");
-    }
+    let (exe, args) = parse_handler_command(&command, url)
+        .ok_or_else(|| format!("could not parse ngm handler command: {command}"))?;
 
-    // Fallback: hand it to the shell (may show a protocol prompt).
-    std::process::Command::new("explorer.exe")
-        .arg(url)
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+    std::process::Command::new(&exe)
+        .args(&args)
         .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("failed to launch ngm via explorer: {e}"))
+        .map_err(|e| format!("failed to launch NGM ({exe}): {e}"))?;
+    tracing::info!("classic: launched NGM directly ({exe})");
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn launch_ngm(_url: &str) -> Result<(), String> {
+    Err("ngm launch is only supported on Windows".to_string())
 }
 
 /// Parse a registered protocol handler command (`"exe" "%1"` / `exe %1`) into the
@@ -164,11 +111,6 @@ fn parse_handler_command(command: &str, url: &str) -> Option<(String, Vec<String
         vec![url.to_string()]
     };
     Some((exe, args))
-}
-
-#[cfg(not(target_os = "windows"))]
-fn launch_ngm(_url: &str) -> Result<(), String> {
-    Err("ngm launch is only supported on Windows".to_string())
 }
 
 /// Open the classic portal for an already-authenticated session and auto-launch
@@ -222,7 +164,7 @@ pub async fn open_classic_login(
     .visible(false)
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
-    .initialization_script(INIT_SCRIPT)
+    .initialization_script(AUTO_HK_SCRIPT)
     .build()
     .map_err(|e| ErrorDto {
         code: "SYS_POPUP_FAILED".to_string(),
@@ -238,45 +180,62 @@ pub async fn open_classic_login(
         tracing::warn!("classic portal: native cookie seeding failed: {e}");
     }
 
+    // Intercept the portal's own ngm:// launch: cancel WebView2's prompt and start
+    // NGM ourselves. The flag lets the poll task react (close on success, reveal
+    // for manual launch on failure).
+    let flag = Arc::new(AtomicU8::new(PENDING));
+    let flag_cb = flag.clone();
+    let intercept_ok = cookie_native::register_external_uri_handler(&win, move |url| {
+        if !(url.starts_with("ngm:") || url.starts_with("nexonplug:")) {
+            return;
+        }
+        let outcome = match launch_ngm(url) {
+            Ok(()) => LAUNCHED,
+            Err(e) => {
+                tracing::warn!("classic: ngm launch failed: {e}");
+                FAILED
+            }
+        };
+        flag_cb.store(outcome, Ordering::SeqCst);
+    })
+    .inspect_err(|e| tracing::warn!("classic: external-uri interception unavailable: {e}"))
+    .is_ok();
+
     let _ = win.eval(format!("window.location.href = '{CLASSIC_ENTRY_URL}';"));
 
-    // Run the portal HIDDEN. The Main page auto-fires its own `ngm://`, which
-    // pops the browser "open Nexon Game Manager" prompt — kept invisible (and so
-    // never confirmed, never launched) by never showing the window. Our injected
-    // script still fetches the launch info and publishes it via the title; the
-    // backend polls that, launches the game itself via the shell (no prompt), and
-    // closes the portal. Only a timeout reveals the window, for manual fallback.
+    // Without interception the prompt can't be suppressed — reveal the window so
+    // the user can complete the launch by hand.
+    if !intercept_ok {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    // Hidden auto-launch: wait for the intercept to fire, then close (success) or
+    // reveal for manual completion (failure / timeout).
     tauri::async_runtime::spawn(async move {
-        tracing::info!("classic portal running (hidden), waiting for launch info");
+        tracing::info!("classic portal running (hidden), waiting for launch");
         for _ in 0..60 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let Ok(title) = win.title() else { return }; // window gone
-            let Some(json) = title.strip_prefix(LAUNCH_MARKER) else {
-                continue;
-            };
-            match serde_json::from_str::<LaunchInfo>(json) {
-                Ok(info) => {
-                    let ts = chrono::Utc::now().timestamp_millis();
-                    let url = build_ngm_url(&info, ts);
-                    tracing::info!("classic: launching game via ngm ({} bytes)", url.len());
-                    let result = launch_ngm(&url);
-                    if let Err(e) = &result {
-                        tracing::warn!("classic: ngm launch failed: {e}");
-                    }
-                    let event = if result.is_ok() {
-                        "classic-launched"
-                    } else {
-                        "classic-launch-failed"
-                    };
-                    let _ = win.app_handle().emit(event, ());
+            if win.title().is_err() {
+                return; // window gone
+            }
+            match flag.load(Ordering::SeqCst) {
+                LAUNCHED => {
+                    let _ = win.app_handle().emit("classic-launched", ());
                     let _ = win.destroy();
                     return;
                 }
-                Err(e) => tracing::warn!("classic: could not parse launch info: {e}"),
+                FAILED => {
+                    let _ = win.app_handle().emit("classic-launch-failed", ());
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                    return;
+                }
+                _ => {}
             }
         }
-        // Auto-launch didn't happen — reveal the portal for manual completion.
-        tracing::warn!("classic: no launch info within timeout — revealing portal");
+        tracing::warn!("classic: no launch within timeout — revealing portal");
         let _ = win.app_handle().emit("classic-launch-timeout", ());
         let _ = win.show();
         let _ = win.set_focus();
@@ -285,28 +244,10 @@ pub async fn open_classic_login(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
 
-    #[test]
-    fn builds_the_ngm_url_like_the_portal() {
-        let info = LaunchInfo {
-            game: "2982@2141".into(),
-            gid: "2373".into(),
-            user_session_token: "sessb9c9eb4345e36b1f8b4d4e3e86fb5506".into(),
-            user_object_id: 4571368,
-            galaxy_game_id: 944,
-        };
-        let url = build_ngm_url(&info, 1784824258582);
-        // Matches the captured browser URL: percent-encoded, single quotes kept.
-        assert_eq!(
-            url,
-            "ngm://launch/%20-mode%3Alaunch%20-game%3A'2982%402141'%20-passarg%3A'4571368%20sessb9c9eb4345e36b1f8b4d4e3e86fb5506%202373%20944'%20-position%3A'GameWeb%7Chttps%3A%2F%2Fmaplestoryclassic.beanfun.com%2FMain%3Faf_click_id%3D'%20-architectureplatform%3A'none'%20-timestamp%3A1784824258582"
-        );
-    }
-
-    #[cfg(target_os = "windows")]
     #[test]
     fn parses_quoted_and_bare_handler_commands() {
         let (exe, args) = parse_handler_command(r#""C:\NGM\ngm.exe" "%1""#, "ngm://x").unwrap();
