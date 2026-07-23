@@ -2,15 +2,42 @@ import { useTranslation } from "../../lib/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useSetConfig } from "../../lib/hooks/use-config";
 
 export function Titlebar() {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
   const currentPage = useUiStore((s) => s.currentPage);
   const setPage = useUiStore((s) => s.setPage);
+  const classicMode = useUiStore((s) => s.classicMode);
   const config = useConfigStore((s) => s.config);
+  const setConfig = useSetConfig();
 
   const region = config?.region ?? "HK";
+
+  // The single region/mode control. Cycles 香港 → 台灣 → 懷舊服 → 香港. Classic
+  // (懷舊服) is HK id-pass in phase 1, so selecting it forces the region to HK.
+  const modeIndicator = classicMode ? "🍁" : region === "TW" ? "🇹🇼" : "🇭🇰";
+  const modeLabel = classicMode
+    ? t("login.mode_classic")
+    : region === "TW"
+      ? t("login.mode_tw")
+      : t("login.mode_hk");
+
+  function handleModeCycle() {
+    if (classicMode) {
+      // 懷舊服 → 香港
+      useUiStore.setState({ classicMode: false });
+      setConfig.mutate({ key: "region", value: "HK" });
+    } else if (region === "HK") {
+      // 香港 → 台灣
+      setConfig.mutate({ key: "region", value: "TW" });
+    } else {
+      // 台灣 → 懷舊服 (forces HK)
+      useUiStore.setState({ classicMode: true });
+      setConfig.mutate({ key: "region", value: "HK" });
+    }
+  }
 
   function handleDragStart(e: React.MouseEvent) {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -41,10 +68,17 @@ export function Titlebar() {
         className="flex items-center"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        {/* Region indicator — read-only, and only off the login page. On login
-            the in-form mode selector (香港 / 台灣 / 懷舊服) is the single source
-            of truth, so a second region control here would just contradict it. */}
-        {currentPage !== "login" && (
+        {/* Region / mode: clickable cycle on login, read-only elsewhere */}
+        {currentPage === "login" ? (
+          <button
+            onClick={handleModeCycle}
+            title={`${t("shared.titlebar.region_toggle")}: ${modeLabel}`}
+            className="relative flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          >
+            {modeIndicator}
+            <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
+          </button>
+        ) : (
           <span className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-faint">
             {region}
           </span>
