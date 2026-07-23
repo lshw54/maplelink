@@ -14,35 +14,30 @@ export function Titlebar() {
   const setConfig = useSetConfig();
 
   const region = config?.region ?? "HK";
-
-  // The single region/mode control. Cycles 香港 → 台灣 → 懷舊服 → 香港. Classic
-  // (懷舊服) is HK id-pass in phase 1, so selecting it forces the region to HK.
-  const modeIndicator = classicMode ? "🍁" : region === "TW" ? "🇹🇼" : "🇭🇰";
-  const modeLabel = classicMode
-    ? t("login.mode_classic")
-    : region === "TW"
-      ? t("login.mode_tw")
-      : t("login.mode_hk");
-
-  function handleModeCycle() {
-    if (classicMode) {
-      // 懷舊服 → 香港
-      useUiStore.setState({ classicMode: false });
-      setConfig.mutate({ key: "region", value: "HK" });
-    } else if (region === "HK") {
-      // 香港 → 台灣
-      setConfig.mutate({ key: "region", value: "TW" });
-    } else {
-      // 台灣 → 懷舊服 (forces HK)
-      useUiStore.setState({ classicMode: true });
-      setConfig.mutate({ key: "region", value: "HK" });
-    }
-  }
+  const regionFlag = region === "TW" ? "🇹🇼" : "🇭🇰";
 
   function handleDragStart(e: React.MouseEvent) {
     if ((e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
     appWindow.startDragging();
+  }
+
+  // Classic (懷舊服) is a distinct mode, kept separate from the HK/TW region
+  // toggle. Enabling it forces the region to HK (phase 1 is HK id-pass only).
+  function toggleClassic() {
+    if (classicMode) {
+      useUiStore.setState({ classicMode: false });
+    } else {
+      useUiStore.setState({ classicMode: true });
+      if (region !== "HK") setConfig.mutate({ key: "region", value: "HK" });
+    }
+  }
+
+  // Choosing a region is a regular-login action, so it also leaves classic mode.
+  function handleRegionToggle() {
+    if (classicMode) useUiStore.setState({ classicMode: false });
+    const next = region === "TW" ? "HK" : "TW";
+    setConfig.mutate({ key: "region", value: next });
   }
 
   function handleToolbox() {
@@ -58,24 +53,43 @@ export function Titlebar() {
       className="flex h-[34px] shrink-0 items-center"
       style={{ zIndex: 10, position: "relative" }}
     >
-      {/* Drag region — app name */}
-      <div className="pointer-events-none flex flex-1 items-center pl-4 text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
+      {/* App name */}
+      <div className="pointer-events-none flex items-center pl-4 text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
         MAPLELINK
       </div>
+
+      {/* Classic (懷舊服) toggle — left, separate from the region control */}
+      {currentPage === "login" && (
+        <button
+          onClick={toggleClassic}
+          title={t("login.mode_classic")}
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          className={`ml-2 flex h-[22px] items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition-all active:scale-[0.95] ${
+            classicMode
+              ? "bg-[rgba(232,162,58,0.15)] text-accent"
+              : "text-text-faint hover:bg-[var(--surface-hover)] hover:text-text-dim"
+          }`}
+        >
+          🍁 {t("login.mode_classic")}
+        </button>
+      )}
+
+      {/* Drag spacer */}
+      <div className="h-full flex-1" />
 
       {/* Actions — no-drag */}
       <div
         className="flex items-center"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        {/* Region / mode: clickable cycle on login, read-only elsewhere */}
+        {/* Region: clickable on login, read-only on main/toolbox */}
         {currentPage === "login" ? (
           <button
-            onClick={handleModeCycle}
-            title={`${t("shared.titlebar.region_toggle")}: ${modeLabel}`}
+            onClick={handleRegionToggle}
+            title={t("shared.titlebar.region_toggle")}
             className="relative flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
           >
-            {modeIndicator}
+            {regionFlag}
             <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
           </button>
         ) : (
