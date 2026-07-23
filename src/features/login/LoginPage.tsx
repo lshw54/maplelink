@@ -24,6 +24,7 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
+  const classicStatus = useUiStore((s) => s.classicStatus);
   const [view, setViewLocal] = useState<LoginView>((persistedView as LoginView) || "normal");
   const setView = (v: LoginView) => {
     setViewLocal(v);
@@ -107,8 +108,48 @@ export function LoginPage() {
     });
   }, []);
 
+  // Classic launch progress from the hidden portal window.
+  useEffect(() => {
+    const subs = [
+      listen("classic-launched", () => useUiStore.setState({ classicStatus: "launched" })),
+      listen("classic-launch-failed", () => useUiStore.setState({ classicStatus: "failed" })),
+      listen("classic-launch-timeout", () => useUiStore.setState({ classicStatus: "failed" })),
+    ];
+    return () => {
+      subs.forEach((s) => s.then((un) => un()));
+    };
+  }, []);
+
+  // Auto-dismiss the success message after a few seconds.
+  useEffect(() => {
+    if (classicStatus !== "launched") return;
+    const id = setTimeout(() => useUiStore.setState({ classicStatus: "idle" }), 5000);
+    return () => clearTimeout(id);
+  }, [classicStatus]);
+
   return (
     <div className="flex h-full flex-col">
+      {classicStatus !== "idle" && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--bg)]/95 backdrop-blur-sm">
+          {classicStatus === "launching" && (
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-text-faint border-t-accent" />
+          )}
+          <div className="text-[13px] font-semibold text-[var(--text)]">
+            {classicStatus === "launching" && t("login.classic_launching")}
+            {classicStatus === "launched" && `✓ ${t("login.classic_launched")}`}
+            {classicStatus === "failed" && t("login.classic_launch_failed")}
+          </div>
+          {classicStatus !== "launching" && (
+            <button
+              type="button"
+              onClick={() => useUiStore.setState({ classicStatus: "idle" })}
+              className="rounded-lg border border-border px-4 py-1.5 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+            >
+              {t("common.ok")}
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex flex-1 flex-col items-center justify-center px-9">
         {view === "normal" && (
           <>

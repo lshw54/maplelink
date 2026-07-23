@@ -21,6 +21,11 @@ export interface UiState {
    * game account grid. Phase 1 is HK id-pass only.
    */
   classicMode: boolean;
+  /**
+   * Classic launch progress, shown as an overlay after a classic login since the
+   * flow runs in a hidden window with no page of its own.
+   */
+  classicStatus: "idle" | "launching" | "launched" | "failed";
   /** Persisted login view so QR form survives page switches. */
   loginView: string;
   /** Persisted QR login state so it survives qr-viewer round-trip. */
@@ -46,6 +51,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   gameRunning: false,
   addingSession: false,
   classicMode: false,
+  classicStatus: "idle",
   loginView: "normal",
   qrSessionId: null,
   qrData: null,

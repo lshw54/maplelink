@@ -148,8 +148,10 @@ export function useLogin() {
       // and stop — the backend session already holds the cookies it needs, so we
       // don't add it to the game-account grid store or navigate to main.
       if (useUiStore.getState().classicMode) {
-        commands.openClassicLogin(session.sessionId).catch(() => {});
-        useUiStore.setState({ addingSession: false });
+        useUiStore.setState({ addingSession: false, classicStatus: "launching" });
+        commands.openClassicLogin(session.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
         return;
       }
       useAuthStore.getState().addSession(session);

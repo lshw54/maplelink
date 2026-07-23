@@ -9,10 +9,10 @@
 //! one-time launch info (`/api/Login/GetOneTimeWebInfo`) and hands it to the
 //! native side via `document.title` (the page's CSP usually blocks Tauri IPC, but
 //! the title is always readable). The backend then builds the `ngm://` URL the
-//! site would have used and hands it to the Nexon Game Manager via the shell —
-//! no manual "start game" click, and no browser protocol prompt.
+//! site would have used and invokes Nexon Game Manager's registered handler
+//! directly — no manual "start game" click, and no protocol-launch prompt.
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::models::app_state::AppState;
 use crate::models::error::{ErrorCategory, ErrorDto};
@@ -93,18 +93,77 @@ fn build_ngm_url(info: &LaunchInfo, timestamp_ms: i64) -> String {
     format!("ngm://launch/{encoded}")
 }
 
-/// Launch the `ngm://` URL via the desktop shell so Nexon Game Manager starts
-/// unelevated (MapleLink runs elevated; a game inheriting that token is best
-/// avoided) and without a browser protocol prompt.
+/// Launch the `ngm://` URL by invoking Nexon Game Manager's registered handler
+/// directly, rather than handing the protocol URL to the shell.
+///
+/// Going through the shell (`explorer.exe "ngm://…"`) makes Windows show its
+/// protocol-launch confirmation, which is exactly the manual "Open" click we're
+/// trying to remove. Instead we read the handler command from
+/// `HKCR\ngm\shell\open\command` (e.g. `"…\NexonGameManager.exe" "%1"`) and run
+/// that executable with the URL substituted for `%1` — no prompt. Falls back to
+/// the shell if the handler isn't registered.
 #[cfg(target_os = "windows")]
 fn launch_ngm(url: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
+    use winreg::enums::HKEY_CLASSES_ROOT;
+    use winreg::RegKey;
+
+    let command: Option<String> = RegKey::predef(HKEY_CLASSES_ROOT)
+        .open_subkey(r"ngm\shell\open\command")
+        .and_then(|k| k.get_value::<String, _>(""))
+        .ok();
+
+    if let Some(command) = command {
+        if let Some((exe, args)) = parse_handler_command(&command, url) {
+            match std::process::Command::new(&exe).args(&args).spawn() {
+                Ok(_) => {
+                    tracing::info!("classic: launched NGM directly ({exe})");
+                    return Ok(());
+                }
+                Err(e) => tracing::warn!("classic: NGM exe spawn failed ({exe}): {e}"),
+            }
+        } else {
+            tracing::warn!("classic: could not parse ngm handler command: {command}");
+        }
+    } else {
+        tracing::warn!("classic: ngm handler not registered — is Nexon Game Manager installed?");
+    }
+
+    // Fallback: hand it to the shell (may show a protocol prompt).
     std::process::Command::new("explorer.exe")
         .arg(url)
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("failed to launch ngm via explorer: {e}"))
+}
+
+/// Parse a registered protocol handler command (`"exe" "%1"` / `exe %1`) into the
+/// executable and its arguments, substituting the URL for every `%1`.
+#[cfg(target_os = "windows")]
+fn parse_handler_command(command: &str, url: &str) -> Option<(String, Vec<String>)> {
+    let command = command.trim();
+    let (exe, rest) = if let Some(after) = command.strip_prefix('"') {
+        let end = after.find('"')?;
+        (after[..end].to_string(), &after[end + 1..])
+    } else {
+        let end = command.find(' ').unwrap_or(command.len());
+        (command[..end].to_string(), &command[end..])
+    };
+    if exe.is_empty() {
+        return None;
+    }
+    let args = rest
+        .split_whitespace()
+        .map(|a| a.trim_matches('"').replace("%1", url))
+        .collect::<Vec<_>>();
+    // If the handler declares no %1 slot, pass the URL as a trailing argument.
+    let args = if args.iter().any(|a| a.contains(url)) {
+        args
+    } else {
+        vec![url.to_string()]
+    };
+    Some((exe, args))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -200,9 +259,16 @@ pub async fn open_classic_login(
                     let ts = chrono::Utc::now().timestamp_millis();
                     let url = build_ngm_url(&info, ts);
                     tracing::info!("classic: launching game via ngm ({} bytes)", url.len());
-                    if let Err(e) = launch_ngm(&url) {
+                    let result = launch_ngm(&url);
+                    if let Err(e) = &result {
                         tracing::warn!("classic: ngm launch failed: {e}");
                     }
+                    let event = if result.is_ok() {
+                        "classic-launched"
+                    } else {
+                        "classic-launch-failed"
+                    };
+                    let _ = win.app_handle().emit(event, ());
                     let _ = win.destroy();
                     return;
                 }
@@ -211,6 +277,7 @@ pub async fn open_classic_login(
         }
         // Auto-launch didn't happen — reveal the portal for manual completion.
         tracing::warn!("classic: no launch info within timeout — revealing portal");
+        let _ = win.app_handle().emit("classic-launch-timeout", ());
         let _ = win.show();
         let _ = win.set_focus();
     });
@@ -237,5 +304,18 @@ mod tests {
             url,
             "ngm://launch/%20-mode%3Alaunch%20-game%3A'2982%402141'%20-passarg%3A'4571368%20sessb9c9eb4345e36b1f8b4d4e3e86fb5506%202373%20944'%20-position%3A'GameWeb%7Chttps%3A%2F%2Fmaplestoryclassic.beanfun.com%2FMain%3Faf_click_id%3D'%20-architectureplatform%3A'none'%20-timestamp%3A1784824258582"
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn parses_quoted_and_bare_handler_commands() {
+        let (exe, args) = parse_handler_command(r#""C:\NGM\ngm.exe" "%1""#, "ngm://x").unwrap();
+        assert_eq!(exe, r"C:\NGM\ngm.exe");
+        assert_eq!(args, vec!["ngm://x".to_string()]);
+
+        // No %1 slot → the URL is appended as a trailing argument.
+        let (exe, args) = parse_handler_command(r#""C:\NGM\ngm.exe""#, "ngm://y").unwrap();
+        assert_eq!(exe, r"C:\NGM\ngm.exe");
+        assert_eq!(args, vec!["ngm://y".to_string()]);
     }
 }
