@@ -194,6 +194,9 @@ export const commands = {
 
   // GamePass login (TW only — creates its own session, returns sessionId)
   openGamePassLogin: () => invoke<string>("open_gamepass_login"),
+
+  // MapleStory Classic (懷舊服) — open the portal for a logged-in session
+  openClassicLogin: (sessionId: string) => invoke("open_classic_login", { sessionId }),
 } as const;
 
 /** Payload of the `recaptcha-token` event emitted when the helper window captures a token. */

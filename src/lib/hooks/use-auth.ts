@@ -144,6 +144,14 @@ export function useLogin() {
       }
     },
     onSuccess: async (session: SessionDto) => {
+      // Classic (懷舊服): the experience lives in the portal webview. Open it
+      // and stop — the backend session already holds the cookies it needs, so we
+      // don't add it to the game-account grid store or navigate to main.
+      if (useUiStore.getState().classicMode) {
+        commands.openClassicLogin(session.sessionId).catch(() => {});
+        useUiStore.setState({ addingSession: false });
+        return;
+      }
       useAuthStore.getState().addSession(session);
       let accountCount = -1;
       try {

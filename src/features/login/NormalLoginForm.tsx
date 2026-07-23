@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type SyntheticEvent } from "r
 import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useUiStore } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { PasswordInput } from "../../components/PasswordInput";
 import { Modal } from "../../components/Modal";
@@ -53,7 +54,18 @@ export function NormalLoginForm({
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const cafeMode = useConfigStore((s) => s.config?.cafeMode ?? false);
-  const showQr = region === "TW";
+  const classicMode = useUiStore((s) => s.classicMode);
+  const showQr = region === "TW" && !classicMode;
+
+  // Region / mode selector. Classic (懷舊服) is HK id-pass only in Phase 1, so
+  // picking it forces the region to HK.
+  function selectMode(mode: "HK" | "TW" | "classic") {
+    useUiStore.setState({ classicMode: mode === "classic" });
+    const nextRegion = mode === "classic" ? "HK" : mode;
+    commands.setConfig("region", nextRegion).catch(() => {});
+    const cfg = useConfigStore.getState().config;
+    if (cfg) useConfigStore.setState({ config: { ...cfg, region: nextRegion } });
+  }
 
   function setCafeMode(on: boolean) {
     commands.setConfig("cafe_mode", String(on)).catch(() => {});
@@ -244,6 +256,33 @@ export function NormalLoginForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
+      {/* Region / mode selector */}
+      <div className="mb-4 flex gap-1 rounded-lg border border-border bg-[var(--surface)] p-1">
+        {(["HK", "TW", "classic"] as const).map((mode) => {
+          const active = mode === "classic" ? classicMode : !classicMode && region === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => selectMode(mode)}
+              className={`flex-1 rounded-md py-1.5 text-[12px] font-semibold transition-colors ${
+                active
+                  ? "bg-accent text-white shadow-[0_2px_8px_var(--accent-glow)]"
+                  : "text-text-dim hover:text-[var(--text)]"
+              }`}
+            >
+              {t(`login.mode_${mode.toLowerCase()}`)}
+            </button>
+          );
+        })}
+      </div>
+
+      {classicMode && (
+        <p className="mb-3 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-[11px] leading-relaxed text-text-dim">
+          {t("login.classic_hint")}
+        </p>
+      )}
+
       {/* Account field with dropdown */}
       <div className="mb-3">
         <label

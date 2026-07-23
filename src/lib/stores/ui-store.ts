@@ -15,6 +15,12 @@ export interface UiState {
   gameRunning: boolean;
   /** When true, LoginPage won't auto-redirect to main even if authenticated. */
   addingSession: boolean;
+  /**
+   * MapleStory Classic (懷舊服) login mode. Ephemeral (per session) — when set,
+   * a successful login opens the classic portal webview instead of the regular
+   * game account grid. Phase 1 is HK id-pass only.
+   */
+  classicMode: boolean;
   /** Persisted login view so QR form survives page switches. */
   loginView: string;
   /** Persisted QR login state so it survives qr-viewer round-trip. */
@@ -39,6 +45,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   gamePid: null,
   gameRunning: false,
   addingSession: false,
+  classicMode: false,
   loginView: "normal",
   qrSessionId: null,
   qrData: null,
