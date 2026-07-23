@@ -18,6 +18,7 @@ import type {
   DnsTestResult,
   GameDownloadDto,
   BeanfunRenameCheck,
+  ClassicCheckDto,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -197,6 +198,7 @@ export const commands = {
 
   // MapleStory Classic (懷舊服) — open the portal for a logged-in session
   openClassicLogin: (sessionId: string) => invoke("open_classic_login", { sessionId }),
+  classicSelfCheck: () => invoke<ClassicCheckDto>("classic_self_check"),
 } as const;
 
 /** Payload of the `recaptcha-token` event emitted when the helper window captures a token. */

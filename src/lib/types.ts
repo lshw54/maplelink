@@ -37,6 +37,13 @@ export interface GameDownloadDto {
   kind: "game" | "patch" | "other";
 }
 
+export interface ClassicCheckDto {
+  ngmRegistered: boolean;
+  ngmExe: string | null;
+  ngmExeExists: boolean;
+  webview2Version: string | null;
+}
+
 export interface AppConfigDto {
   gamePath: string;
   locale: string;

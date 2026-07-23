@@ -6,7 +6,7 @@ import { useUiStore } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { PasswordInput } from "../../components/PasswordInput";
 import { Modal } from "../../components/Modal";
-import type { SavedAccountDto } from "../../lib/types";
+import type { SavedAccountDto, ClassicCheckDto } from "../../lib/types";
 
 const FORGOT_PWD_URLS: Record<string, string> = {
   TW: "https://tw.beanfun.com/member/forgot_pwd.aspx",
@@ -49,6 +49,15 @@ export function NormalLoginForm({
   const accountInputRef = useRef<HTMLInputElement>(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [cafeConfirm, setCafeConfirm] = useState(false);
+  const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
+
+  async function runClassicCheck() {
+    try {
+      setClassicCheck(await commands.classicSelfCheck());
+    } catch {
+      /* ignore */
+    }
+  }
 
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -247,9 +256,18 @@ export function NormalLoginForm({
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
       {classicMode && (
-        <p className="mb-3 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-[11px] leading-relaxed text-text-dim">
-          {t("login.classic_hint")}
-        </p>
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2">
+          <p className="flex-1 text-[11px] leading-relaxed text-text-dim">
+            {t("login.classic_hint")}
+          </p>
+          <button
+            type="button"
+            onClick={runClassicCheck}
+            className="shrink-0 rounded-md border border-[rgba(232,162,58,0.3)] px-2 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-[rgba(232,162,58,0.12)]"
+          >
+            {t("login.classic_check")}
+          </button>
+        </div>
       )}
 
       {/* Account field with dropdown */}
@@ -555,6 +573,56 @@ export function NormalLoginForm({
               className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
             >
               {t("login.cafe_confirm_enable")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Classic readiness self-check */}
+      <Modal
+        isOpen={classicCheck !== null}
+        onClose={() => setClassicCheck(null)}
+        title={t("login.classic_check_title")}
+      >
+        <div className="flex flex-col gap-2.5 text-[12px]">
+          <div className="flex items-center gap-2">
+            <span
+              className={
+                classicCheck?.ngmRegistered && classicCheck?.ngmExeExists
+                  ? "text-green-500"
+                  : "text-red-500"
+              }
+            >
+              {classicCheck?.ngmRegistered && classicCheck?.ngmExeExists ? "✓" : "✗"}
+            </span>
+            <span className="flex-1 text-[var(--text)]">{t("login.check_ngm")}</span>
+          </div>
+          {classicCheck?.ngmExe && (
+            <p className="pl-6 font-mono text-[10px] break-all text-text-faint">
+              {classicCheck.ngmExe}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <span className={classicCheck?.webview2Version ? "text-green-500" : "text-yellow-500"}>
+              {classicCheck?.webview2Version ? "✓" : "?"}
+            </span>
+            <span className="flex-1 text-[var(--text)]">WebView2</span>
+            <span className="font-mono text-[11px] text-text-dim">
+              {classicCheck?.webview2Version ?? t("login.check_unknown")}
+            </span>
+          </div>
+          {!classicCheck?.ngmRegistered && (
+            <p className="mt-1 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-1.5 text-[11px] leading-relaxed text-yellow-500">
+              {t("login.check_ngm_missing")}
+            </p>
+          )}
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={() => setClassicCheck(null)}
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("common.ok")}
             </button>
           </div>
         </div>

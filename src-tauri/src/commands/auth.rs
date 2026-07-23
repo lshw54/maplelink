@@ -807,6 +807,13 @@ pub async fn open_classic_login(
     crate::services::classic_service::open_classic_login(session_id, app, state.inner()).await
 }
 
+/// Check the local prerequisites for launching MapleStory Classic (NGM handler,
+/// its executable, WebView2 runtime).
+#[tauri::command]
+pub async fn classic_self_check() -> crate::services::classic_service::ClassicCheck {
+    crate::services::classic_service::self_check()
+}
+
 /// Called by the GamePass webview init script when login completes.
 ///
 /// `web_token` is the JS `document.cookie` value, only useful as a fallback

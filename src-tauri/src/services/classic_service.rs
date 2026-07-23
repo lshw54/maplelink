@@ -113,6 +113,64 @@ fn parse_handler_command(command: &str, url: &str) -> Option<(String, Vec<String
     Some((exe, args))
 }
 
+/// Result of the classic-readiness self-check, shown so users can tell whether
+/// the pieces the launch relies on are present.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassicCheck {
+    /// Nexon Game Manager's `ngm://` protocol handler is registered.
+    pub ngm_registered: bool,
+    /// The handler's executable path, if we could read it.
+    pub ngm_exe: Option<String>,
+    /// That executable actually exists on disk.
+    pub ngm_exe_exists: bool,
+    /// Installed WebView2 runtime version (drives whether the launch prompt can
+    /// be auto-suppressed), if detectable.
+    pub webview2_version: Option<String>,
+}
+
+/// Check that the local prerequisites for the classic launch are in place.
+#[cfg(target_os = "windows")]
+pub fn self_check() -> ClassicCheck {
+    use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    let mut check = ClassicCheck::default();
+
+    if let Ok(command) = RegKey::predef(HKEY_CLASSES_ROOT)
+        .open_subkey(r"ngm\shell\open\command")
+        .and_then(|k| k.get_value::<String, _>(""))
+    {
+        check.ngm_registered = true;
+        if let Some((exe, _)) = parse_handler_command(&command, "") {
+            check.ngm_exe_exists = std::path::Path::new(&exe).exists();
+            check.ngm_exe = Some(exe);
+        }
+    }
+
+    // WebView2 Evergreen Runtime version, machine-wide then per-user.
+    const WV2: &str =
+        r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+    const WV2_USER: &str =
+        r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+    check.webview2_version = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(WV2)
+        .and_then(|k| k.get_value::<String, _>("pv"))
+        .or_else(|_| {
+            RegKey::predef(HKEY_CURRENT_USER)
+                .open_subkey(WV2_USER)
+                .and_then(|k| k.get_value::<String, _>("pv"))
+        })
+        .ok();
+
+    check
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn self_check() -> ClassicCheck {
+    ClassicCheck::default()
+}
+
 /// Open the classic portal for an already-authenticated session and auto-launch
 /// the game once it lands, reusing the session's cookies so no re-login is needed.
 pub async fn open_classic_login(
