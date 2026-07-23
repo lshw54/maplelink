@@ -179,22 +179,16 @@ pub async fn open_classic_login(
         tracing::warn!("classic portal: native cookie seeding failed: {e}");
     }
 
-    let nav_rx = cookie_native::on_navigation_completed(&win).ok();
     let _ = win.eval(format!("window.location.href = '{CLASSIC_ENTRY_URL}';"));
 
-    // Show the portal while it works (SSO + Main), then poll the title for the
-    // launch info the injected script publishes. On success, launch the game and
-    // close the portal; on timeout leave it open so the user can act manually.
+    // Run the portal HIDDEN. The Main page auto-fires its own `ngm://`, which
+    // pops the browser "open Nexon Game Manager" prompt — kept invisible (and so
+    // never confirmed, never launched) by never showing the window. Our injected
+    // script still fetches the launch info and publishes it via the title; the
+    // backend polls that, launches the game itself via the shell (no prompt), and
+    // closes the portal. Only a timeout reveals the window, for manual fallback.
     tauri::async_runtime::spawn(async move {
-        if let Some(rx) = nav_rx {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(8), rx).await;
-        } else {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-        }
-        let _ = win.show();
-        let _ = win.set_focus();
-        tracing::info!("classic portal opened, waiting for launch info");
-
+        tracing::info!("classic portal running (hidden), waiting for launch info");
         for _ in 0..60 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             let Ok(title) = win.title() else { return }; // window gone
@@ -215,7 +209,10 @@ pub async fn open_classic_login(
                 Err(e) => tracing::warn!("classic: could not parse launch info: {e}"),
             }
         }
-        tracing::warn!("classic: no launch info within timeout — leaving portal open");
+        // Auto-launch didn't happen — reveal the portal for manual completion.
+        tracing::warn!("classic: no launch info within timeout — revealing portal");
+        let _ = win.show();
+        let _ = win.set_focus();
     });
 
     Ok(())
