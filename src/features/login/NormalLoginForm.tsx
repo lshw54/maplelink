@@ -50,6 +50,7 @@ export function NormalLoginForm({
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [cafeConfirm, setCafeConfirm] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
+  const [showCheckDetail, setShowCheckDetail] = useState(false);
 
   async function runClassicCheck() {
     try {
@@ -65,6 +66,23 @@ export function NormalLoginForm({
   const cafeMode = useConfigStore((s) => s.config?.cafeMode ?? false);
   const classicMode = useUiStore((s) => s.classicMode);
   const showQr = region === "TW" && !classicMode;
+
+  // Run the classic readiness check as soon as classic mode is entered, so its
+  // status shows inline without the user having to ask.
+  useEffect(() => {
+    if (!classicMode || classicCheck !== null) return;
+    let alive = true;
+    commands
+      .classicSelfCheck()
+      .then((c) => {
+        if (alive) setClassicCheck(c);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classicMode]);
 
   function setCafeMode(on: boolean) {
     commands.setConfig("cafe_mode", String(on)).catch(() => {});
@@ -256,18 +274,27 @@ export function NormalLoginForm({
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
       {classicMode && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2">
-          <p className="flex-1 text-[11px] leading-relaxed text-text-dim">
-            {t("login.classic_hint")}
-          </p>
-          <button
-            type="button"
-            onClick={runClassicCheck}
-            className="shrink-0 rounded-md border border-[rgba(232,162,58,0.3)] px-2 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-[rgba(232,162,58,0.12)]"
-          >
-            {t("login.classic_check")}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowCheckDetail(true)}
+          title={t("login.classic_hint")}
+          className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(232,162,58,0.12)]"
+        >
+          {classicCheck === null ? (
+            <span className="text-text-dim">{t("login.classic_checking")}</span>
+          ) : classicCheck.ngmRegistered && classicCheck.ngmExeExists ? (
+            <>
+              <span className="text-green-500">✓</span>
+              <span className="flex-1 text-text-dim">{t("login.classic_ready")}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-yellow-500">✗</span>
+              <span className="flex-1 text-yellow-500">{t("login.classic_ngm_missing_short")}</span>
+            </>
+          )}
+          <span className="shrink-0 text-text-faint">›</span>
+        </button>
       )}
 
       {/* Account field with dropdown */}
@@ -580,8 +607,8 @@ export function NormalLoginForm({
 
       {/* Classic readiness self-check */}
       <Modal
-        isOpen={classicCheck !== null}
-        onClose={() => setClassicCheck(null)}
+        isOpen={showCheckDetail}
+        onClose={() => setShowCheckDetail(false)}
         title={t("login.classic_check_title")}
       >
         <div className="flex flex-col gap-2.5 text-[12px]">
@@ -616,10 +643,17 @@ export function NormalLoginForm({
               {t("login.check_ngm_missing")}
             </p>
           )}
-          <div className="flex justify-end pt-1">
+          <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
-              onClick={() => setClassicCheck(null)}
+              onClick={runClassicCheck}
+              className="rounded-lg border border-border px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("login.classic_check")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCheckDetail(false)}
               className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
             >
               {t("common.ok")}
