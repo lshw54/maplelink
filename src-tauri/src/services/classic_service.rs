@@ -29,8 +29,14 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// its own `ngm://` launch on arrival.
 const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/login/mstc?redirect_url=https://maplestoryclassic.beanfun.com/Main?af_click_id=";
 
-/// Injected on every navigation to click the right login button on the OTT init
-/// page (HK beanfun vs GamePass), driving the SSO; a no-op everywhere else.
+/// Title marker the injected script sets when the portal shows the NGM install
+/// guide (i.e. Nexon Game Manager isn't installed), so the poller can fail fast.
+const MISSING_MARKER: &str = "NGMMISSING";
+
+/// Injected on every navigation. On the OTT init page it clicks the right login
+/// button (HK beanfun vs GamePass) to drive the SSO; on the portal Main page it
+/// watches for the NGM install guide (which appears instead of the launch when
+/// NGM is missing) and flags it via the title. A no-op elsewhere.
 fn auto_login_script(region: Region) -> String {
     // HK accounts use the gamania (HK) button; TW / GamePass accounts use Gama Pass.
     let selector = match region {
@@ -40,16 +46,24 @@ fn auto_login_script(region: Region) -> String {
     format!(
         r#"
 (function () {{
-  function drive() {{
-    if (location.href.indexOf('/login/init/mstc/') === -1) return;
-    var btn = document.querySelector('{selector}');
-    if (btn) {{ btn.click(); }}
+  var clicked = false, flagged = false;
+  function tick() {{
+    var href = location.href;
+    if (href.indexOf('/login/init/mstc/') !== -1) {{
+      if (!clicked) {{
+        var btn = document.querySelector('{selector}');
+        if (btn) {{ btn.click(); clicked = true; }}
+      }}
+    }} else if (href.indexOf('maplestoryclassic.beanfun.com/Main') !== -1) {{
+      if (!flagged &&
+          (document.getElementById('ngmBtnStart') ||
+           document.getElementById('ngmInstallLayerClose'))) {{
+        flagged = true;
+        document.title = 'NGMMISSING';
+      }}
+    }}
   }}
-  if (document.readyState === 'loading') {{
-    document.addEventListener('DOMContentLoaded', function () {{ setTimeout(drive, 200); }});
-  }} else {{
-    setTimeout(drive, 200);
-  }}
+  setInterval(tick, 300);
 }})();
 "#
     )
@@ -296,8 +310,18 @@ pub async fn open_classic_login(
         tracing::info!("classic portal running (hidden), waiting for launch");
         for _ in 0..60 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if win.title().is_err() {
+            let Ok(title) = win.title() else {
                 return; // window gone
+            };
+            // NGM isn't installed — the portal shows the official install guide.
+            // Reveal it (so the user gets that guide) and report the failure now
+            // instead of waiting out the timeout.
+            if title == MISSING_MARKER {
+                tracing::warn!("classic: NGM install guide shown — not installed");
+                let _ = win.app_handle().emit("classic-launch-failed", ());
+                let _ = win.show();
+                let _ = win.set_focus();
+                return;
             }
             match flag.load(Ordering::SeqCst) {
                 LAUNCHED => {
