@@ -110,6 +110,23 @@ export function App() {
   // Show banner on all pages when update available and dialog dismissed
   const showBanner = !pendingUpdate && availableUpdate && !bannerDismissed;
 
+  // Classic (懷舊服) launch progress. App-level so it shows regardless of page —
+  // a classic launch started from the account tab's "+" returns to the main page.
+  const classicStatus = useUiStore((s) => s.classicStatus);
+  useEffect(() => {
+    const subs = [
+      listen("classic-launched", () => useUiStore.setState({ classicStatus: "launched" })),
+      listen("classic-launch-failed", () => useUiStore.setState({ classicStatus: "failed" })),
+      listen("classic-launch-timeout", () => useUiStore.setState({ classicStatus: "failed" })),
+    ];
+    return () => subs.forEach((s) => s.then((un) => un()));
+  }, []);
+  useEffect(() => {
+    if (classicStatus !== "launched") return;
+    const id = setTimeout(() => useUiStore.setState({ classicStatus: "idle" }), 5000);
+    return () => clearTimeout(id);
+  }, [classicStatus]);
+
   // Announcement: forced-read on first launch, then a permanent reopen banner.
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [announcementForced, setAnnouncementForced] = useState(false);
@@ -303,6 +320,27 @@ export function App() {
         <PageRouter />
       </main>
       <ErrorToastContainer />
+      {classicStatus !== "idle" && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-[var(--bg)]/95 backdrop-blur-sm">
+          {classicStatus === "launching" && (
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-text-faint border-t-accent" />
+          )}
+          <div className="text-[13px] font-semibold text-[var(--text)]">
+            {classicStatus === "launching" && t("login.classic_launching")}
+            {classicStatus === "launched" && `✓ ${t("login.classic_launched")}`}
+            {classicStatus === "failed" && t("login.classic_launch_failed")}
+          </div>
+          {classicStatus !== "launching" && (
+            <button
+              type="button"
+              onClick={() => useUiStore.setState({ classicStatus: "idle" })}
+              className="rounded-lg border border-border px-4 py-1.5 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+            >
+              {t("common.ok")}
+            </button>
+          )}
+        </div>
+      )}
       {announcementOpen && (
         <AnnouncementModal
           forced={announcementForced}

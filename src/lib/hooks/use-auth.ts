@@ -152,6 +152,13 @@ export function useLogin() {
         commands.openClassicLogin(session.sessionId).catch(() => {
           useUiStore.setState({ classicStatus: "failed" });
         });
+        // If a regular session already exists (this classic launch was started
+        // from the account tab's "+"), return to the account list rather than
+        // stranding the user on the login page — the app-level overlay shows the
+        // classic progress over the main page.
+        if (useAuthStore.getState().isAuthenticated) {
+          useUiStore.getState().setPage("main");
+        }
         return;
       }
       useAuthStore.getState().addSession(session);
