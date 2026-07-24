@@ -20,6 +20,7 @@
   "login.mode_tw": "台湾",
   "login.mode_classic": "怀旧服",
   "login.classic_hint": "以香港 beanfun 账号登录，登录后自动启动《经典版》。",
+  "login.classic_no_cn": "经典版仅支持香港（HK）beanfun 账号，不支持 +86（中国大陆）账号。",
   "login.classic_check": "重新检测",
   "login.classic_checking": "正在检测经典版环境…",
   "login.classic_ready": "经典版环境已就绪",
