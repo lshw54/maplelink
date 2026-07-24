@@ -418,6 +418,11 @@ pub fn run() {
 
             tracing::info!("config loaded from {}", config_path.display());
 
+            // Captured now (before `config` moves into AppState below) so the
+            // main window can be repositioned once it exists — see the
+            // restore step near the end of setup().
+            let saved_window_pos = (config.window_x, config.window_y);
+
             // 3. Load saved accounts from disk.
             let accounts_path = config_dir.join("accounts.json");
             let saved_accounts = tauri::async_runtime::block_on(async {
@@ -596,6 +601,33 @@ pub fn run() {
                 }
             }
 
+            // Restore the main window's last saved position (persisted on
+            // move — see `on_window_event`'s `Moved`/`Destroyed` handling
+            // below). Runs after the DPI block above so a text-scale-driven
+            // recenter doesn't clobber it. Falls back to tauri.conf.json5's
+            // `center: true` when unset, or when the saved spot is no longer
+            // on any connected monitor (e.g. that monitor got unplugged).
+            if let (Some(x), Some(y)) = saved_window_pos {
+                if let Some(win) = app.get_webview_window("main") {
+                    let pos = tauri::PhysicalPosition::new(x, y);
+                    let on_screen = win.available_monitors().is_ok_and(|monitors| {
+                        monitors.iter().any(|m| {
+                            let mp = *m.position();
+                            let ms = *m.size();
+                            pos.x >= mp.x
+                                && pos.x < mp.x + ms.width as i32
+                                && pos.y >= mp.y
+                                && pos.y < mp.y + ms.height as i32
+                        })
+                    });
+                    if on_screen {
+                        let _ = win.set_position(tauri::Position::Physical(pos));
+                    } else {
+                        tracing::info!("saved window position {x},{y} is off-screen, centering");
+                    }
+                }
+            }
+
             // System-tray icon (lets "minimize to tray" on close work).
             if let Err(e) = setup_tray(app.handle()) {
                 tracing::warn!("failed to create system tray: {e}");
@@ -619,6 +651,21 @@ pub fn run() {
                     | tauri::WindowEvent::Moved(_)
             ) {
                 apply_borderless_dwm(window);
+            }
+
+            // Track the main window's live position in memory so it can be
+            // restored on next launch. Only updates AppState — the actual
+            // disk write happens once, on `Destroyed` below, to avoid
+            // hammering the INI file on every pixel of a drag.
+            if let tauri::WindowEvent::Moved(position) = event {
+                if window.label() == "main" {
+                    if let Some(state) = window.app_handle().try_state::<AppState>() {
+                        if let Ok(mut cfg) = state.config.try_write() {
+                            cfg.window_x = Some(position.x);
+                            cfg.window_y = Some(position.y);
+                        }
+                    }
+                }
             }
 
             // Intercept the main window close (titlebar X or Alt+F4) and honour
@@ -676,6 +723,23 @@ pub fn run() {
                         if let Some(state) = app_handle.try_state::<AppState>() {
                             state.clear_all_sessions().await;
                             tracing::info!("all sessions cleared on window close");
+
+                            // Persist the final window position captured on the
+                            // last `Moved` event above, so the next launch
+                            // reopens in the same spot. Skipped in café mode —
+                            // the close path already deleted config.ini and
+                            // writing it back here would undo that wipe.
+                            let config_snapshot = state.config.read().await.clone();
+                            if !config_snapshot.cafe_mode {
+                                if let Err(e) = config_service::save_config(
+                                    &state.config_path,
+                                    &config_snapshot,
+                                )
+                                .await
+                                {
+                                    tracing::warn!("failed to save window position: {e}");
+                                }
+                            }
                         }
                         // Also close debug console if open
                         if let Some(debug_win) = app_handle.get_webview_window("debug-console") {

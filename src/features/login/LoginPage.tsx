@@ -5,6 +5,7 @@ import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../../components/Modal";
@@ -24,7 +25,15 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
-  const [view, setViewLocal] = useState<LoginView>((persistedView as LoginView) || "normal");
+  const [view, setViewLocal] = useState<LoginView>(() => {
+    if (persistedView) return persistedView as LoginView;
+    // First mount this session — fall back to the user's configured default.
+    // Matches NormalLoginForm's showQr gate: TW only, and not in classic mode
+    // (Classic has no QR login either).
+    const cfg = useConfigStore.getState().config;
+    const classic = useUiStore.getState().classicMode;
+    return cfg?.region === "TW" && !classic && cfg?.defaultLoginView === "qr" ? "qr" : "normal";
+  });
   const setView = (v: LoginView) => {
     setViewLocal(v);
     useUiStore.setState({ loginView: v });
