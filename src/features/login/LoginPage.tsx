@@ -23,6 +23,7 @@ export function LoginPage() {
   const setPage = useUiStore((s) => s.setPage);
   const queryClient = useQueryClient();
   const persistedView = useUiStore((s) => s.loginView);
+  const classicMode = useUiStore((s) => s.classicMode);
   const [view, setViewLocal] = useState<LoginView>((persistedView as LoginView) || "normal");
   const setView = (v: LoginView) => {
     setViewLocal(v);
@@ -49,7 +50,20 @@ export function LoginPage() {
   // Listen for GamePass login completion event from backend
   useEffect(() => {
     const unlistenComplete = listen<SessionDto>("gamepass-login-complete", async (event) => {
-      useAuthStore.getState().addSession(event.payload);
+      // Classic (懷舊服) via GamePass reuses this flow but ends in the portal, not
+      // the game grid — same as the HK classic path.
+      if (useUiStore.getState().classicMode) {
+        useUiStore.setState({
+          addingSession: false,
+          loginView: "normal",
+          classicStatus: "launching",
+        });
+        commands.openClassicLogin(event.payload.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        return;
+      }
+      useAuthStore.getState().addSession(event.payload, undefined, "gamepass");
       try {
         const accounts = await commands.getGameAccounts(event.payload.sessionId);
         useAuthStore.getState().updateGameAccounts(event.payload.sessionId, accounts);
@@ -185,25 +199,30 @@ export function LoginPage() {
 
       <StatusBar />
       <div className="shrink-0 pb-2 text-center">
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              const running = await commands.isGameRunning();
-              if (running) {
-                setShowRelaunchConfirm(true);
-                return;
-              }
-            } catch {
-              /* ignore, proceed */
-            }
-            await doDirectLaunch();
-          }}
-          className="mb-1.5 rounded-md px-3 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
-        >
-          ▶ {t("login.launch_game_direct")}
-        </button>
-        <GameRunningIndicator />
+        {/* Direct-launch is a regular-game action; hide it in classic mode. */}
+        {!classicMode && (
+          <>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const running = await commands.isGameRunning();
+                  if (running) {
+                    setShowRelaunchConfirm(true);
+                    return;
+                  }
+                } catch {
+                  /* ignore, proceed */
+                }
+                await doDirectLaunch();
+              }}
+              className="mb-1.5 rounded-md px-3 py-1 text-[11px] text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+            >
+              ▶ {t("login.launch_game_direct")}
+            </button>
+            <GameRunningIndicator />
+          </>
+        )}
         <div className="font-mono text-[10px] font-medium tracking-[1px] text-text-faint">
           MapleLink v{appVersion}
         </div>

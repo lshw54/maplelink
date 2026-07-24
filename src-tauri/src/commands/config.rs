@@ -207,6 +207,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "cafeMode" | "cafe_mode" => {
             config.cafe_mode = parse_bool(value)?;
         }
+        "classicNgmPath" | "classic_ngm_path" => {
+            config.classic_ngm_path = value.to_string();
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

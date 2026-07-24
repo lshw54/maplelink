@@ -175,6 +175,103 @@ pub fn register_new_window_handler(_webview_window: &tauri::WebviewWindow) -> Re
     Ok(())
 }
 
+/// Register a `LaunchingExternalUriScheme` handler that cancels WebView2's
+/// protocol-launch prompt and hands the URI to `on_launch` instead.
+///
+/// When the classic portal fires its `ngm://` launch, WebView2 pops a "this site
+/// is trying to open Nexon Game Manager" confirmation. Cancelling that here (and
+/// launching NGM ourselves from `on_launch`) removes the manual click entirely.
+/// Requires `ICoreWebView2_18`; returns an error on older runtimes so the caller
+/// can fall back to showing the window for a manual launch.
+#[cfg(target_os = "windows")]
+pub fn register_external_uri_handler<F>(
+    webview_window: &tauri::WebviewWindow,
+    on_launch: F,
+) -> Result<(), String>
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    use std::sync::Mutex;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+    let on_launch = Arc::new(on_launch);
+
+    let result = webview_window.with_webview(move |wv| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use windows_core::Interface;
+
+        unsafe {
+            let controller = wv.controller();
+            let core: ICoreWebView2 = controller
+                .CoreWebView2()
+                .expect("failed to get CoreWebView2");
+
+            let core18: ICoreWebView2_18 = match core.cast() {
+                Ok(c) => c,
+                Err(e) => {
+                    if let Some(sender) = tx.lock().unwrap().take() {
+                        let _ = sender.send(Err(format!("ICoreWebView2_18 unavailable: {e}")));
+                    }
+                    return;
+                }
+            };
+
+            let cb = on_launch.clone();
+            let handler = webview2_com::LaunchingExternalUriSchemeEventHandler::create(Box::new(
+                move |_sender, args| -> windows_core::Result<()> {
+                    if let Some(args) = args {
+                        let mut uri = windows_core::PWSTR::null();
+                        args.Uri(&mut uri)?;
+                        let url = uri.to_string().unwrap_or_default();
+                        if !uri.is_null() {
+                            windows_core::imp::CoTaskMemFree(uri.as_ptr() as _);
+                        }
+                        // Suppress the prompt and launch it ourselves.
+                        args.SetCancel(true)?;
+                        if !url.is_empty() {
+                            tracing::info!("intercepted external-scheme launch: {url}");
+                            cb(&url);
+                        }
+                    }
+                    Ok(())
+                },
+            ));
+
+            let mut token: i64 = 0;
+            core18
+                .add_LaunchingExternalUriScheme(&handler, &mut token)
+                .expect("failed to register LaunchingExternalUriScheme handler");
+            tracing::info!("LaunchingExternalUriScheme handler registered (token={token})");
+
+            if let Some(sender) = tx.lock().unwrap().take() {
+                let _ = sender.send(Ok(()));
+            }
+        }
+    });
+
+    if result.is_err() {
+        return Err("with_webview failed for LaunchingExternalUriScheme handler".to_string());
+    }
+
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("LaunchingExternalUriScheme handler registration timed out".to_string()),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn register_external_uri_handler<F>(
+    _webview_window: &tauri::WebviewWindow,
+    _on_launch: F,
+) -> Result<(), String>
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    Err("external-uri interception is only supported on Windows".to_string())
+}
+
 /// Register a `NewWindowRequested` handler that lets WebView2 open a REAL popup
 /// window (with a proper `window.opener`) instead of navigating or blocking.
 ///

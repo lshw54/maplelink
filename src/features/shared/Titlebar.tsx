@@ -9,6 +9,7 @@ export function Titlebar() {
   const appWindow = getCurrentWindow();
   const currentPage = useUiStore((s) => s.currentPage);
   const setPage = useUiStore((s) => s.setPage);
+  const classicMode = useUiStore((s) => s.classicMode);
   const config = useConfigStore((s) => s.config);
   const setConfig = useSetConfig();
 
@@ -21,7 +22,20 @@ export function Titlebar() {
     appWindow.startDragging();
   }
 
+  // Classic (懷舊服) is a distinct mode, kept separate from the HK/TW region
+  // toggle. Enabling it forces the region to HK (phase 1 is HK id-pass only).
+  function toggleClassic() {
+    if (classicMode) {
+      useUiStore.setState({ classicMode: false });
+    } else {
+      useUiStore.setState({ classicMode: true });
+      if (region !== "HK") setConfig.mutate({ key: "region", value: "HK" });
+    }
+  }
+
+  // Choosing a region is a regular-login action, so it also leaves classic mode.
   function handleRegionToggle() {
+    if (classicMode) useUiStore.setState({ classicMode: false });
     const next = region === "TW" ? "HK" : "TW";
     setConfig.mutate({ key: "region", value: next });
   }
@@ -39,7 +53,7 @@ export function Titlebar() {
       className="flex h-[34px] shrink-0 items-center"
       style={{ zIndex: 10, position: "relative" }}
     >
-      {/* Drag region — app name */}
+      {/* App name */}
       <div className="pointer-events-none flex flex-1 items-center pl-4 text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
         MAPLELINK
       </div>
@@ -49,16 +63,34 @@ export function Titlebar() {
         className="flex items-center"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        {/* Region: clickable on login, read-only on main/toolbox */}
+        {/* Classic (懷舊服) toggle + region toggle — same style, side by side */}
         {currentPage === "login" ? (
-          <button
-            onClick={handleRegionToggle}
-            title={t("shared.titlebar.region_toggle")}
-            className="relative flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
-          >
-            {regionFlag}
-            <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
-          </button>
+          <>
+            <button
+              onClick={toggleClassic}
+              title={t("login.mode_classic")}
+              className={`relative flex h-[34px] w-[34px] items-center justify-center text-[13px] transition-all hover:bg-[var(--surface-hover)] active:scale-[0.92] ${
+                classicMode ? "text-accent" : "text-text-dim hover:text-accent"
+              }`}
+            >
+              🍁
+              {classicMode && (
+                <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
+              )}
+            </button>
+            <button
+              onClick={handleRegionToggle}
+              title={t("shared.titlebar.region_toggle")}
+              className={`relative flex h-[34px] w-[34px] items-center justify-center text-[12px] transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92] ${
+                classicMode ? "text-text-faint" : "text-text-dim"
+              }`}
+            >
+              {regionFlag}
+              {!classicMode && (
+                <span className="absolute bottom-[5px] left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-sm bg-accent opacity-60" />
+              )}
+            </button>
+          </>
         ) : (
           <span className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-faint">
             {region}

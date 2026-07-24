@@ -68,6 +68,10 @@ pub struct AppConfig {
     /// crash or hard-kill instead of a normal close leaves it on but unwiped.
     #[serde(default)]
     pub cafe_mode: bool,
+    /// Manual path to Nexon Game Manager's executable, used to launch MapleStory
+    /// Classic when the `ngm://` handler isn't auto-detected. Empty = auto-detect.
+    #[serde(default)]
+    pub classic_ngm_path: String,
 }
 
 fn default_true() -> bool {
@@ -108,6 +112,7 @@ impl Default for AppConfig {
             hide_account_names: false,
             beanfun_rename_dismissed: false,
             cafe_mode: false,
+            classic_ngm_path: String::new(),
         }
     }
 }

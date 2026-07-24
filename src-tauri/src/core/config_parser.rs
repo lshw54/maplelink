@@ -111,6 +111,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("cafe_mode") {
             config.cafe_mode = parse_bool(v, "cafe_mode", defaults.cafe_mode);
         }
+        if let Some(v) = general.get("classic_ngm_path") {
+            config.classic_ngm_path = v.clone();
+        }
     }
 
     // --- [game] ---
@@ -212,6 +215,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         config.beanfun_rename_dismissed
     ));
     out.push_str(&format!("cafe_mode = {}\n", config.cafe_mode));
+    out.push_str(&format!("classic_ngm_path = {}\n", config.classic_ngm_path));
     out.push('\n');
 
     // [game]
@@ -537,6 +541,7 @@ x = not_a_number
             hide_account_names: true,
             beanfun_rename_dismissed: true,
             cafe_mode: true,
+            classic_ngm_path: r"C:\NGM\ngm.exe".into(),
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

@@ -47,8 +47,11 @@
 | 🔐 登入 | 帳號密碼登入 | 支援記住密碼，依地區分別儲存 |
 | | TOTP 驗證 | HK 地區雙重驗證 |
 | | QR Code 登入 | TW 地區掃碼登入 |
-| | GamePass 登入 | TW 地區 GamePass 驗證 |
+| | GamaPass 登入 | TW 地區 GamaPass 驗證 |
 | | 進階驗證 | 圖形驗證碼自動處理 |
+| 🍁 懷舊服 | 經典版登入 | 以 HK 帳密或 TW GamaPass 登入《新楓之谷：經典版》 |
+| | 一鍵啟動 | 自動完成 SSO 並透過 Nexon Game Manager 直接開遊戲（無需手動確認） |
+| | 環境自檢 | 偵測 NGM 是否安裝，缺少時提供下載或手動指定路徑 |
 | 👥 帳號 | 多帳號管理 | 帳號列表、右鍵選單、拖曳排序、自訂名稱 |
 | | 多 Session 登入 | 同一視窗內同時登入多個帳號，支援跨地區 |
 | | 免登入啟動 | 登入頁面直接啟動遊戲，無需先登入帳號 |
@@ -71,7 +74,7 @@
 1. 前往 [Releases](../../releases/latest) 下載最新版本
 2. 安裝後直接執行即可
 
-> `%APPDATA%` 中的 `EBWebView` 資料夾是 WebView2 的快取，屬於正常現象。若不想保留 GamePass 的登入狀態，可在設定中開啟「GamePass 無痕模式」。
+> `%APPDATA%` 中的 `EBWebView` 資料夾是 WebView2 的快取，屬於正常現象。若不想保留 GamaPass 的登入狀態，可在設定中開啟「GamaPass 無痕模式」。
 
 ## 技術棧
 
@@ -163,7 +166,7 @@ sequenceDiagram
 ```
 src-tauri/src/
 ├── commands/
-│   ├── auth.rs                # 登入、登出、QR、TOTP、GamePass、session 管理
+│   ├── auth.rs                # 登入、登出、QR、TOTP、GamaPass、session 管理
 │   ├── account.rs             # 遊戲帳號、OTP 取得、帳號刷新
 │   ├── launcher.rs            # 啟動遊戲、免登入啟動、程序狀態
 │   ├── config.rs              # 設定讀寫、重設

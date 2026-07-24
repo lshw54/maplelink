@@ -2,15 +2,19 @@ import { useState, useEffect, useRef, useCallback, type SyntheticEvent } from "r
 import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useUiStore } from "../../lib/stores/ui-store";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { commands } from "../../lib/tauri";
 import { PasswordInput } from "../../components/PasswordInput";
 import { Modal } from "../../components/Modal";
-import type { SavedAccountDto } from "../../lib/types";
+import type { SavedAccountDto, ClassicCheckDto } from "../../lib/types";
 
 const FORGOT_PWD_URLS: Record<string, string> = {
   TW: "https://tw.beanfun.com/member/forgot_pwd.aspx",
   HK: "https://bfweb.hk.beanfun.com/member/forgot_pwd.aspx",
 };
+
+const NGM_DOWNLOAD_URL = "https://platform.nexon.com/NGM/Bin/Install_NGM.exe";
 
 // Global flag — auto-login only fires once per app launch, not on re-mount.
 // Uses window property to survive HMR in dev mode.
@@ -48,12 +52,49 @@ export function NormalLoginForm({
   const accountInputRef = useRef<HTMLInputElement>(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [cafeConfirm, setCafeConfirm] = useState(false);
+  const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
+  const [showCheckDetail, setShowCheckDetail] = useState(false);
+
+  async function runClassicCheck() {
+    try {
+      setClassicCheck(await commands.classicSelfCheck());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Fallback when auto-detection + install still don't find NGM: let the user
+  // point us at NexonGameManager's exe (e.g. C:\ProgramData\Nexon\NGM\NGM64.exe).
+  async function pickNgmPath() {
+    const path = await commands.openFileDialog().catch(() => null);
+    if (!path) return;
+    await commands.setConfig("classic_ngm_path", path).catch(() => {});
+    await runClassicCheck();
+  }
 
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
   const cafeMode = useConfigStore((s) => s.config?.cafeMode ?? false);
-  const showQr = region === "TW";
+  const classicMode = useUiStore((s) => s.classicMode);
+  const showQr = region === "TW" && !classicMode;
+
+  // Run the classic readiness check as soon as classic mode is entered, so its
+  // status shows inline without the user having to ask.
+  useEffect(() => {
+    if (!classicMode || classicCheck !== null) return;
+    let alive = true;
+    commands
+      .classicSelfCheck()
+      .then((c) => {
+        if (alive) setClassicCheck(c);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classicMode]);
 
   function setCafeMode(on: boolean) {
     commands.setConfig("cafe_mode", String(on)).catch(() => {});
@@ -228,6 +269,25 @@ export function NormalLoginForm({
   function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!account.trim() || !password.trim()) return;
+
+    // Classic: if this account is already logged in, reuse that session's cookies
+    // to open the portal instead of logging in again. beanfun allows one session
+    // per account, so a second login would kick the existing (regular) session.
+    if (classicMode) {
+      const acct = account.trim();
+      const existing = [...useAuthStore.getState().sessions.values()].find(
+        (s) => s.session.accountName === acct,
+      );
+      if (existing) {
+        useUiStore.setState({ classicStatus: "launching" });
+        commands.openClassicLogin(existing.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        if (useAuthStore.getState().isAuthenticated) useUiStore.getState().setPage("main");
+        return;
+      }
+    }
+
     login.mutate(
       { account: account.trim(), password, rememberPassword: remember },
       {
@@ -244,6 +304,40 @@ export function NormalLoginForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
+      {classicMode &&
+        (classicCheck && !(classicCheck.ngmRegistered && classicCheck.ngmExeExists) ? (
+          // NGM missing — prominent warning with a direct download.
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-[var(--danger)] bg-[rgba(239,68,68,0.1)] px-3 py-2 text-[11px]">
+            <span className="text-[13px]">⚠️</span>
+            <span className="flex-1 font-semibold text-[var(--danger)]">
+              {t("login.classic_ngm_missing_short")}
+            </span>
+            <button
+              type="button"
+              onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+              className="shrink-0 rounded-md bg-[var(--danger)] px-2 py-1 font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("login.classic_download")}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowCheckDetail(true)}
+            className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(232,162,58,0.12)]"
+          >
+            {classicCheck === null ? (
+              <span className="text-text-dim">{t("login.classic_checking")}</span>
+            ) : (
+              <>
+                <span className="text-green-500">✓</span>
+                <span className="flex-1 text-text-dim">{t("login.classic_ready")}</span>
+              </>
+            )}
+            <span className="shrink-0 text-text-faint">›</span>
+          </button>
+        ))}
+
       {/* Account field with dropdown */}
       <div className="mb-3">
         <label
@@ -434,7 +528,11 @@ export function NormalLoginForm({
           disabled={isLoading || !account.trim() || !password.trim()}
           className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[11px] font-bold tracking-[2px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isLoading ? t("login.logging_in") : t("login.submit")}
+          {isLoading
+            ? t("login.logging_in")
+            : classicMode
+              ? t("login.classic_hk_login")
+              : t("login.submit")}
         </button>
         {showQr && (
           <button
@@ -522,6 +620,35 @@ export function NormalLoginForm({
         )}
       </div>
 
+      {/* Classic also accepts GamePass (TW) sign-in, reusing the regular flow */}
+      {classicMode && (
+        <button
+          type="button"
+          onClick={() => {
+            // GamePass OAuth is gated to TW; classic reuses it, so switch the
+            // region to TW for the flow. The portal keys off the session region.
+            commands.setConfig("region", "TW").catch(() => {});
+            const cfg = useConfigStore.getState().config;
+            if (cfg) useConfigStore.setState({ config: { ...cfg, region: "TW" } });
+            onGamePass();
+          }}
+          disabled={isLoading}
+          className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-[var(--surface)] px-5 py-2.5 text-[12px] font-semibold text-text-dim transition-all hover:border-accent hover:text-accent active:scale-95 disabled:opacity-40"
+        >
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M9 1.5L2 5.5V12.5L9 16.5L16 12.5V5.5L9 1.5Z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+            <path d="M9 8.5V16.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M2 5.5L9 9.5L16 5.5" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          {t("login.classic_gamepass")}
+        </button>
+      )}
+
       {/* Café-mode confirmation — enabling is destructive on every close */}
       <Modal
         isOpen={cafeConfirm}
@@ -547,6 +674,81 @@ export function NormalLoginForm({
               className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
             >
               {t("login.cafe_confirm_enable")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Classic readiness self-check */}
+      <Modal
+        isOpen={showCheckDetail}
+        onClose={() => setShowCheckDetail(false)}
+        title={t("login.classic_check_title")}
+      >
+        <div className="flex flex-col gap-2.5 text-[12px]">
+          <div className="flex items-center gap-2">
+            <span
+              className={
+                classicCheck?.ngmRegistered && classicCheck?.ngmExeExists
+                  ? "text-green-500"
+                  : "text-red-500"
+              }
+            >
+              {classicCheck?.ngmRegistered && classicCheck?.ngmExeExists ? "✓" : "✗"}
+            </span>
+            <span className="flex-1 text-[var(--text)]">{t("login.check_ngm")}</span>
+          </div>
+          {classicCheck?.ngmExe && (
+            <p className="pl-6 font-mono text-[10px] break-all text-text-faint">
+              {classicCheck.ngmExe}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <span className={classicCheck?.webview2Version ? "text-green-500" : "text-yellow-500"}>
+              {classicCheck?.webview2Version ? "✓" : "?"}
+            </span>
+            <span className="flex-1 text-[var(--text)]">WebView2</span>
+            <span className="font-mono text-[11px] text-text-dim">
+              {classicCheck?.webview2Version ?? t("login.check_unknown")}
+            </span>
+          </div>
+          {!classicCheck?.ngmRegistered && (
+            <div className="mt-1 flex flex-col gap-2 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-2">
+              <p className="text-[11px] leading-relaxed text-yellow-500">
+                {t("login.check_ngm_missing")}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+                  className="rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  {t("login.classic_download")}
+                </button>
+                <button
+                  type="button"
+                  onClick={pickNgmPath}
+                  className="rounded-md border border-border px-3 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+                >
+                  {t("login.classic_manual_path")}
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={runClassicCheck}
+              className="rounded-lg border border-border px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("login.classic_check")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCheckDetail(false)}
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("common.ok")}
             </button>
           </div>
         </div>

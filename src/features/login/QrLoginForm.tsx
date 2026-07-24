@@ -51,7 +51,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           );
           const confirmedSession = result.session ? { ...result.session, sessionId } : null;
           if (confirmedSession) {
-            useAuthStore.getState().addSession(confirmedSession);
+            useAuthStore.getState().addSession(confirmedSession, undefined, "qr");
             const accounts = await commands.getGameAccounts(sessionId);
             useAuthStore.getState().updateGameAccounts(sessionId, accounts);
             // Clear persisted QR state

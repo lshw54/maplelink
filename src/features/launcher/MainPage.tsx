@@ -12,12 +12,15 @@ import { SessionTabs } from "./SessionTabs";
 import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../../components/Modal";
-import type { GameAccountDto } from "../../lib/types";
+import type { GameAccountDto, ClassicCheckDto } from "../../lib/types";
 
 export function MainPage() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
   const activeSessionId = useAuthStore((s) => s.activeSessionId);
+  const activeLoginMethod = useAuthStore((s) =>
+    s.activeSessionId ? s.sessions.get(s.activeSessionId)?.loginMethod : undefined,
+  );
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -67,6 +70,30 @@ export function MainPage() {
   const [pendingLaunchId, setPendingLaunchId] = useState<string | null>(null);
   const [beansMenuOpen, setBeansMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  // Game switcher: launch the regular game or MapleStory Classic (懷舊服) with
+  // this same session — no re-login, so the regular session stays alive.
+  const [classicGame, setClassicGame] = useState(false);
+  const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
+  // Classic can reuse this session only for HK (account/password) or TW GamePass.
+  // A TW account/password or QR session can't drive the classic SSO (the portal
+  // offers only HK-beanfun and GamePass sign-in), so it gets no switcher.
+  const canClassic = session?.region === "HK" || activeLoginMethod === "gamepass";
+  const showClassic = classicGame && canClassic;
+  const ngmReady = !!classicCheck && classicCheck.ngmRegistered && classicCheck.ngmExeExists;
+
+  useEffect(() => {
+    if (!showClassic || classicCheck !== null) return;
+    let alive = true;
+    commands
+      .classicSelfCheck()
+      .then((c) => {
+        if (alive) setClassicCheck(c);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [showClassic, classicCheck]);
   const beansRef = useRef<HTMLSpanElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
 
@@ -181,6 +208,16 @@ export function MainPage() {
   );
 
   async function handlePlayClick() {
+    // Classic reuses THIS session (its cookies) — no re-login, so the regular
+    // session isn't kicked. The app-level overlay shows the launch progress.
+    if (showClassic) {
+      useUiStore.setState({ classicStatus: "launching" });
+      commands.openClassicLogin(activeSessionId ?? "").catch(() => {
+        useUiStore.setState({ classicStatus: "failed" });
+      });
+      return;
+    }
+
     const config = useConfigStore.getState().config;
     const traditionalLogin = config?.traditionalLogin ?? true;
 
@@ -299,7 +336,26 @@ export function MainPage() {
             <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
           </div>
 
-          <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="relative z-10 flex flex-col items-center gap-3.5">
+            {/* Game switcher: regular vs classic (only when this session can) */}
+            {canClassic && (
+              <div className="flex rounded-full border border-border bg-[var(--surface)] p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]">
+                {[false, true].map((classic) => (
+                  <button
+                    key={String(classic)}
+                    onClick={() => setClassicGame(classic)}
+                    className={`rounded-full px-4 py-1.5 text-[12px] font-bold tracking-[1px] transition-all ${
+                      classicGame === classic
+                        ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_2px_10px_var(--accent-glow)]"
+                        : "text-text-dim hover:text-[var(--text)]"
+                    }`}
+                  >
+                    {t(classic ? "launcher.game_classic" : "launcher.game_regular")}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[14px] border border-border bg-[var(--surface-hover)]">
               <img
                 src="/MapleStory.ico"
@@ -309,11 +365,33 @@ export function MainPage() {
               />
             </div>
             <div className="text-center text-base font-extrabold tracking-[1px] text-[var(--text)]">
-              {t("launcher.game_info")}
+              {showClassic ? t("launcher.game_classic_title") : t("launcher.game_info")}
             </div>
             <div className="text-[11px] font-medium tracking-[2px] text-text-dim uppercase">
               {t("launcher.game_subtitle")}
             </div>
+
+            {/* Classic readiness — shown right under the subtitle */}
+            {showClassic && (
+              <div className="flex min-h-[20px] items-center text-[11px]">
+                {classicCheck === null ? (
+                  <span className="text-text-faint">{t("login.classic_checking")}</span>
+                ) : ngmReady ? (
+                  <span className="text-green-500">✓ {t("login.classic_ready")}</span>
+                ) : (
+                  <button
+                    onClick={() =>
+                      commands
+                        .openExternal("https://platform.nexon.com/NGM/Bin/Install_NGM.exe")
+                        .catch(() => {})
+                    }
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--danger)] bg-[rgba(239,68,68,0.1)] px-2 py-0.5 font-semibold text-[var(--danger)] transition-opacity hover:opacity-90"
+                  >
+                    ⚠️ {t("login.classic_ngm_missing_short")} · {t("login.classic_download")}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Circular PLAY button */}
             <button
@@ -324,7 +402,7 @@ export function MainPage() {
               {launching ? "..." : t("launcher.play")}
             </button>
 
-            {(gameRunning || gamePid !== null) && (
+            {!showClassic && (gameRunning || gamePid !== null) && (
               <span className="text-[12px] text-accent">
                 {t("launcher.running")}
                 {gamePid !== null ? ` (PID: ${gamePid})` : ""}

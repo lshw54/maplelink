@@ -144,6 +144,23 @@ export function useLogin() {
       }
     },
     onSuccess: async (session: SessionDto) => {
+      // Classic (懷舊服): the experience lives in the portal webview. Open it
+      // and stop — the backend session already holds the cookies it needs, so we
+      // don't add it to the game-account grid store or navigate to main.
+      if (useUiStore.getState().classicMode) {
+        useUiStore.setState({ addingSession: false, classicStatus: "launching" });
+        commands.openClassicLogin(session.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        // If a regular session already exists (this classic launch was started
+        // from the account tab's "+"), return to the account list rather than
+        // stranding the user on the login page — the app-level overlay shows the
+        // classic progress over the main page.
+        if (useAuthStore.getState().isAuthenticated) {
+          useUiStore.getState().setPage("main");
+        }
+        return;
+      }
       useAuthStore.getState().addSession(session);
       let accountCount = -1;
       try {
@@ -217,7 +234,7 @@ export function useQrLoginPoll() {
       commands.qrLoginPoll(sessionId, sessionKey, verificationToken),
     onSuccess: async (result: QrPollResult) => {
       if (result.status === "confirmed" && result.session) {
-        useAuthStore.getState().addSession(result.session);
+        useAuthStore.getState().addSession(result.session, undefined, "qr");
         const accounts = await commands.getGameAccounts(result.session.sessionId);
         useAuthStore.getState().updateGameAccounts(result.session.sessionId, accounts);
         await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });

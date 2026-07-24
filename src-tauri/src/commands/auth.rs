@@ -794,6 +794,29 @@ pub async fn open_gamepass_login(
     webview_login::open_gamepass_login_window(app, state.inner()).await
 }
 
+/// Open the MapleStory Classic (懷舊服) portal for an already-authenticated
+/// session. Seeds the session's beanfun cookies into a webview and drives the
+/// galaxy SSO through to the classic portal; the game is launched from there via
+/// the site's own `ngm://` handler.
+#[tauri::command]
+pub async fn open_classic_login(
+    session_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    crate::services::classic_service::open_classic_login(session_id, app, state.inner()).await
+}
+
+/// Check the local prerequisites for launching MapleStory Classic (NGM handler,
+/// its executable, WebView2 runtime).
+#[tauri::command]
+pub async fn classic_self_check(
+    state: State<'_, AppState>,
+) -> Result<crate::services::classic_service::ClassicCheck, ErrorDto> {
+    let manual = state.config.read().await.classic_ngm_path.clone();
+    Ok(crate::services::classic_service::self_check(&manual))
+}
+
 /// Called by the GamePass webview init script when login completes.
 ///
 /// `web_token` is the JS `document.cookie` value, only useful as a fallback
