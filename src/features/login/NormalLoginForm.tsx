@@ -13,6 +13,8 @@ const FORGOT_PWD_URLS: Record<string, string> = {
   HK: "https://bfweb.hk.beanfun.com/member/forgot_pwd.aspx",
 };
 
+const NGM_DOWNLOAD_URL = "https://platform.nexon.com/NGM/Bin/Install_NGM.exe";
+
 // Global flag — auto-login only fires once per app launch, not on re-mount.
 // Uses window property to survive HMR in dev mode.
 const AUTO_LOGIN_KEY = "__maplelink_auto_login_fired__";
@@ -273,29 +275,39 @@ export function NormalLoginForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
-      {classicMode && (
-        <button
-          type="button"
-          onClick={() => setShowCheckDetail(true)}
-          title={t("login.classic_hint")}
-          className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(232,162,58,0.12)]"
-        >
-          {classicCheck === null ? (
-            <span className="text-text-dim">{t("login.classic_checking")}</span>
-          ) : classicCheck.ngmRegistered && classicCheck.ngmExeExists ? (
-            <>
-              <span className="text-green-500">✓</span>
-              <span className="flex-1 text-text-dim">{t("login.classic_ready")}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-yellow-500">✗</span>
-              <span className="flex-1 text-yellow-500">{t("login.classic_ngm_missing_short")}</span>
-            </>
-          )}
-          <span className="shrink-0 text-text-faint">›</span>
-        </button>
-      )}
+      {classicMode &&
+        (classicCheck && !(classicCheck.ngmRegistered && classicCheck.ngmExeExists) ? (
+          // NGM missing — prominent warning with a direct download.
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-[var(--danger)] bg-[rgba(239,68,68,0.1)] px-3 py-2 text-[11px]">
+            <span className="text-[13px]">⚠️</span>
+            <span className="flex-1 font-semibold text-[var(--danger)]">
+              {t("login.classic_ngm_missing_short")}
+            </span>
+            <button
+              type="button"
+              onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+              className="shrink-0 rounded-md bg-[var(--danger)] px-2 py-1 font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("login.classic_download")}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowCheckDetail(true)}
+            className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(232,162,58,0.12)]"
+          >
+            {classicCheck === null ? (
+              <span className="text-text-dim">{t("login.classic_checking")}</span>
+            ) : (
+              <>
+                <span className="text-green-500">✓</span>
+                <span className="flex-1 text-text-dim">{t("login.classic_ready")}</span>
+              </>
+            )}
+            <span className="shrink-0 text-text-faint">›</span>
+          </button>
+        ))}
 
       {/* Account field with dropdown */}
       <div className="mb-3">
@@ -487,7 +499,11 @@ export function NormalLoginForm({
           disabled={isLoading || !account.trim() || !password.trim()}
           className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[11px] font-bold tracking-[2px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isLoading ? t("login.logging_in") : t("login.submit")}
+          {isLoading
+            ? t("login.logging_in")
+            : classicMode
+              ? t("login.classic_hk_login")
+              : t("login.submit")}
         </button>
         {showQr && (
           <button
@@ -668,9 +684,18 @@ export function NormalLoginForm({
             </span>
           </div>
           {!classicCheck?.ngmRegistered && (
-            <p className="mt-1 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-1.5 text-[11px] leading-relaxed text-yellow-500">
-              {t("login.check_ngm_missing")}
-            </p>
+            <div className="mt-1 flex flex-col gap-2 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-2">
+              <p className="text-[11px] leading-relaxed text-yellow-500">
+                {t("login.check_ngm_missing")}
+              </p>
+              <button
+                type="button"
+                onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+                className="self-start rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                {t("login.classic_download")}
+              </button>
+            </div>
           )}
           <div className="flex justify-end gap-2 pt-1">
             <button
