@@ -47,7 +47,10 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 | 🔐 Auth | Account/password | Per-region password saving |
 | | TOTP verification | Two-factor auth for HK region |
 | | QR Code login | Scan-to-login for TW region |
-| | GamePass login | TW region GamePass authentication |
+| | GamaPass login | TW region GamaPass authentication |
+| 🍁 Classic | Classic login | Sign in to MapleStory Classic with an HK account or TW GamaPass |
+| | One-click launch | Completes the SSO and starts the game via Nexon Game Manager — no manual prompt |
+| | Readiness check | Detects whether NGM is installed; offers a download or a manual path if not |
 | | Advance Check | Automatic CAPTCHA handling |
 | 👥 Accounts | Multi-account | Account list, context menu, drag reorder, custom names |
 | | Multi-session | Log into multiple accounts simultaneously, cross-region |
@@ -71,7 +74,7 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 1. Grab the latest build from [Releases](../../releases/latest)
 2. Install and run
 
-> The `EBWebView` folder in `%APPDATA%` is WebView2's cache — this is normal. Enable "GamePass Incognito Mode" in settings if you don't want it saving login sessions.
+> The `EBWebView` folder in `%APPDATA%` is WebView2's cache — this is normal. Enable "GamaPass Incognito Mode" in settings if you don't want it saving login sessions.
 
 ## Tech Stack
 
@@ -163,7 +166,7 @@ sequenceDiagram
 ```
 src-tauri/src/
 ├── commands/
-│   ├── auth.rs                # login, logout, QR, TOTP, GamePass, session management
+│   ├── auth.rs                # login, logout, QR, TOTP, GamaPass, session management
 │   ├── account.rs             # game accounts, OTP retrieval, refresh
 │   ├── launcher.rs            # launch game, direct launch, process status
 │   ├── config.rs              # config read/write/reset
