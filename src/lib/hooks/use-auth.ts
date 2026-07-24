@@ -144,23 +144,13 @@ export function useLogin() {
       }
     },
     onSuccess: async (session: SessionDto) => {
-      // Classic (懷舊服): the experience lives in the portal webview. Open it
-      // and stop — the backend session already holds the cookies it needs, so we
-      // don't add it to the game-account grid store or navigate to main.
-      if (useUiStore.getState().classicMode) {
-        useUiStore.setState({ addingSession: false, classicStatus: "launching" });
-        commands.openClassicLogin(session.sessionId).catch(() => {
-          useUiStore.setState({ classicStatus: "failed" });
-        });
-        // If a regular session already exists (this classic launch was started
-        // from the account tab's "+"), return to the account list rather than
-        // stranding the user on the login page — the app-level overlay shows the
-        // classic progress over the main page.
-        if (useAuthStore.getState().isAuthenticated) {
-          useUiStore.getState().setPage("main");
-        }
-        return;
-      }
+      // Classic (懷舊服) and the regular server share the same beanfun account and
+      // are interconnected, so a classic login is set up EXACTLY like a regular one
+      // — the session joins the account list and gets the same polling / keep-alive
+      // — and THEN we also fire the classic portal launch below. This lets the user
+      // play either server from a single login.
+      const classic = useUiStore.getState().classicMode;
+
       useAuthStore.getState().addSession(session);
       let accountCount = -1;
       try {
@@ -192,6 +182,18 @@ export function useLogin() {
       // Clear addingSession flag, reset login view, and navigate to main
       useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
+
+      // Classic: now that the regular session + account list are in place, launch
+      // the classic portal on this same session. The app-level overlay shows its
+      // progress over the account list. Skip the regular auto-launch below — the
+      // classic launch is this login's launch.
+      if (classic) {
+        useUiStore.setState({ classicStatus: "launching" });
+        commands.openClassicLogin(session.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        return;
+      }
 
       // Auto-launch game if enabled
       const cfg = useConfigStore.getState().config;
