@@ -12,7 +12,6 @@
   "announcement.dismiss": "I've read it — don't show again",
   "announcement.close": "Close",
   "announcement.reopen": "View",
-
   "login.title": "Sign In",
   "login.tabs.normal": "Login",
   "login.tabs.qr": "QR Code",
@@ -25,6 +24,7 @@
   "login.classic_checking": "Checking Classic environment…",
   "login.classic_ready": "Classic environment ready",
   "login.classic_ngm_missing_short": "Nexon Game Manager not detected",
+  "login.classic_gamepass": "Sign in with GamePass",
   "login.classic_check_title": "Classic readiness check",
   "login.check_ngm": "Nexon Game Manager installed",
   "login.check_unknown": "not detected",
@@ -72,7 +72,6 @@
   "login.cancelled": "Login cancelled — please try again",
   "login.advance_check_repeat": "beanfun requested repeated human verification — please try again later",
   "login.accounts_load_failed": "Logged in, but the game account list could not be loaded — press Refresh on the main page to retry",
-
   "login.verify.title": "Security Verification",
   "login.verify.instruction": "Enter your verification info and captcha code",
   "login.verify.auth_info": "Auth Info",
@@ -84,7 +83,6 @@
   "login.verify.submitting": "Verifying...",
   "login.verify.web_required": "This account requires advanced verification in a browser. Click below to open the official site, complete verification, then return to login.",
   "login.verify.open_browser": "Open Browser to Verify",
-
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.retry": "Retry",
@@ -95,7 +93,6 @@
   "common.copy": "Copy",
   "common.copied": "Copied",
   "common.ok": "OK",
-
   "settings.title": "Settings",
   "settings.game_path": "Game Path",
   "settings.browse": "Browse",
@@ -144,7 +141,6 @@
   "settings.auto_launch_game_desc": "Automatically start the game after a successful login.",
   "settings.auto_kill_patcher": "Block Game Auto-Update",
   "settings.auto_kill_patcher_desc": "Automatically kill Patcher.exe when launching the game to prevent forced updates.",
-
   "toolbox.title": "Toolbox",
   "toolbox.tabs.tools": "Tools",
   "toolbox.tabs.account_manager": "Account Manager",
@@ -324,7 +320,6 @@
   "toolbox.about.third_party": "Third-Party Licenses",
   "toolbox.about.disclaimer": "This is NOT an official Gamania product. Use at your own risk. Make sure you trust where you got this from.",
   "toolbox.about.credits": "Inspired by pungin/Beanfun",
-
   "update.title": "Update Available",
   "update.new_version_available": "A new version is ready to download",
   "update.download": "Download & Install",
@@ -339,7 +334,6 @@
   "update.restart": "Restart Now",
   "update.restart_later": "Later",
   "update.restart_required": "Update installed. Restart to apply.",
-
   "shared.titlebar.minimize": "Minimize",
   "shared.titlebar.maximize": "Maximize",
   "shared.titlebar.close": "Close",
@@ -349,7 +343,6 @@
   "shared.status.connected": "Connected",
   "shared.status.disconnected": "Disconnected",
   "shared.error.network_hint": "Please check your internet connection and try again.",
-
   "launcher.play": "PLAY",
   "launcher.launching": "Launching...",
   "launcher.accounts": "Accounts",
@@ -417,7 +410,6 @@
   "launcher.context.copied": "Copied to clipboard",
   "launcher.context.credentials_copied": "Credentials copied to clipboard",
   "launcher.context.credentials_loading": "Fetching credentials...",
-
   "errors.AUTH_INVALID_CREDENTIALS": "Invalid username or password",
   "errors.AUTH_SESSION_EXPIRED": "Session expired. Please sign in again.",
   "errors.AUTH_TOTP_FAILED": "Verification code is incorrect",

@@ -51,6 +51,19 @@ export function LoginPage() {
   // Listen for GamePass login completion event from backend
   useEffect(() => {
     const unlistenComplete = listen<SessionDto>("gamepass-login-complete", async (event) => {
+      // Classic (懷舊服) via GamePass reuses this flow but ends in the portal, not
+      // the game grid — same as the HK classic path.
+      if (useUiStore.getState().classicMode) {
+        useUiStore.setState({
+          addingSession: false,
+          loginView: "normal",
+          classicStatus: "launching",
+        });
+        commands.openClassicLogin(event.payload.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        return;
+      }
       useAuthStore.getState().addSession(event.payload);
       try {
         const accounts = await commands.getGameAccounts(event.payload.sessionId);

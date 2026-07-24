@@ -575,6 +575,35 @@ export function NormalLoginForm({
         )}
       </div>
 
+      {/* Classic also accepts GamePass (TW) sign-in, reusing the regular flow */}
+      {classicMode && (
+        <button
+          type="button"
+          onClick={() => {
+            // GamePass OAuth is gated to TW; classic reuses it, so switch the
+            // region to TW for the flow. The portal keys off the session region.
+            commands.setConfig("region", "TW").catch(() => {});
+            const cfg = useConfigStore.getState().config;
+            if (cfg) useConfigStore.setState({ config: { ...cfg, region: "TW" } });
+            onGamePass();
+          }}
+          disabled={isLoading}
+          className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-[var(--surface)] px-5 py-2.5 text-[12px] font-semibold text-text-dim transition-all hover:border-accent hover:text-accent active:scale-95 disabled:opacity-40"
+        >
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M9 1.5L2 5.5V12.5L9 16.5L16 12.5V5.5L9 1.5Z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+            <path d="M9 8.5V16.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M2 5.5L9 9.5L16 5.5" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          {t("login.classic_gamepass")}
+        </button>
+      )}
+
       {/* Café-mode confirmation — enabling is destructive on every close */}
       <Modal
         isOpen={cafeConfirm}

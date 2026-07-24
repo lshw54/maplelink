@@ -19,6 +19,7 @@ use tauri::{Emitter, Manager};
 
 use crate::models::app_state::AppState;
 use crate::models::error::{ErrorCategory, ErrorDto};
+use crate::models::session::Region;
 use crate::services::cookie_native;
 use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
@@ -28,22 +29,31 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// its own `ngm://` launch on arrival.
 const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/login/mstc?redirect_url=https://maplestoryclassic.beanfun.com/Main?af_click_id=";
 
-/// Injected on every navigation. On the OTT init page it clicks the HK button to
-/// drive the beanfun SSO; a no-op everywhere else.
-const AUTO_HK_SCRIPT: &str = r#"
-(function () {
-  function driveHk() {
+/// Injected on every navigation to click the right login button on the OTT init
+/// page (HK beanfun vs GamePass), driving the SSO; a no-op everywhere else.
+fn auto_login_script(region: Region) -> String {
+    // HK accounts use the gamania (HK) button; TW / GamePass accounts use Gama Pass.
+    let selector = match region {
+        Region::HK => ".btnLogin-beanfun",
+        Region::TW => ".btnLogin-gamapass",
+    };
+    format!(
+        r#"
+(function () {{
+  function drive() {{
     if (location.href.indexOf('/login/init/mstc/') === -1) return;
-    var btn = document.querySelector('.btnLogin-beanfun');
-    if (btn) { btn.click(); }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(driveHk, 200); });
-  } else {
-    setTimeout(driveHk, 200);
-  }
-})();
-"#;
+    var btn = document.querySelector('{selector}');
+    if (btn) {{ btn.click(); }}
+  }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', function () {{ setTimeout(drive, 200); }});
+  }} else {{
+    setTimeout(drive, 200);
+  }}
+}})();
+"#
+    )
+}
 
 // Launch state shared between the intercept callback and the poll task.
 const PENDING: u8 = 0;
@@ -183,6 +193,17 @@ pub async fn open_classic_login(
     let ss = state.require_session(&session_id).await?;
     let label = "classic-login";
 
+    // The portal offers both HK-beanfun and GamePass sign-in; auto-click the one
+    // matching this session's region so the SSO completes without interaction.
+    let region = ss
+        .session
+        .read()
+        .await
+        .as_ref()
+        .map(|s| s.region.clone())
+        .unwrap_or(Region::HK);
+    let init_script = auto_login_script(region);
+
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -222,7 +243,7 @@ pub async fn open_classic_login(
     .visible(false)
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
-    .initialization_script(AUTO_HK_SCRIPT)
+    .initialization_script(&init_script)
     .build()
     .map_err(|e| ErrorDto {
         code: "SYS_POPUP_FAILED".to_string(),

@@ -12,7 +12,6 @@
   "announcement.dismiss": "我已閱讀，下次不再顯示",
   "announcement.close": "關閉",
   "announcement.reopen": "查看",
-
   "login.title": "登入",
   "login.tabs.normal": "帳號登入",
   "login.tabs.qr": "QR Code",
@@ -25,6 +24,7 @@
   "login.classic_checking": "正在檢測經典版環境…",
   "login.classic_ready": "經典版環境已就緒",
   "login.classic_ngm_missing_short": "未偵測到 Nexon Game Manager",
+  "login.classic_gamepass": "以 GamePass 登入",
   "login.classic_check_title": "經典版環境檢測",
   "login.check_ngm": "Nexon Game Manager 已安裝",
   "login.check_unknown": "未偵測到",
@@ -72,7 +72,6 @@
   "login.cancelled": "登入已取消，請再試一次",
   "login.advance_check_repeat": "beanfun 要求重複人機驗證，請稍後再試",
   "login.accounts_load_failed": "登入成功，但暫時載入不到遊戲帳號列表，可到主頁按「重新整理」再試",
-
   "login.verify.title": "安全驗證",
   "login.verify.instruction": "請輸入認證資訊及圖形驗證碼",
   "login.verify.auth_info": "認證資訊",
@@ -84,7 +83,6 @@
   "login.verify.submitting": "驗證中...",
   "login.verify.web_required": "此帳號需要在瀏覽器中完成進階驗證。請點擊下方按鈕前往官網完成驗證後，再返回登入。",
   "login.verify.open_browser": "前往官網驗證",
-
   "common.cancel": "取消",
   "common.confirm": "確認",
   "common.retry": "重試",
@@ -95,7 +93,6 @@
   "common.copy": "複製",
   "common.copied": "已複製",
   "common.ok": "確定",
-
   "settings.title": "設定",
   "settings.game_path": "遊戲路徑",
   "settings.browse": "瀏覽",
@@ -144,7 +141,6 @@
   "settings.auto_launch_game_desc": "登入成功後自動啟動遊戲。",
   "settings.auto_kill_patcher": "阻止遊戲自動更新",
   "settings.auto_kill_patcher_desc": "啟動遊戲時自動關閉 Patcher.exe，防止遊戲強制更新。",
-
   "toolbox.title": "工具箱",
   "toolbox.tabs.tools": "工具",
   "toolbox.tabs.account_manager": "帳號管理",
@@ -324,7 +320,6 @@
   "toolbox.about.third_party": "第三方授權聲明",
   "toolbox.about.disclaimer": "本程式並非遊戲橘子官方產品。使用前請自行評估風險，並確認下載來源是否安全。",
   "toolbox.about.credits": "靈感來自 pungin/Beanfun",
-
   "update.title": "有可用更新",
   "update.new_version_available": "新版本已準備好下載",
   "update.download": "下載並安裝",
@@ -339,7 +334,6 @@
   "update.restart": "立即重啟",
   "update.restart_later": "稍後重啟",
   "update.restart_required": "更新已安裝，重啟後生效。",
-
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",
   "shared.titlebar.close": "關閉",
@@ -349,7 +343,6 @@
   "shared.status.connected": "已連線",
   "shared.status.disconnected": "已斷線",
   "shared.error.network_hint": "請檢查網路連線後重試。",
-
   "launcher.play": "開始遊戲",
   "launcher.launching": "啟動中...",
   "launcher.accounts": "帳號列表",
@@ -417,7 +410,6 @@
   "launcher.context.copied": "已複製到剪貼簿",
   "launcher.context.credentials_copied": "帳密已複製到剪貼簿",
   "launcher.context.credentials_loading": "正在取得帳密...",
-
   "errors.AUTH_INVALID_CREDENTIALS": "帳號或密碼錯誤",
   "errors.AUTH_SESSION_EXPIRED": "登入階段已過期，請重新登入。",
   "errors.AUTH_TOTP_FAILED": "驗證碼不正確",

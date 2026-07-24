@@ -12,7 +12,6 @@
   "announcement.dismiss": "我已阅读，下次不再显示",
   "announcement.close": "关闭",
   "announcement.reopen": "查看",
-
   "login.title": "登录",
   "login.tabs.normal": "账号登录",
   "login.tabs.qr": "QR Code",
@@ -25,6 +24,7 @@
   "login.classic_checking": "正在检测经典版环境…",
   "login.classic_ready": "经典版环境已就绪",
   "login.classic_ngm_missing_short": "未检测到 Nexon Game Manager",
+  "login.classic_gamepass": "以 GamePass 登录",
   "login.classic_check_title": "经典版环境检测",
   "login.check_ngm": "Nexon Game Manager 已安装",
   "login.check_unknown": "未检测到",
@@ -72,7 +72,6 @@
   "login.cancelled": "登录已取消，请再试一次",
   "login.advance_check_repeat": "beanfun 要求重复人机验证，请稍后再试",
   "login.accounts_load_failed": "登录成功，但暂时无法加载游戏账号列表，可在主页点击「刷新」再试",
-
   "login.verify.title": "安全验证",
   "login.verify.instruction": "请输入认证信息及图形验证码",
   "login.verify.auth_info": "认证信息",
@@ -84,7 +83,6 @@
   "login.verify.submitting": "验证中...",
   "login.verify.web_required": "此账号需要在浏览器中完成进阶验证。请点击下方按钮前往官网完成验证后，再返回登入。",
   "login.verify.open_browser": "前往官网验证",
-
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.retry": "重试",
@@ -95,7 +93,6 @@
   "common.copy": "复制",
   "common.copied": "已复制",
   "common.ok": "确定",
-
   "settings.title": "设置",
   "settings.game_path": "游戏路径",
   "settings.browse": "浏览",
@@ -144,7 +141,6 @@
   "settings.auto_launch_game_desc": "登录成功后自动启动游戏。",
   "settings.auto_kill_patcher": "阻止游戏自动更新",
   "settings.auto_kill_patcher_desc": "启动游戏时自动关闭 Patcher.exe，防止游戏强制更新。",
-
   "toolbox.title": "工具箱",
   "toolbox.tabs.tools": "工具",
   "toolbox.tabs.account_manager": "账号管理",
@@ -324,7 +320,6 @@
   "toolbox.about.third_party": "第三方授权声明",
   "toolbox.about.disclaimer": "本程序并非游戏橘子官方产品。使用前请自行评估风险，并确认下载来源是否安全。",
   "toolbox.about.credits": "灵感来自 pungin/Beanfun",
-
   "update.title": "有可用更新",
   "update.new_version_available": "新版本已准备好下载",
   "update.download": "下载并安装",
@@ -339,7 +334,6 @@
   "update.restart": "立即重启",
   "update.restart_later": "稍后重启",
   "update.restart_required": "更新已安装，重启后生效。",
-
   "shared.titlebar.minimize": "最小化",
   "shared.titlebar.maximize": "最大化",
   "shared.titlebar.close": "关闭",
@@ -349,7 +343,6 @@
   "shared.status.connected": "已连接",
   "shared.status.disconnected": "已断开",
   "shared.error.network_hint": "请检查网络连接后重试。",
-
   "launcher.play": "开始游戏",
   "launcher.launching": "启动中...",
   "launcher.accounts": "账号列表",
@@ -417,7 +410,6 @@
   "launcher.context.copied": "已复制到剪贴板",
   "launcher.context.credentials_copied": "账密已复制到剪贴板",
   "launcher.context.credentials_loading": "正在获取账密...",
-
   "errors.AUTH_INVALID_CREDENTIALS": "账号或密码错误",
   "errors.AUTH_SESSION_EXPIRED": "登录会话已过期，请重新登录。",
   "errors.AUTH_TOTP_FAILED": "验证码不正确",
