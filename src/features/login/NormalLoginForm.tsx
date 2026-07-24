@@ -304,6 +304,12 @@ export function NormalLoginForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
+      {classicMode && (
+        <p className="mb-3 flex items-start gap-1.5 text-[11px] leading-snug text-text-dim">
+          <span className="shrink-0">ℹ️</span>
+          <span>{t("login.classic_no_cn")}</span>
+        </p>
+      )}
       {classicMode &&
         (classicCheck && !(classicCheck.ngmRegistered && classicCheck.ngmExeExists) ? (
           // NGM missing — prominent warning with a direct download.
@@ -712,6 +718,10 @@ export function NormalLoginForm({
               {classicCheck?.webview2Version ?? t("login.check_unknown")}
             </span>
           </div>
+          <p className="flex items-start gap-1.5 pt-0.5 text-[11px] leading-snug text-text-dim">
+            <span className="shrink-0">ℹ️</span>
+            <span>{t("login.classic_no_cn")}</span>
+          </p>
           {!classicCheck?.ngmRegistered && (
             <div className="mt-1 flex flex-col gap-2 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-2">
               <p className="text-[11px] leading-relaxed text-yellow-500">

@@ -20,6 +20,7 @@
   "login.mode_tw": "台灣",
   "login.mode_classic": "懷舊服",
   "login.classic_hint": "以香港 beanfun 帳號登入，登入後自動啟動《經典版》。",
+  "login.classic_no_cn": "經典版僅支援香港（HK）beanfun 帳號，不支援 +86（中國大陸）帳號。",
   "login.classic_check": "重新檢測",
   "login.classic_checking": "正在檢測經典版環境…",
   "login.classic_ready": "經典版環境已就緒",
