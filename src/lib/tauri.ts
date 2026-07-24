@@ -14,8 +14,6 @@ import type {
   AdvanceCheckState,
   WebLaunchStatus,
   WebLaunchTestCode,
-  DnsStatus,
-  DnsTestResult,
   GameDownloadDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
@@ -186,12 +184,6 @@ export const commands = {
   openImportDialog: () => invoke<string | null>("open_import_dialog"),
   importData: (path: string, disposal: "delete" | "recycle" | "keep", passphrase?: string) =>
     invoke<number>("import_data", { path, disposal, passphrase: passphrase ?? null }),
-
-  // Network / DNS (global)
-  getDnsStatus: () => invoke<DnsStatus>("get_dns_status"),
-  testDns: () => invoke<DnsTestResult>("test_dns"),
-  setRecommendedDns: () => invoke("set_recommended_dns"),
-  resetDnsAuto: () => invoke("reset_dns_auto"),
 
   // GamePass login (TW only — creates its own session, returns sessionId)
   openGamePassLogin: () => invoke<string>("open_gamepass_login"),

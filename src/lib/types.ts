@@ -130,19 +130,6 @@ export interface WebLaunchStatus {
   exeNameOk: boolean;
 }
 
-export interface DnsStatus {
-  publicIp: string;
-  countryCode: string;
-  isChina: boolean;
-  currentDns: string[];
-  usingRecommended: boolean;
-}
-
-export interface DnsTestResult {
-  beanfunOk: boolean;
-  googleOk: boolean;
-}
-
 /** Stable codes returned by the live launch tests, mapped to i18n in the UI. */
 export type WebLaunchTestCode =
   | "ok"

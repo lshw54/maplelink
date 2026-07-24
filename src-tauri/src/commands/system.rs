@@ -137,68 +137,6 @@ pub fn reset_webview_data() -> Result<(), ErrorDto> {
     Ok(())
 }
 
-/// Network / DNS diagnostics: public IP + geo, and the active adapter's DNS.
-#[tauri::command]
-pub async fn get_dns_status(
-    state: tauri::State<'_, crate::models::app_state::AppState>,
-) -> Result<crate::services::network_service::DnsStatus, ErrorDto> {
-    let (public_ip, country_code) =
-        crate::services::network_service::geo_lookup(&state.http_client).await;
-    let current_dns = crate::services::network_service::current_dns();
-    let using_recommended = current_dns.iter().any(|d| d == "223.5.5.5");
-    Ok(crate::services::network_service::DnsStatus {
-        is_china: country_code == "CN",
-        public_ip,
-        country_code,
-        current_dns,
-        using_recommended,
-    })
-}
-
-/// Resolve login.beanfun.com + www.google.com via the current DNS.
-#[tauri::command]
-pub async fn test_dns() -> Result<crate::services::network_service::DnsTestResult, ErrorDto> {
-    Ok(crate::services::network_service::test_resolution().await)
-}
-
-/// Switch the active adapter to Alibaba DNS (needs admin → UAC prompt).
-#[tauri::command]
-pub async fn set_recommended_dns() -> Result<(), ErrorDto> {
-    run_dns_change(crate::services::network_service::set_recommended_dns).await
-}
-
-/// Revert the active adapter to automatic DNS (needs admin → UAC prompt).
-#[tauri::command]
-pub async fn reset_dns_auto() -> Result<(), ErrorDto> {
-    run_dns_change(crate::services::network_service::reset_dns).await
-}
-
-/// Run a blocking, elevation-prompting DNS change off the async runtime and map
-/// its outcome (including a declined UAC prompt) to an `ErrorDto`.
-async fn run_dns_change(op: fn() -> Result<(), String>) -> Result<(), ErrorDto> {
-    let result = tokio::task::spawn_blocking(op)
-        .await
-        .map_err(|e| ErrorDto {
-            code: "SYS_DNS_TASK_FAILED".to_string(),
-            message: format!("DNS task failed to run: {e}"),
-            category: ErrorCategory::Process,
-            details: None,
-        })?;
-    result.map_err(|e| {
-        let cancelled = e == "cancelled";
-        ErrorDto {
-            code: if cancelled {
-                "SYS_DNS_CANCELLED".to_string()
-            } else {
-                "SYS_DNS_FAILED".to_string()
-            },
-            message: e,
-            category: ErrorCategory::Process,
-            details: None,
-        }
-    })
-}
-
 /// Resize the application window for a page transition.
 #[tauri::command]
 pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {

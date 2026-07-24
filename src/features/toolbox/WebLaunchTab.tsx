@@ -3,7 +3,6 @@ import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { commands } from "../../lib/tauri";
-import { DnsCheck } from "./DnsCheck";
 import type { WebLaunchStatus, WebLaunchTestCode } from "../../lib/types";
 
 type CheckState = "ok" | "bad";
@@ -386,9 +385,6 @@ export function WebLaunchTab() {
           />
         </div>
       </div>
-
-      {/* Network / DNS */}
-      <DnsCheck />
 
       {/* Live launch test */}
       <div>
