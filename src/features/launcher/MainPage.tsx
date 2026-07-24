@@ -74,11 +74,10 @@ export function MainPage() {
   // this same session — no re-login, so the regular session stays alive.
   const [classicGame, setClassicGame] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
-  // Classic can reuse this session for HK, or for TW sessions that came from QR /
-  // GamePass — a TW account/password session can't drive the GamePass SSO, so it
-  // doesn't get the switcher at all.
-  const canClassic =
-    session?.region === "HK" || activeLoginMethod === "qr" || activeLoginMethod === "gamepass";
+  // Classic can reuse this session only for HK (account/password) or TW GamePass.
+  // A TW account/password or QR session can't drive the classic SSO (the portal
+  // offers only HK-beanfun and GamePass sign-in), so it gets no switcher.
+  const canClassic = session?.region === "HK" || activeLoginMethod === "gamepass";
   const showClassic = classicGame && canClassic;
   const ngmReady = !!classicCheck && classicCheck.ngmRegistered && classicCheck.ngmExeExists;
 
