@@ -27,7 +27,7 @@ export function MainPage() {
   const logout = useLogout();
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [autoSelected, setAutoSelected] = useState(false);
+  const [selectedForSession, setSelectedForSession] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const gamePid = useUiStore((s) => s.gamePid);
   const gameRunning = useUiStore((s) => s.gameRunning);
@@ -37,13 +37,16 @@ export function MainPage() {
   const latestOtpRef = useRef<{ accountId: string; otp: string } | null>(null);
   const { data: accounts } = useGameAccounts();
 
-  // Auto-select first account when accounts load and nothing is selected.
-  if (!autoSelected && accounts?.length && !selectedAccountId) {
+  // Reset the selected account when the session (tab) changes — React's render-
+  // time pattern for resetting state on a changed input. This ensures an OTP /
+  // launch can't use an account left selected in a different session. On a plain
+  // accounts refresh, only fill in a selection when there isn't one.
+  if (selectedForSession !== activeSessionId) {
+    setSelectedForSession(activeSessionId ?? null);
+    setSelectedAccountId(accounts?.[0]?.id ?? null);
+  } else if (!selectedAccountId && accounts?.length) {
     const first = accounts[0];
-    if (first) {
-      setSelectedAccountId(first.id);
-      setAutoSelected(true);
-    }
+    if (first) setSelectedAccountId(first.id);
   }
 
   // Poll game running status and update PID from backend's active_processes.
