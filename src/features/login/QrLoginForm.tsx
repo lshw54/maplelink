@@ -145,7 +145,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
       <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] p-5">
         <div
-          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${enlarged ? "p-5" : "h-[180px] w-[180px] p-4"}`}
+          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${enlarged ? "p-5" : "h-[228px] w-[228px] p-4"}`}
         >
           {status === "loading" ? (
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -155,8 +155,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               alt="QR Code"
               className="block rounded"
               style={{
-                width: enlarged ? 380 : 150,
-                height: enlarged ? 380 : 150,
+                width: enlarged ? 380 : 196,
+                height: enlarged ? 380 : 196,
                 imageRendering: "pixelated",
               }}
             />
