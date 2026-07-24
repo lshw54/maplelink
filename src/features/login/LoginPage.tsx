@@ -63,7 +63,7 @@ export function LoginPage() {
         });
         return;
       }
-      useAuthStore.getState().addSession(event.payload);
+      useAuthStore.getState().addSession(event.payload, undefined, "gamepass");
       try {
         const accounts = await commands.getGameAccounts(event.payload.sessionId);
         useAuthStore.getState().updateGameAccounts(event.payload.sessionId, accounts);

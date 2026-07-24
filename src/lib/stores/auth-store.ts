@@ -2,10 +2,14 @@ import { create } from "zustand";
 import type { GameAccountDto, SessionDto } from "../types";
 
 /** Per-session state stored in the multi-session map. */
+export type LoginMethod = "password" | "qr" | "gamepass";
+
 export interface SessionEntry {
   sessionId: string;
   session: SessionDto;
   gameAccounts: GameAccountDto[];
+  /** How this session signed in — drives whether classic can reuse it (TW). */
+  loginMethod: LoginMethod;
 }
 
 export interface AuthState {
@@ -33,7 +37,11 @@ export interface AuthState {
   sessionIdForAccount: (accountId: string) => string | null;
 
   // Actions
-  addSession: (session: SessionDto, gameAccounts?: GameAccountDto[]) => void;
+  addSession: (
+    session: SessionDto,
+    gameAccounts?: GameAccountDto[],
+    loginMethod?: LoginMethod,
+  ) => void;
   removeSession: (sessionId: string) => void;
   setActiveSessionId: (sessionId: string | null) => void;
   updateGameAccounts: (sessionId: string, accounts: GameAccountDto[]) => void;
@@ -95,13 +103,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return get().activeSessionId;
   },
 
-  addSession: (session, gameAccounts = []) => {
+  addSession: (session, gameAccounts = [], loginMethod = "password") => {
     set((state) => {
       const newSessions = new Map(state.sessions);
       newSessions.set(session.sessionId, {
         sessionId: session.sessionId,
         session,
         gameAccounts,
+        loginMethod,
       });
       return {
         sessions: newSessions,

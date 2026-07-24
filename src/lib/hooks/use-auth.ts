@@ -234,7 +234,7 @@ export function useQrLoginPoll() {
       commands.qrLoginPoll(sessionId, sessionKey, verificationToken),
     onSuccess: async (result: QrPollResult) => {
       if (result.status === "confirmed" && result.session) {
-        useAuthStore.getState().addSession(result.session);
+        useAuthStore.getState().addSession(result.session, undefined, "qr");
         const accounts = await commands.getGameAccounts(result.session.sessionId);
         useAuthStore.getState().updateGameAccounts(result.session.sessionId, accounts);
         await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
