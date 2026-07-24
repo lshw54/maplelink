@@ -810,8 +810,11 @@ pub async fn open_classic_login(
 /// Check the local prerequisites for launching MapleStory Classic (NGM handler,
 /// its executable, WebView2 runtime).
 #[tauri::command]
-pub async fn classic_self_check() -> crate::services::classic_service::ClassicCheck {
-    crate::services::classic_service::self_check()
+pub async fn classic_self_check(
+    state: State<'_, AppState>,
+) -> Result<crate::services::classic_service::ClassicCheck, ErrorDto> {
+    let manual = state.config.read().await.classic_ngm_path.clone();
+    Ok(crate::services::classic_service::self_check(&manual))
 }
 
 /// Called by the GamePass webview init script when login completes.

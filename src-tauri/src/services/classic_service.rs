@@ -82,9 +82,21 @@ const FAILED: u8 = 2;
 /// pop the prompt straight back. If NGM isn't registered this fails, and the
 /// caller reveals the portal so the user can install / launch it by hand.
 #[cfg(target_os = "windows")]
-fn launch_ngm(url: &str) -> Result<(), String> {
+fn launch_ngm(url: &str, manual_path: Option<&str>) -> Result<(), String> {
     use winreg::enums::HKEY_CLASSES_ROOT;
     use winreg::RegKey;
+
+    // A user-provided NGM path (set when auto-detection failed) wins.
+    if let Some(path) = manual_path {
+        if !path.is_empty() && std::path::Path::new(path).exists() {
+            std::process::Command::new(path)
+                .arg(url)
+                .spawn()
+                .map_err(|e| format!("failed to launch NGM ({path}): {e}"))?;
+            tracing::info!("classic: launched NGM (manual path {path})");
+            return Ok(());
+        }
+    }
 
     let command: String = RegKey::predef(HKEY_CLASSES_ROOT)
         .open_subkey(r"ngm\shell\open\command")
@@ -105,7 +117,7 @@ fn launch_ngm(url: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn launch_ngm(_url: &str) -> Result<(), String> {
+fn launch_ngm(_url: &str, _manual_path: Option<&str>) -> Result<(), String> {
     Err("ngm launch is only supported on Windows".to_string())
 }
 
@@ -154,8 +166,9 @@ pub struct ClassicCheck {
 }
 
 /// Check that the local prerequisites for the classic launch are in place.
+/// A non-empty, existing `manual_path` counts as NGM being available.
 #[cfg(target_os = "windows")]
-pub fn self_check() -> ClassicCheck {
+pub fn self_check(manual_path: &str) -> ClassicCheck {
     use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
@@ -170,6 +183,14 @@ pub fn self_check() -> ClassicCheck {
             check.ngm_exe_exists = std::path::Path::new(&exe).exists();
             check.ngm_exe = Some(exe);
         }
+    }
+
+    // Fall back to a user-provided path when auto-detection came up empty.
+    let auto_ok = check.ngm_registered && check.ngm_exe_exists;
+    if !auto_ok && !manual_path.is_empty() && std::path::Path::new(manual_path).exists() {
+        check.ngm_registered = true;
+        check.ngm_exe = Some(manual_path.to_string());
+        check.ngm_exe_exists = true;
     }
 
     // WebView2 Evergreen Runtime version, machine-wide then per-user.
@@ -191,7 +212,7 @@ pub fn self_check() -> ClassicCheck {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn self_check() -> ClassicCheck {
+pub fn self_check(_manual_path: &str) -> ClassicCheck {
     ClassicCheck::default()
 }
 
@@ -276,13 +297,15 @@ pub async fn open_classic_login(
     // Intercept the portal's own ngm:// launch: cancel WebView2's prompt and start
     // NGM ourselves. The flag lets the poll task react (close on success, reveal
     // for manual launch on failure).
+    let manual_ngm = state.config.read().await.classic_ngm_path.clone();
     let flag = Arc::new(AtomicU8::new(PENDING));
     let flag_cb = flag.clone();
     let intercept_ok = cookie_native::register_external_uri_handler(&win, move |url| {
         if !(url.starts_with("ngm:") || url.starts_with("nexonplug:")) {
             return;
         }
-        let outcome = match launch_ngm(url) {
+        let manual = (!manual_ngm.is_empty()).then_some(manual_ngm.as_str());
+        let outcome = match launch_ngm(url, manual) {
             Ok(()) => LAUNCHED,
             Err(e) => {
                 tracing::warn!("classic: ngm launch failed: {e}");

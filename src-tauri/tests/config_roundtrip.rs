@@ -113,6 +113,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 hide_account_names: true,
                 beanfun_rename_dismissed: true,
                 cafe_mode: true,
+                classic_ngm_path: r"C:\NGM\ngm.exe".into(),
             }
         },
     )

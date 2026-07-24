@@ -27,6 +27,7 @@
   "login.classic_gamepass": "TW · Sign in with GamePass",
   "login.classic_hk_login": "HK · Account sign-in",
   "login.classic_download": "Download NGM",
+  "login.classic_manual_path": "Choose path…",
   "login.classic_check_title": "Classic readiness check",
   "login.check_ngm": "Nexon Game Manager installed",
   "login.check_unknown": "not detected",

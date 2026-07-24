@@ -27,6 +27,7 @@
   "login.classic_gamepass": "TW · 以 GamePass 登录",
   "login.classic_hk_login": "HK · 账号登录",
   "login.classic_download": "下载 NGM",
+  "login.classic_manual_path": "手动选择路径",
   "login.classic_check_title": "经典版环境检测",
   "login.check_ngm": "Nexon Game Manager 已安装",
   "login.check_unknown": "未检测到",

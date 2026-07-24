@@ -63,6 +63,15 @@ export function NormalLoginForm({
     }
   }
 
+  // Fallback when auto-detection + install still don't find NGM: let the user
+  // point us at NexonGameManager's exe (e.g. C:\ProgramData\Nexon\NGM\NGM64.exe).
+  async function pickNgmPath() {
+    const path = await commands.openFileDialog().catch(() => null);
+    if (!path) return;
+    await commands.setConfig("classic_ngm_path", path).catch(() => {});
+    await runClassicCheck();
+  }
+
   const isLoading = login.isPending;
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   const autoLogin = useConfigStore((s) => s.config?.autoLogin ?? false);
@@ -708,13 +717,22 @@ export function NormalLoginForm({
               <p className="text-[11px] leading-relaxed text-yellow-500">
                 {t("login.check_ngm_missing")}
               </p>
-              <button
-                type="button"
-                onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
-                className="self-start rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
-              >
-                {t("login.classic_download")}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+                  className="rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  {t("login.classic_download")}
+                </button>
+                <button
+                  type="button"
+                  onClick={pickNgmPath}
+                  className="rounded-md border border-border px-3 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+                >
+                  {t("login.classic_manual_path")}
+                </button>
+              </div>
             </div>
           )}
           <div className="flex justify-end gap-2 pt-1">

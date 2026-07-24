@@ -264,6 +264,7 @@ mod tests {
                         hide_account_names: false,
                         beanfun_rename_dismissed: false,
                         cafe_mode: false,
+                        classic_ngm_path: String::new(),
                     }
                 },
             )
