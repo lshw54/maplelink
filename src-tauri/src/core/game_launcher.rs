@@ -265,6 +265,7 @@ mod tests {
                         beanfun_rename_dismissed: false,
                         cafe_mode: false,
                         classic_ngm_path: String::new(),
+                        default_login_view: crate::models::config::DefaultLoginView::Normal,
                     }
                 },
             )

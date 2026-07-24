@@ -52,6 +52,7 @@ const KEY_MAP: Record<string, string> = {
   hideAccountNames: "hide_account_names",
   cafeMode: "cafe_mode",
   classicNgmPath: "classic_ngm_path",
+  defaultLoginView: "default_login_view",
   __reset__: "__reset__",
 };
 

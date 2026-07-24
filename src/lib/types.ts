@@ -69,6 +69,7 @@ export interface AppConfigDto {
   beanfunRenameDismissed: boolean;
   cafeMode: boolean;
   classicNgmPath: string;
+  defaultLoginView: "normal" | "qr";
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */
