@@ -72,6 +72,11 @@ pub struct AppConfig {
     /// Classic when the `ngm://` handler isn't auto-detected. Empty = auto-detect.
     #[serde(default)]
     pub classic_ngm_path: String,
+    /// Default login view shown on startup: normal (account/password) or QR
+    /// code. Only meaningful for TW — HK has no QR login, so it's ignored
+    /// there. Default: normal.
+    #[serde(default)]
+    pub default_login_view: DefaultLoginView,
 }
 
 fn default_true() -> bool {
@@ -113,6 +118,7 @@ impl Default for AppConfig {
             beanfun_rename_dismissed: false,
             cafe_mode: false,
             classic_ngm_path: String::new(),
+            default_login_view: DefaultLoginView::Normal,
         }
     }
 }
@@ -175,4 +181,13 @@ pub enum AccountViewMode {
     #[default]
     Card,
     List,
+}
+
+/// Default login view shown on startup (TW-only; HK has no QR login).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DefaultLoginView {
+    #[default]
+    Normal,
+    Qr,
 }

@@ -121,6 +121,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 beanfun_rename_dismissed: false,
                 cafe_mode: false,
                 classic_ngm_path: String::new(),
+                default_login_view: maplelink_lib::models::config::DefaultLoginView::Normal,
             }
         },
     )

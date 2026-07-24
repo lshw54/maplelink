@@ -7,7 +7,9 @@ use tauri::State;
 
 use crate::core::error::{AppError, ConfigError};
 use crate::models::app_state::AppState;
-use crate::models::config::{AccountViewMode, AppConfig, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{
+    AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
+};
 use crate::models::error::ErrorDto;
 use crate::models::session::Region;
 use crate::services::config_service;
@@ -24,7 +26,8 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, ErrorDt
 /// Supported keys (flat, snake_case):
 /// `game_path`, `locale`, `theme`, `language`,
 /// `auto_update`, `skip_play_confirm`, `auto_start`, `region`,
-/// `debug_logging`, `window_x`, `window_y`, `window_width`, `window_height`.
+/// `debug_logging`, `window_x`, `window_y`, `window_width`, `window_height`,
+/// `default_login_view`.
 #[tauri::command]
 pub async fn set_config(
     key: String,
@@ -209,6 +212,17 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         }
         "classicNgmPath" | "classic_ngm_path" => {
             config.classic_ngm_path = value.to_string();
+        }
+        "defaultLoginView" | "default_login_view" => {
+            config.default_login_view = match value.to_lowercase().as_str() {
+                "normal" => DefaultLoginView::Normal,
+                "qr" => DefaultLoginView::Qr,
+                _ => {
+                    return Err(ConfigError::ParseError {
+                        reason: format!("unknown default_login_view value: {value}"),
+                    });
+                }
+            };
         }
         "__reset__" => {
             *config = AppConfig::default();

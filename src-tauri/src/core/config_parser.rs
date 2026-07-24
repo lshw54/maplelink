@@ -4,7 +4,9 @@
 //! Malformed entries fall back to [`AppConfig::default()`] values with logged warnings.
 
 use crate::core::error::ConfigError;
-use crate::models::config::{AccountViewMode, AppConfig, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{
+    AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
+};
 use crate::models::session::Region;
 use std::collections::HashMap;
 
@@ -114,6 +116,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("classic_ngm_path") {
             config.classic_ngm_path = v.clone();
         }
+        if let Some(v) = general.get("default_login_view") {
+            config.default_login_view = parse_default_login_view(v);
+        }
     }
 
     // --- [game] ---
@@ -216,6 +221,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     ));
     out.push_str(&format!("cafe_mode = {}\n", config.cafe_mode));
     out.push_str(&format!("classic_ngm_path = {}\n", config.classic_ngm_path));
+    out.push_str(&format!(
+        "default_login_view = {}\n",
+        default_login_view_to_str(&config.default_login_view)
+    ));
     out.push('\n');
 
     // [game]
@@ -437,6 +446,24 @@ fn close_behavior_to_str(mode: &crate::models::config::CloseBehavior) -> &'stati
     }
 }
 
+fn parse_default_login_view(value: &str) -> DefaultLoginView {
+    match value.to_lowercase().as_str() {
+        "normal" => DefaultLoginView::Normal,
+        "qr" => DefaultLoginView::Qr,
+        _ => {
+            tracing::warn!("unknown default_login_view '{value}', falling back to default");
+            DefaultLoginView::Normal
+        }
+    }
+}
+
+fn default_login_view_to_str(view: &DefaultLoginView) -> &'static str {
+    match view {
+        DefaultLoginView::Normal => "normal",
+        DefaultLoginView::Qr => "qr",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -542,6 +569,7 @@ x = not_a_number
             beanfun_rename_dismissed: true,
             cafe_mode: true,
             classic_ngm_path: r"C:\NGM\ngm.exe".into(),
+            default_login_view: DefaultLoginView::Qr,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

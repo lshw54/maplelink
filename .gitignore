@@ -40,3 +40,9 @@ vite.config.js
 vite.config.d.ts
 vitest.config.js
 vitest.config.d.ts
+
+# Local install/build output dropped at the repo root (cargo tauri build
+# output lives under src-tauri/target/, already ignored above; these show up
+# when the built app or its NSIS uninstaller gets copied/run at the root)
+/maplelink.exe
+/uninstall.exe
