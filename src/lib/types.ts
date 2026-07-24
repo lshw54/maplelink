@@ -68,6 +68,7 @@ export interface AppConfigDto {
   hideAccountNames: boolean;
   beanfunRenameDismissed: boolean;
   cafeMode: boolean;
+  classicNgmPath: string;
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */

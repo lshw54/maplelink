@@ -54,6 +54,13 @@ export function SettingsTab() {
     }
   }
 
+  async function handleBrowseNgmPath() {
+    const path = await commands.openFileDialog();
+    if (path) {
+      setConfig.mutate({ key: "classicNgmPath", value: path });
+    }
+  }
+
   function handleThemeChange(theme: ThemeMode) {
     setTheme(theme);
     setConfig.mutate({ key: "theme", value: theme });
@@ -91,6 +98,30 @@ export function SettingsTab() {
           >
             {t("settings.browse")}
           </button>
+        </div>
+      </SettingRow>
+
+      {/* Classic — Nexon Game Manager path (empty = auto-detect) */}
+      <SettingRow label={t("settings.classic_ngm_path")}>
+        <div className="flex items-center gap-2">
+          <span className="max-w-[240px] truncate text-xs text-[var(--text)]">
+            {config?.classicNgmPath || t("settings.classic_ngm_auto")}
+          </span>
+          <button
+            onClick={handleBrowseNgmPath}
+            className="shrink-0 rounded-[var(--radius)] border border-border px-3 py-1 text-xs text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+          >
+            {t("settings.browse")}
+          </button>
+          {config?.classicNgmPath && (
+            <button
+              onClick={() => setConfig.mutate({ key: "classicNgmPath", value: "" })}
+              className="shrink-0 rounded-[var(--radius)] border border-border px-2 py-1 text-xs text-text-dim transition-colors hover:border-[var(--danger)] hover:text-[var(--danger)]"
+              title={t("common.close")}
+            >
+              ✕
+            </button>
+          )}
         </div>
       </SettingRow>
 
