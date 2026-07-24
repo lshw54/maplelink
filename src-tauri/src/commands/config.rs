@@ -7,7 +7,9 @@ use tauri::State;
 
 use crate::core::error::{AppError, ConfigError};
 use crate::models::app_state::AppState;
-use crate::models::config::{AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{
+    AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
+};
 use crate::models::error::ErrorDto;
 use crate::models::session::Region;
 use crate::services::config_service;

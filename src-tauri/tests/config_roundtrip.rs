@@ -7,7 +7,9 @@
 //! **Validates: Requirements 5.1, 5.6, 5.7**
 
 use maplelink_lib::core::config_parser::{parse_ini, serialize_ini};
-use maplelink_lib::models::config::{AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel};
+use maplelink_lib::models::config::{
+    AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
+};
 use maplelink_lib::models::session::Region;
 use proptest::prelude::*;
 

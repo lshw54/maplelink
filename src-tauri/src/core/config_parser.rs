@@ -4,7 +4,9 @@
 //! Malformed entries fall back to [`AppConfig::default()`] values with logged warnings.
 
 use crate::core::error::ConfigError;
-use crate::models::config::{AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel};
+use crate::models::config::{
+    AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
+};
 use crate::models::session::Region;
 use std::collections::HashMap;
 
