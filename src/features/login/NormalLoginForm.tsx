@@ -3,6 +3,7 @@ import { useLogin } from "../../lib/hooks/use-auth";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { commands } from "../../lib/tauri";
 import { PasswordInput } from "../../components/PasswordInput";
 import { Modal } from "../../components/Modal";
@@ -259,6 +260,25 @@ export function NormalLoginForm({
   function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!account.trim() || !password.trim()) return;
+
+    // Classic: if this account is already logged in, reuse that session's cookies
+    // to open the portal instead of logging in again. beanfun allows one session
+    // per account, so a second login would kick the existing (regular) session.
+    if (classicMode) {
+      const acct = account.trim();
+      const existing = [...useAuthStore.getState().sessions.values()].find(
+        (s) => s.session.accountName === acct,
+      );
+      if (existing) {
+        useUiStore.setState({ classicStatus: "launching" });
+        commands.openClassicLogin(existing.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        if (useAuthStore.getState().isAuthenticated) useUiStore.getState().setPage("main");
+        return;
+      }
+    }
+
     login.mutate(
       { account: account.trim(), password, rememberPassword: remember },
       {
