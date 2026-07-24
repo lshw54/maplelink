@@ -26,7 +26,12 @@ export interface UiState {
    * flow runs in a hidden window with no page of its own.
    */
   classicStatus: "idle" | "launching" | "launched" | "failed";
-  /** Persisted login view so QR form survives page switches. */
+  /**
+   * Persisted login view so QR form survives page switches. Empty string
+   * means "not yet set this session" — LoginPage falls back to the user's
+   * configured default (config.defaultLoginView) only in that case, so a
+   * mid-session choice back to "normal" isn't overridden on remount.
+   */
   loginView: string;
   /** Persisted QR login state so it survives qr-viewer round-trip. */
   qrSessionId: string | null;
@@ -52,7 +57,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   addingSession: false,
   classicMode: false,
   classicStatus: "idle",
-  loginView: "normal",
+  loginView: "",
   qrSessionId: null,
   qrData: null,
   setPage: (page) => {

@@ -26,6 +26,13 @@ const UPDATE_CHANNELS: { value: UpdateChannel; labelKey: string }[] = [
   { value: "pre-release", labelKey: "settings.update_channel.pre_release" },
 ];
 
+type DefaultLoginView = "normal" | "qr";
+
+const DEFAULT_LOGIN_VIEWS: { value: DefaultLoginView; labelKey: string }[] = [
+  { value: "normal", labelKey: "settings.default_login_view.normal" },
+  { value: "qr", labelKey: "settings.default_login_view.qr" },
+];
+
 export function SettingsTab() {
   const { t } = useTranslation();
   const config = useConfigStore((s) => s.config);
@@ -82,6 +89,11 @@ export function SettingsTab() {
   function handleUpdateChannelChange(channel: UpdateChannel) {
     useConfigStore.getState().updateConfigField("updateChannel", channel);
     setConfig.mutate({ key: "updateChannel", value: channel });
+  }
+
+  function handleDefaultLoginViewChange(view: DefaultLoginView) {
+    useConfigStore.getState().updateConfigField("defaultLoginView", view);
+    setConfig.mutate({ key: "defaultLoginView", value: view });
   }
 
   return (
@@ -192,6 +204,29 @@ export function SettingsTab() {
           ))}
         </div>
       </SettingRow>
+
+      {/* Default login view — TW only; HK has no QR login */}
+      {config?.region === "TW" && (
+        <SettingRow label={t("settings.default_login_view")}>
+          <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
+            {DEFAULT_LOGIN_VIEWS.map((v, i) => (
+              <button
+                key={v.value}
+                onClick={() => handleDefaultLoginViewChange(v.value)}
+                className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-colors outline-none ${
+                  i < DEFAULT_LOGIN_VIEWS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
+                } ${
+                  (config?.defaultLoginView ?? "normal") === v.value
+                    ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white shadow-[0_2px_8px_var(--accent-glow)]"
+                    : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+                }`}
+              >
+                {t(v.labelKey)}
+              </button>
+            ))}
+          </div>
+        </SettingRow>
+      )}
     </div>
   );
 }
