@@ -48,7 +48,6 @@ export function Titlebar() {
 
   return (
     <div
-      data-tauri-drag-region
       onMouseDown={handleDragStart}
       className="flex h-[34px] shrink-0 items-center"
       style={{ zIndex: 10, position: "relative" }}
