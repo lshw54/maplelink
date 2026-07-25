@@ -5,10 +5,36 @@ import { useAuthStore } from "../stores/auth-store";
 import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
-import type { SessionDto, QrPollResult } from "../types";
+import type { SessionDto } from "../types";
 
 /** Translate outside React render (mutation callbacks) using the current language. */
 const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
+
+/** Launch the game after login if the user enabled autoLaunchGame. Shared by every login path (password, QR, TOTP). */
+export function autoLaunchGameIfEnabled(sessionId: string) {
+  const cfg = useConfigStore.getState().config;
+  if (!cfg?.autoLaunchGame) return;
+  setTimeout(async () => {
+    try {
+      let pid = 0;
+      if (cfg.traditionalLogin) {
+        pid = await commands.launchGameDirect();
+      } else {
+        const entry = useAuthStore.getState().sessions.get(sessionId);
+        const first = entry?.gameAccounts?.[0];
+        if (first) {
+          pid = await commands.launchGame(sessionId, first.id);
+        }
+      }
+      if (pid > 0) {
+        useUiStore.getState().setGamePid(pid);
+        useUiStore.getState().setGameRunning(true);
+      }
+    } catch {
+      /* auto-launch failure is non-critical */
+    }
+  }, 500);
+}
 
 /** Login with account + password. Creates a new session, then authenticates. */
 export function useLogin() {
@@ -195,52 +221,7 @@ export function useLogin() {
         return;
       }
 
-      // Auto-launch game if enabled
-      const cfg = useConfigStore.getState().config;
-      if (cfg?.autoLaunchGame) {
-        setTimeout(async () => {
-          try {
-            let pid = 0;
-            if (cfg.traditionalLogin) {
-              pid = await commands.launchGameDirect();
-            } else {
-              const entry = useAuthStore.getState().sessions.get(session.sessionId);
-              const first = entry?.gameAccounts?.[0];
-              if (first) {
-                pid = await commands.launchGame(session.sessionId, first.id);
-              }
-            }
-            if (pid > 0) {
-              useUiStore.getState().setGamePid(pid);
-              useUiStore.getState().setGameRunning(true);
-            }
-          } catch {
-            /* auto-launch failure is non-critical */
-          }
-        }, 500);
-      }
-    },
-  });
-}
-
-/** Poll QR login status. Updates auth store when confirmed. */
-export function useQrLoginPoll() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    QrPollResult,
-    Error,
-    { sessionId: string; sessionKey: string; verificationToken: string }
-  >({
-    mutationFn: ({ sessionId, sessionKey, verificationToken }) =>
-      commands.qrLoginPoll(sessionId, sessionKey, verificationToken),
-    onSuccess: async (result: QrPollResult) => {
-      if (result.status === "confirmed" && result.session) {
-        useAuthStore.getState().addSession(result.session, undefined, "qr");
-        const accounts = await commands.getGameAccounts(result.session.sessionId);
-        useAuthStore.getState().updateGameAccounts(result.session.sessionId, accounts);
-        await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      }
+      autoLaunchGameIfEnabled(session.sessionId);
     },
   });
 }
@@ -275,6 +256,8 @@ export function useTotpVerify() {
       // Reset login view, clear addingSession, navigate to main
       useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
+
+      autoLaunchGameIfEnabled(session.sessionId);
     },
   });
 }

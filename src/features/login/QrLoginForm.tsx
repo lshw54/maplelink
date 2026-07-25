@@ -3,6 +3,7 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { autoLaunchGameIfEnabled } from "../../lib/hooks/use-auth";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
 
 interface QrLoginFormProps {
@@ -60,6 +61,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             // Reset window size if enlarged
             commands.resizeWindow("login").catch(() => {});
             useUiStore.getState().setPage("main");
+            autoLaunchGameIfEnabled(sessionId);
           }
         } else if (result.status === "expired") {
           stopPolling();
