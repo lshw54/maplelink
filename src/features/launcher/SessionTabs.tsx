@@ -47,7 +47,7 @@ export function SessionTabs() {
   }
 
   function handleAdd() {
-    useUiStore.getState().addingSession = true;
+    useUiStore.setState({ addingSession: true });
     setPage("login");
   }
 
