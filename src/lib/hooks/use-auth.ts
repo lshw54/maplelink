@@ -14,17 +14,20 @@ const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
 export function autoLaunchGameIfEnabled(sessionId: string) {
   const cfg = useConfigStore.getState().config;
   if (!cfg?.autoLaunchGame) return;
-  setTimeout(async () => {
+  void (async () => {
     try {
       let pid = 0;
       if (cfg.traditionalLogin) {
+        // Direct launch passes no account or OTP, so the account list is irrelevant.
         pid = await commands.launchGameDirect();
       } else {
-        const entry = useAuthStore.getState().sessions.get(sessionId);
-        const first = entry?.gameAccounts?.[0];
-        if (first) {
-          pid = await commands.launchGame(sessionId, first.id);
-        }
+        // Every login path awaits the account fetch and lands on the account list
+        // before asking for a launch, so the store already holds the final list —
+        // there is nothing to wait out. An empty list is a legitimate result (a
+        // beanfun account with no game account yet); there is just nothing to launch.
+        const first = useAuthStore.getState().sessions.get(sessionId)?.gameAccounts?.[0];
+        if (!first) return;
+        pid = await commands.launchGame(sessionId, first.id);
       }
       if (pid > 0) {
         useUiStore.getState().setGamePid(pid);
@@ -33,7 +36,7 @@ export function autoLaunchGameIfEnabled(sessionId: string) {
     } catch {
       /* auto-launch failure is non-critical */
     }
-  }, 500);
+  })();
 }
 
 /** Login with account + password. Creates a new session, then authenticates. */
