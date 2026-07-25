@@ -233,6 +233,12 @@ export function useTotpVerify() {
   return useMutation<SessionDto, Error, { sessionId: string; code: string }>({
     mutationFn: ({ sessionId, code }) => commands.totpVerify(sessionId, code),
     onSuccess: async (session: SessionDto) => {
+      // Classic (懷舊服) is reached through the HK id-pass login, which is also
+      // the path that can demand 2FA — so a classic login can finish here rather
+      // than in useLogin's onSuccess. Set the session up as a regular one and
+      // launch classic below, exactly as that path does.
+      const classic = useUiStore.getState().classicMode;
+
       useAuthStore.getState().addSession(session);
 
       // Save pending credentials from the login attempt
@@ -256,6 +262,16 @@ export function useTotpVerify() {
       // Reset login view, clear addingSession, navigate to main
       useUiStore.setState({ addingSession: false, loginView: "normal" });
       useUiStore.getState().setPage("main");
+
+      // Classic launch replaces the regular auto-launch — otherwise a 2FA
+      // classic login would start the regular game instead.
+      if (classic) {
+        useUiStore.setState({ classicStatus: "launching" });
+        commands.openClassicLogin(session.sessionId).catch(() => {
+          useUiStore.setState({ classicStatus: "failed" });
+        });
+        return;
+      }
 
       autoLaunchGameIfEnabled(session.sessionId);
     },
