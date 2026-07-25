@@ -56,8 +56,12 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             const accounts = await commands.getGameAccounts(sessionId);
             useAuthStore.getState().updateGameAccounts(sessionId, accounts);
             // Clear persisted QR state
-            useUiStore.setState({ qrSessionId: null, qrData: null, loginView: "normal" });
-            useUiStore.getState().addingSession = false;
+            useUiStore.setState({
+              qrSessionId: null,
+              qrData: null,
+              loginView: "normal",
+              addingSession: false,
+            });
             // Reset window size if enlarged
             commands.resizeWindow("login").catch(() => {});
             useUiStore.getState().setPage("main");

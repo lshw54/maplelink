@@ -25,6 +25,7 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
+  const addingSession = useUiStore((s) => s.addingSession);
   const [view, setViewLocal] = useState<LoginView>(() => {
     if (persistedView) return persistedView as LoginView;
     // First mount this session — fall back to the user's configured default.
@@ -153,11 +154,11 @@ export function LoginPage() {
               onWebLaunch={() => setPage("web_launch")}
             />
 
-            {useUiStore.getState().addingSession && (
+            {addingSession && (
               <button
                 type="button"
                 onClick={() => {
-                  useUiStore.getState().addingSession = false;
+                  useUiStore.setState({ addingSession: false });
                   setPage("main");
                 }}
                 className="mt-3 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
