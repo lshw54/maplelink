@@ -35,7 +35,7 @@ const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/lo
 /// for a native picker; on the portal Main page it watches for the NGM install
 /// guide (which appears instead of the launch when NGM is missing) and flags it
 /// via the title. A no-op elsewhere.
-fn auto_login_script(region: Region) -> String {
+fn auto_login_script(region: Region, always_pick: bool) -> String {
     // HK accounts use the gamania (HK) button; TW / GamePass accounts use Gama Pass.
     let selector = match region {
         Region::HK => ".btnLogin-beanfun",
@@ -44,6 +44,7 @@ fn auto_login_script(region: Region) -> String {
     format!(
         r#"
 (function () {{
+  var alwaysPick = {always_pick};
   var clicked = false, flagged = false, reported = false, chosen = false;
   var needsLogin = false;
 
@@ -90,8 +91,10 @@ fn auto_login_script(region: Region) -> String {
       if (chosen) return;
       var rs = radios();
       if (!rs.length) return;
-      // One account is not a choice — go straight through, no dialog.
-      if (rs.length === 1) {{ choose(rs[0].value); return; }}
+      // One account is not a choice — go straight through, no dialog. With
+      // debug logging on it is shown anyway, so the picker can be seen (and the
+      // IPC that feeds it verified) without a second game account.
+      if (rs.length === 1 && !alwaysPick) {{ choose(rs[0].value); return; }}
       if (reported) return;
       reported = true;
       var list = rs.map(function (r) {{
@@ -441,7 +444,8 @@ pub async fn open_classic_login(
             .unwrap_or(Region::HK),
         None => Region::TW,
     };
-    let init_script = auto_login_script(region);
+    let always_pick = state.config.read().await.debug_logging;
+    let init_script = auto_login_script(region, always_pick);
 
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.destroy();
