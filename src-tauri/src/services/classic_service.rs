@@ -438,6 +438,11 @@ pub async fn open_classic_login(
             "https://login.beanfun.com/",
             "https://tw.beanfun.com/",
             "https://tw.newlogin.beanfun.com/",
+            // Classic's GamaPass button goes to openid.beanfun.com/login/index
+            // (clientid 17599671-…, redirecting to galaxy .../mstc/beanfun).
+            // Without this origin's cookies that hop starts logged out and the
+            // portal falls back to asking for the password again.
+            "https://openid.beanfun.com/",
         ],
     );
 

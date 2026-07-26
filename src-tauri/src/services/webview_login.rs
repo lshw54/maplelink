@@ -738,17 +738,21 @@ fn inject_cookies_into_jar(
     let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
     let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
     let newlogin_url: url::Url = "https://tw.newlogin.beanfun.com/".parse().unwrap();
+    let openid_url: url::Url = "https://openid.beanfun.com/".parse().unwrap();
 
     for (name, value, domain, path) in cookies {
         let clean_domain = domain.trim_start_matches('.');
-        let jar_url =
-            if clean_domain.contains("login.beanfun.com") && !clean_domain.contains("newlogin") {
-                &login_url
-            } else if clean_domain.contains("newlogin") {
-                &newlogin_url
-            } else {
-                &tw_url
-            };
+        // openid is checked first: it does not contain "login.beanfun.com", so
+        // it would otherwise land on the tw origin and never be sent back.
+        let jar_url = if clean_domain.contains("openid.beanfun.com") {
+            &openid_url
+        } else if clean_domain.contains("login.beanfun.com") && !clean_domain.contains("newlogin") {
+            &login_url
+        } else if clean_domain.contains("newlogin") {
+            &newlogin_url
+        } else {
+            &tw_url
+        };
         let path_str = if path.is_empty() { "/" } else { path.as_str() };
         let cookie_str = format!("{}={}; Domain={}; Path={}", name, value, domain, path_str);
         jar.add_cookie_str(&cookie_str, jar_url);
