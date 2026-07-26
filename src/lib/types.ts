@@ -42,6 +42,7 @@ export interface ClassicCheckDto {
   ngmExe: string | null;
   ngmExeExists: boolean;
   webview2Version: string | null;
+  gameExe: string | null;
 }
 
 export interface AppConfigDto {

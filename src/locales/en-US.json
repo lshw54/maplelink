@@ -31,6 +31,8 @@
   "login.classic_manual_path": "Choose path…",
   "login.classic_check_title": "Classic readiness check",
   "login.check_ngm": "Nexon Game Manager installed",
+  "login.check_classic_game": "Classic client installed",
+  "login.check_classic_game_missing": "Classic client not found. Install it from the official portal; if it's installed on another drive and still isn't found, reinstall it once.",
   "login.check_unknown": "not detected",
   "login.check_ngm_missing": "Nexon Game Manager not found — install the Classic client (which includes NGM) first.",
   "login.classic_launching": "Starting MapleStory Classic…",
