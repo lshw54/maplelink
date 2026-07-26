@@ -163,6 +163,72 @@ pub struct ClassicCheck {
     /// Installed WebView2 runtime version (drives whether the launch prompt can
     /// be auto-suppressed), if detectable.
     pub webview2_version: Option<String>,
+    /// The Classic client's executable, wherever it turned out to be installed.
+    pub game_exe: Option<String>,
+}
+
+/// The Classic client's executable, inside whichever folder it was installed to.
+const CLASSIC_EXE: &str = "Maplestory_Classic.exe";
+
+/// Locate the installed Classic client.
+///
+/// Nexon Game Manager records the install folder as `RootPath` under a per-title
+/// subkey of `Nexon` — the subkey name is an encoded id (base64 of something like
+/// `2982_2141_live_837`), so the keys are enumerated and matched on actually
+/// holding the client, rather than assuming an id or an install drive. Falls back
+/// to the usual install folders across the machine's drives, since a user who
+/// moved the game may also have lost the registry entry.
+#[cfg(target_os = "windows")]
+pub fn detect_game_exe() -> Option<String> {
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY};
+    use winreg::RegKey;
+
+    let exe_in = |dir: &str| {
+        let exe = std::path::Path::new(dir).join(CLASSIC_EXE);
+        exe.is_file().then(|| exe.to_string_lossy().to_string())
+    };
+
+    // NGM is 32-bit, so its keys land under WOW6432Node; read the 64-bit view too
+    // in case a future build registers there instead.
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    for flags in [KEY_WOW64_32KEY, KEY_WOW64_64KEY] {
+        let Ok(nexon) = hklm.open_subkey_with_flags(r"SOFTWARE\Nexon", KEY_READ | flags) else {
+            continue;
+        };
+        for title in nexon.enum_keys().flatten() {
+            let root = nexon
+                .open_subkey_with_flags(&title, KEY_READ | flags)
+                .and_then(|k| k.get_value::<String, _>("RootPath"));
+            if let Ok(root) = root {
+                if let Some(exe) = exe_in(&root) {
+                    tracing::info!("classic: client found via Nexon\\{title}: {exe}");
+                    return Some(exe);
+                }
+            }
+        }
+    }
+
+    for drive in ('C'..='Z').map(|d| format!("{d}:")) {
+        for base in [
+            r"\Program Files\Gamania",
+            r"\Program Files (x86)\Gamania",
+            r"\Gamania",
+        ] {
+            let dir = format!("{drive}{base}\\maplestory_classic");
+            if let Some(exe) = exe_in(&dir) {
+                tracing::info!("classic: client found at a well-known path: {exe}");
+                return Some(exe);
+            }
+        }
+    }
+
+    tracing::debug!("classic: no installed client found");
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn detect_game_exe() -> Option<String> {
+    None
 }
 
 /// Check that the local prerequisites for the classic launch are in place.
@@ -207,6 +273,8 @@ pub fn self_check(manual_path: &str) -> ClassicCheck {
                 .and_then(|k| k.get_value::<String, _>("pv"))
         })
         .ok();
+
+    check.game_exe = detect_game_exe();
 
     check
 }

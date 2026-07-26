@@ -710,6 +710,23 @@ export function NormalLoginForm({
             </p>
           )}
           <div className="flex items-center gap-2">
+            <span className={classicCheck?.gameExe ? "text-green-500" : "text-red-500"}>
+              {classicCheck?.gameExe ? "✓" : "✗"}
+            </span>
+            <span className="flex-1 text-[var(--text)]">{t("login.check_classic_game")}</span>
+          </div>
+          {classicCheck?.gameExe ? (
+            <p className="pl-6 font-mono text-[10px] break-all text-text-faint">
+              {classicCheck.gameExe}
+            </p>
+          ) : (
+            classicCheck && (
+              <p className="pl-6 text-[11px] leading-snug text-yellow-500">
+                {t("login.check_classic_game_missing")}
+              </p>
+            )
+          )}
+          <div className="flex items-center gap-2">
             <span className={classicCheck?.webview2Version ? "text-green-500" : "text-yellow-500"}>
               {classicCheck?.webview2Version ? "✓" : "?"}
             </span>
