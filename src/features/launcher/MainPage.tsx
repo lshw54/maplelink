@@ -18,9 +18,6 @@ export function MainPage() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
   const activeSessionId = useAuthStore((s) => s.activeSessionId);
-  const activeLoginMethod = useAuthStore((s) =>
-    s.activeSessionId ? s.sessions.get(s.activeSessionId)?.loginMethod : undefined,
-  );
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -77,10 +74,12 @@ export function MainPage() {
   // this same session — no re-login, so the regular session stays alive.
   const [classicGame, setClassicGame] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
-  // Classic can reuse this session only for HK (account/password) or TW GamePass.
-  // A TW account/password or QR session can't drive the classic SSO (the portal
-  // offers only HK-beanfun and GamePass sign-in), so it gets no switcher.
-  const canClassic = session?.region === "HK" || activeLoginMethod === "gamepass";
+  // HK only: one beanfun login covers both servers there, so this session can
+  // open Classic as-is. TW keeps them on separate logins — reusing a TW session
+  // just lands on another sign-in form, so offering the switch would promise
+  // something it can't deliver. TW players start Classic from the login page,
+  // which signs in on the classic side.
+  const canClassic = session?.region === "HK";
   const showClassic = classicGame && canClassic;
   const ngmReady = !!classicCheck && classicCheck.ngmRegistered && classicCheck.ngmExeExists;
 
