@@ -31,13 +31,18 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// handlers still see the click. The plugin then ignores the link (it only acts
 /// on `_blank`) and normal navigation happens inside the popup, which is what
 /// its native `NewWindowRequested` handler does with these links anyway.
+///
+/// Two details matter. The resolved `a.href` is what gets tested, not the raw
+/// attribute — the plugin resolves it too, so reading the attribute let every
+/// relative link slip through to it. And the target becomes `_top` rather than
+/// `_self`: a link inside a frame would otherwise navigate that frame, and sites
+/// like `accounts.gamania.com` refuse to be framed (`frame-ancestors 'none'`).
 const KEEP_LINKS_IN_WINDOW: &str = r#"
 (function () {
   document.addEventListener('click', function (e) {
     for (var n = e.target; n; n = n.parentElement) {
       if (n.tagName !== 'A') continue;
-      var href = n.getAttribute('href') || '';
-      if (n.target === '_blank' && /^https?:\/\//i.test(href)) n.target = '_self';
+      if (n.target === '_blank' && /^https?:\/\//i.test(n.href || '')) n.target = '_top';
       return;
     }
   }, true);
