@@ -361,16 +361,33 @@ export function App() {
         </div>
       )}
       {classicStatus !== "idle" && (
-        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-[var(--bg)]/95 backdrop-blur-sm">
-          {classicStatus === "launching" && (
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-text-faint border-t-accent" />
-          )}
-          <div className="text-[13px] font-semibold text-[var(--text)]">
-            {classicStatus === "launching" && t("login.classic_launching")}
-            {classicStatus === "launched" && `✓ ${t("login.classic_launched")}`}
-            {classicStatus === "failed" && t("login.classic_launch_failed")}
-            {classicStatus === "needs_login" && t("login.classic_needs_login")}
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-[var(--bg)]/95 px-6 backdrop-blur-sm">
+          {/* Fixed-height slot so the block doesn't jump as the state changes. */}
+          <div className="flex h-9 w-9 items-center justify-center">
+            {classicStatus === "launching" && (
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-text-faint border-t-accent" />
+            )}
+            {classicStatus === "launched" && <span className="text-[22px]">✓</span>}
+            {classicStatus === "needs_login" && (
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(232,162,58,0.14)] text-[17px]">
+                🔑
+              </span>
+            )}
+            {classicStatus === "failed" && <span className="text-[20px]">⚠️</span>}
           </div>
+          <div className="max-w-[280px] text-center text-[13px] font-bold text-[var(--text)]">
+            {classicStatus === "launching" && t("login.classic_launching")}
+            {classicStatus === "launched" && t("login.classic_launched")}
+            {classicStatus === "failed" && t("login.classic_failed_title")}
+            {classicStatus === "needs_login" && t("login.classic_needs_login_title")}
+          </div>
+          {(classicStatus === "failed" || classicStatus === "needs_login") && (
+            <p className="max-w-[280px] text-center text-[11px] leading-relaxed text-text-dim">
+              {classicStatus === "failed"
+                ? t("login.classic_launch_failed")
+                : t("login.classic_needs_login")}
+            </p>
+          )}
           {classicStatus !== "launching" && (
             <button
               type="button"
