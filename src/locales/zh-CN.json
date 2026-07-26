@@ -451,6 +451,7 @@
   "onboarding.cafe_body": "在登录页勾选「网吧模式」\n每次关闭都会删除本机所有账号密码与设置\n删除后无法恢复\n自己的电脑不需要开",
   "onboarding.captcha_title": "关于机器人验证与杀毒误报",
   "onboarding.captcha_body": "会不会跳验证，取决于你当下的网络环境分数\n这不是程序能控制的\n本程序是第三方登录器，部分杀毒会误判\n请自行评估是否使用",
-  "settings.announcements": "公告记录",
-  "announcement.hide_banner": "不再显示这条公告横幅"
+  "announcement.hide_banner": "不再显示这条公告横幅",
+  "toolbox.tabs.announcements": "公告",
+  "toolbox.announcements.empty": "暂时没有公告"
 }

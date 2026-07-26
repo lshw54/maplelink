@@ -451,6 +451,7 @@
   "onboarding.cafe_body": "在登入頁勾選「網咖模式」\n每次關閉都會刪除本機所有帳號密碼與設定\n刪除後無法復原\n自己的電腦不需要開",
   "onboarding.captcha_title": "關於機器人驗證與防毒誤報",
   "onboarding.captcha_body": "會不會跳驗證，取決於你當下的網路環境分數\n這不是程式能控制的\n本程式是第三方登入器，部分防毒會誤判\n請自行評估是否使用",
-  "settings.announcements": "公告紀錄",
-  "announcement.hide_banner": "不再顯示這條公告橫幅"
+  "announcement.hide_banner": "不再顯示這條公告橫幅",
+  "toolbox.tabs.announcements": "公告",
+  "toolbox.announcements.empty": "暫時沒有公告"
 }

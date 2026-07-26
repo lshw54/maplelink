@@ -451,6 +451,7 @@
   "onboarding.cafe_body": "Tick café mode on the login page\nClosing then erases every saved account and setting\nThere is no undo\nYou don't need it on your own PC",
   "onboarding.captcha_title": "About bot checks and antivirus warnings",
   "onboarding.captcha_body": "Whether a bot check appears depends on your network's score\nThe app can't control that\nMapleLink is third-party, so some antivirus flags it\nJudge for yourself whether to use it",
-  "settings.announcements": "Announcements",
-  "announcement.hide_banner": "Hide this announcement banner"
+  "announcement.hide_banner": "Hide this announcement banner",
+  "toolbox.tabs.announcements": "Announcements",
+  "toolbox.announcements.empty": "No announcements yet"
 }
