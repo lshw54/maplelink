@@ -15,6 +15,35 @@ use crate::models::session::Region;
 use crate::services::cookie_native;
 use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
+/// Stop `tauri-plugin-shell` from hijacking `<a target="_blank">` in these
+/// remote pages.
+///
+/// The plugin injects a body click listener into every webview that cancels the
+/// click and routes the link through `plugin:shell|open`. On beanfun that fails
+/// twice over: the site's CSP has no `ipc.localhost` in `connect-src`, and these
+/// popup windows hold no capability for the command — so the click is swallowed
+/// and buttons on the member centre simply do nothing. It is also the wrong
+/// destination: the app runs elevated, so opening the browser that way is what
+/// corrupts the user's Chrome profile (see the unelevated `shell_open` path).
+///
+/// A capture-phase listener runs before the plugin's, and only rewrites the
+/// target — no `preventDefault`, no `stopPropagation`, so the page's own
+/// handlers still see the click. The plugin then ignores the link (it only acts
+/// on `_blank`) and normal navigation happens inside the popup, which is what
+/// its native `NewWindowRequested` handler does with these links anyway.
+const KEEP_LINKS_IN_WINDOW: &str = r#"
+(function () {
+  document.addEventListener('click', function (e) {
+    for (var n = e.target; n; n = n.parentElement) {
+      if (n.tagName !== 'A') continue;
+      var href = n.getAttribute('href') || '';
+      if (n.target === '_blank' && /^https?:\/\//i.test(href)) n.target = '_self';
+      return;
+    }
+  }, true);
+})();
+"#;
+
 /// Extract `bfWebToken` from a cookie jar (region host resolved from config).
 pub async fn web_token_from_jar(
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
@@ -145,7 +174,7 @@ pub async fn open_gash_popup(
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
     .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
-    .initialization_script(init_script)
+    .initialization_script(format!("{init_script}{KEEP_LINKS_IN_WINDOW}"))
     .devtools(true)
     .build()
     .map_err(|e| ErrorDto {
@@ -324,6 +353,7 @@ pub async fn open_member_popup(
     .visible(false)
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
+    .initialization_script(KEEP_LINKS_IN_WINDOW)
     .devtools(true)
     .build()
     .map_err(|e| ErrorDto {
@@ -449,6 +479,7 @@ pub async fn open_auth_popup(
     .visible(false)
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
+    .initialization_script(KEEP_LINKS_IN_WINDOW)
     .build()
     .map_err(|e| ErrorDto {
         code: "SYS_POPUP_FAILED".to_string(),
