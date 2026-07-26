@@ -626,17 +626,17 @@ export function NormalLoginForm({
         )}
       </div>
 
-      {/* Classic also accepts GamePass (TW) sign-in, reusing the regular flow */}
+      {/* TW GamaPass classic sign-in. Unlike HK, TW keeps Classic and the regular
+          server on separate logins, so this deliberately does NOT run the regular
+          GamaPass flow — it opens the classic portal and signs in there. */}
       {classicMode && (
         <button
           type="button"
           onClick={() => {
-            // GamePass OAuth is gated to TW; classic reuses it, so switch the
-            // region to TW for the flow. The portal keys off the session region.
-            commands.setConfig("region", "TW").catch(() => {});
-            const cfg = useConfigStore.getState().config;
-            if (cfg) useConfigStore.setState({ config: { ...cfg, region: "TW" } });
-            onGamePass();
+            useUiStore.setState({ classicStatus: "launching" });
+            commands.openClassicLogin("").catch(() => {
+              useUiStore.setState({ classicStatus: "failed" });
+            });
           }}
           disabled={isLoading}
           className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-[var(--surface)] px-5 py-2.5 text-[12px] font-semibold text-text-dim transition-all hover:border-accent hover:text-accent active:scale-95 disabled:opacity-40"

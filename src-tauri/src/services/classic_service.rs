@@ -399,18 +399,31 @@ pub async fn open_classic_login(
 ) -> Result<(), ErrorDto> {
     use tauri::WebviewWindowBuilder;
 
-    let ss = state.require_session(&session_id).await?;
+    // TW keeps Classic and the regular server on separate logins — signing in to
+    // one gets you nowhere on the other — so a TW classic sign-in starts from
+    // scratch on the galaxy side. Called with no session id we seed nothing and
+    // let the portal run its own GamaPass flow (the password form is detected and
+    // the window revealed). HK is interoperable, so it keeps passing its session
+    // and riding the SSO through without interaction.
+    let ss = if session_id.is_empty() {
+        None
+    } else {
+        Some(state.require_session(&session_id).await?)
+    };
     let label = "classic-login";
 
-    // The portal offers both HK-beanfun and GamePass sign-in; auto-click the one
-    // matching this session's region so the SSO completes without interaction.
-    let region = ss
-        .session
-        .read()
-        .await
-        .as_ref()
-        .map(|s| s.region.clone())
-        .unwrap_or(Region::HK);
+    // The portal offers both HK-beanfun and GamaPass sign-in; auto-click the one
+    // matching this session's region. Sessionless means the TW GamaPass path.
+    let region = match ss.as_ref() {
+        Some(ss) => ss
+            .session
+            .read()
+            .await
+            .as_ref()
+            .map(|s| s.region.clone())
+            .unwrap_or(Region::HK),
+        None => Region::TW,
+    };
     let init_script = auto_login_script(region);
 
     if let Some(existing) = app.get_webview_window(label) {
@@ -441,22 +454,25 @@ pub async fn open_classic_login(
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
     // Seed the session's beanfun cookies so the HK SSO step skips re-login.
-    let seed_cookies = cookie_native::cookies_from_jar(
-        &ss.cookie_jar,
-        &[
-            "https://bfweb.hk.beanfun.com/",
-            "https://login.hk.beanfun.com/",
-            "https://beanfun.com/",
-            "https://login.beanfun.com/",
-            "https://tw.beanfun.com/",
-            "https://tw.newlogin.beanfun.com/",
-            // Classic's GamaPass button goes to openid.beanfun.com/login/index
-            // (clientid 17599671-…, redirecting to galaxy .../mstc/beanfun).
-            // Without this origin's cookies that hop starts logged out and the
-            // portal falls back to asking for the password again.
-            "https://openid.beanfun.com/",
-        ],
-    );
+    let seed_cookies = match ss.as_ref() {
+        None => Vec::new(),
+        Some(ss) => cookie_native::cookies_from_jar(
+            &ss.cookie_jar,
+            &[
+                "https://bfweb.hk.beanfun.com/",
+                "https://login.hk.beanfun.com/",
+                "https://beanfun.com/",
+                "https://login.beanfun.com/",
+                "https://tw.beanfun.com/",
+                "https://tw.newlogin.beanfun.com/",
+                // Classic's GamaPass button goes to openid.beanfun.com/login/index
+                // (clientid 17599671-…, redirecting to galaxy .../mstc/beanfun).
+                // Without this origin's cookies that hop starts logged out and the
+                // portal falls back to asking for the password again.
+                "https://openid.beanfun.com/",
+            ],
+        ),
+    };
 
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
@@ -492,21 +508,23 @@ pub async fn open_classic_login(
 
     let mut win = build_portal(data_dir.clone())?;
 
-    // Cookie seeding talks to the webview over COM, so it failing is how a
+    // This talks to the webview over COM, so it failing is how a
     // window-without-a-webview shows up (webview creation is logged by the
     // runtime but still yields a window). Rebuild once rather than run the whole
-    // flow against a dead window and time out 30s later.
-    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
-        tracing::warn!("classic portal: cookie seeding failed ({e}) — rebuilding the window");
+    // flow against a dead window and time out much later. It doubles as the
+    // liveness probe for the sessionless path, where there are no cookies to
+    // seed and seeding would return Ok without touching the webview at all.
+    if let Err(e) = cookie_native::register_new_window_handler(&win) {
+        tracing::warn!("classic portal: webview looks dead ({e}) — rebuilding the window");
         let _ = win.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         win = build_portal(data_dir)?;
-        if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
-            tracing::warn!("classic portal: cookie seeding failed again: {e}");
+        if let Err(e) = cookie_native::register_new_window_handler(&win) {
+            tracing::warn!("classic portal: NewWindowRequested handler failed again: {e}");
         }
     }
-    if let Err(e) = cookie_native::register_new_window_handler(&win) {
-        tracing::warn!("classic portal: NewWindowRequested handler failed: {e}");
+    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+        tracing::warn!("classic portal: native cookie seeding failed: {e}");
     }
 
     // Intercept the portal's own ngm:// launch: cancel WebView2's prompt and start
