@@ -191,6 +191,7 @@ export const commands = {
   // MapleStory Classic (懷舊服) — open the portal for a logged-in session
   openClassicLogin: (sessionId: string) => invoke("open_classic_login", { sessionId }),
   classicSelfCheck: () => invoke<ClassicCheckDto>("classic_self_check"),
+  classicPickAccount: (value: string) => invoke("classic_pick_account", { value }),
 } as const;
 
 /** Payload of the `recaptcha-token` event emitted when the helper window captures a token. */

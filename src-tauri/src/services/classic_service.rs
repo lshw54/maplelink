@@ -34,9 +34,11 @@ const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/lo
 const MISSING_MARKER: &str = "NGMMISSING";
 
 /// Injected on every navigation. On the OTT init page it clicks the right login
-/// button (HK beanfun vs GamePass) to drive the SSO; on the portal Main page it
-/// watches for the NGM install guide (which appears instead of the launch when
-/// NGM is missing) and flags it via the title. A no-op elsewhere.
+/// button (HK beanfun vs GamePass) to drive the SSO; on GamaPass's game-account
+/// chooser it either auto-continues (single account) or hands the list to the app
+/// for a native picker; on the portal Main page it watches for the NGM install
+/// guide (which appears instead of the launch when NGM is missing) and flags it
+/// via the title. A no-op elsewhere.
 fn auto_login_script(region: Region) -> String {
     // HK accounts use the gamania (HK) button; TW / GamePass accounts use Gama Pass.
     let selector = match region {
@@ -46,13 +48,56 @@ fn auto_login_script(region: Region) -> String {
     format!(
         r#"
 (function () {{
-  var clicked = false, flagged = false;
+  var clicked = false, flagged = false, reported = false, chosen = false;
+
+  function radios() {{
+    return [].slice.call(document.querySelectorAll('input[type=radio][name=account]'));
+  }}
+
+  // The chooser is a JS-driven page: tick the radio, then press 繼續. Both are
+  // real clicks so the page's own handlers run.
+  function choose(value) {{
+    var rs = radios();
+    for (var i = 0; i < rs.length; i++) {{
+      if (rs[i].value !== value) continue;
+      chosen = true;
+      rs[i].click();
+      setTimeout(function () {{
+        var btns = [].slice.call(
+          document.querySelectorAll('.bottom-fixed-action-area a.ui-btn, a.ui-btn')
+        );
+        var go = btns[btns.length - 1];
+        if (go) go.click();
+      }}, 150);
+      return true;
+    }}
+    return false;
+  }}
+  // Called from the app once the user picks in the native dialog.
+  window.__mlPickClassicAccount = choose;
+
   function tick() {{
     var href = location.href;
     if (href.indexOf('/login/init/mstc/') !== -1) {{
       if (!clicked) {{
         var btn = document.querySelector('{selector}');
         if (btn) {{ btn.click(); clicked = true; }}
+      }}
+    }} else if (href.indexOf('/GamaPassLogin/SelectGameAccount') !== -1) {{
+      if (chosen) return;
+      var rs = radios();
+      if (!rs.length) return;
+      // One account is not a choice — go straight through, no dialog.
+      if (rs.length === 1) {{ choose(rs[0].value); return; }}
+      if (reported) return;
+      reported = true;
+      var list = rs.map(function (r) {{
+        var lbl = r.closest('label');
+        var name = ((lbl && lbl.innerText) || '').trim();
+        return {{ value: r.value, label: name || r.value }};
+      }});
+      if (window.__TAURI_INTERNALS__) {{
+        window.__TAURI_INTERNALS__.invoke('classic_accounts_found', {{ accounts: list }});
       }}
     }} else if (href.indexOf('maplestoryclassic.beanfun.com/Main') !== -1) {{
       if (!flagged &&
@@ -67,6 +112,55 @@ fn auto_login_script(region: Region) -> String {
 }})();
 "#
     )
+}
+
+/// A selectable GamaPass game account from the chooser page.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClassicAccount {
+    /// The radio's value — what the page POSTs as `OpidSelAccount`.
+    pub value: String,
+    /// Display name shown next to the radio.
+    pub label: String,
+}
+
+/// Set while the user is choosing a game account in the native dialog, so the
+/// launch poll doesn't age out waiting for a human. Only one classic window can
+/// exist at a time (the label is fixed and any previous one is destroyed first),
+/// so a single global is enough.
+static AWAITING_ACCOUNT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Hand the GamaPass account list to the frontend and pause the launch timeout.
+/// Invoked from the injected script when the chooser lists more than one account.
+pub fn accounts_found(accounts: Vec<ClassicAccount>, app: &tauri::AppHandle) {
+    tracing::info!(
+        "classic: GamaPass chooser listed {} accounts",
+        accounts.len()
+    );
+    AWAITING_ACCOUNT.store(true, Ordering::SeqCst);
+    let _ = app.emit("classic-select-account", accounts);
+}
+
+/// Apply the user's pick in the classic window and resume the launch timeout.
+pub fn pick_account(value: &str, app: &tauri::AppHandle) -> Result<(), ErrorDto> {
+    let win = app
+        .get_webview_window("classic-login")
+        .ok_or_else(|| ErrorDto {
+            code: "CLASSIC_WINDOW_GONE".to_string(),
+            message: "The classic portal window is no longer open".to_string(),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+    // serde_json renders a correctly escaped JS string literal for any value.
+    let literal = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+    win.eval(format!("window.__mlPickClassicAccount({literal});"))
+        .map_err(|e| ErrorDto {
+            code: "CLASSIC_PICK_FAILED".to_string(),
+            message: format!("Failed to select the game account: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+    AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
+    Ok(())
 }
 
 // Launch state shared between the intercept callback and the poll task.
@@ -397,9 +491,14 @@ pub async fn open_classic_login(
 
     // Hidden auto-launch: wait for the intercept to fire, then close (success) or
     // reveal for manual completion (failure / timeout).
+    AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         tracing::info!("classic portal running (hidden), waiting for launch");
-        for _ in 0..60 {
+        // 60 ticks (30s) of launch time, plus a separate 5-minute allowance that
+        // only burns while the user is picking a game account.
+        let mut ticks = 0;
+        let mut waiting_ticks = 0;
+        while ticks < 60 && waiting_ticks < 600 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             let Ok(title) = win.title() else {
                 return; // window gone
@@ -428,8 +527,16 @@ pub async fn open_classic_login(
                 }
                 _ => {}
             }
+            // The account chooser is up: hold the launch countdown, the user is
+            // deciding. Only the (much longer) waiting budget ticks down.
+            if AWAITING_ACCOUNT.load(Ordering::SeqCst) {
+                waiting_ticks += 1;
+            } else {
+                ticks += 1;
+            }
         }
         tracing::warn!("classic: no launch within timeout — revealing portal");
+        AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
         let _ = win.app_handle().emit("classic-launch-timeout", ());
         let _ = win.show();
         let _ = win.set_focus();

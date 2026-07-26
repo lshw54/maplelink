@@ -38,6 +38,8 @@
   "login.classic_launching": "Starting MapleStory Classic…",
   "login.classic_launched": "MapleStory Classic started — switch to the game window",
   "login.classic_launch_failed": "Auto-launch failed. The Classic portal was opened so you can start it manually (Nexon Game Manager must be installed).",
+  "login.classic_pick_account_title": "Choose a game account",
+  "login.classic_pick_account_hint": "This GamaPass account has more than one game account. Pick the one to sign in to Classic with.",
   "login.username": "Username",
   "login.password": "Password",
   "login.username_placeholder": "Enter your username",

@@ -19,7 +19,7 @@ import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
 import { WebLaunchPage } from "./features/toolbox/WebLaunchPage";
-import type { UpdateInfoDto, BeanfunRenameCheck } from "./lib/types";
+import type { UpdateInfoDto, BeanfunRenameCheck, ClassicAccountDto } from "./lib/types";
 
 function PageRouter() {
   const currentPage = useUiStore((s) => s.currentPage);
@@ -113,11 +113,19 @@ export function App() {
   // Classic (懷舊服) launch progress. App-level so it shows regardless of page —
   // a classic launch started from the account tab's "+" returns to the main page.
   const classicStatus = useUiStore((s) => s.classicStatus);
+  const classicAccounts = useUiStore((s) => s.classicAccounts);
   useEffect(() => {
+    // Any terminal outcome also clears a pending account picker — the portal is
+    // done with it either way.
+    const settle = (classicStatus: "launched" | "failed") =>
+      useUiStore.setState({ classicStatus, classicAccounts: null });
     const subs = [
-      listen("classic-launched", () => useUiStore.setState({ classicStatus: "launched" })),
-      listen("classic-launch-failed", () => useUiStore.setState({ classicStatus: "failed" })),
-      listen("classic-launch-timeout", () => useUiStore.setState({ classicStatus: "failed" })),
+      listen("classic-launched", () => settle("launched")),
+      listen("classic-launch-failed", () => settle("failed")),
+      listen("classic-launch-timeout", () => settle("failed")),
+      listen<ClassicAccountDto[]>("classic-select-account", (e) =>
+        useUiStore.setState({ classicAccounts: e.payload }),
+      ),
     ];
     return () => subs.forEach((s) => s.then((un) => un()));
   }, []);
@@ -320,6 +328,35 @@ export function App() {
         <PageRouter />
       </main>
       <ErrorToastContainer />
+      {/* GamaPass offered several game accounts — pick one to sign in with.
+          Sits above the launch overlay, which stays on "launching" meanwhile. */}
+      {classicAccounts && classicAccounts.length > 0 && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-3 bg-[var(--bg)]/95 px-6 backdrop-blur-sm">
+          <div className="text-[13px] font-bold text-[var(--text)]">
+            {t("login.classic_pick_account_title")}
+          </div>
+          <p className="max-w-[280px] text-center text-[11px] leading-snug text-text-dim">
+            {t("login.classic_pick_account_hint")}
+          </p>
+          <div className="flex max-h-[220px] w-full max-w-[280px] flex-col gap-1.5 overflow-y-auto">
+            {classicAccounts.map((acct) => (
+              <button
+                key={acct.value}
+                type="button"
+                onClick={() => {
+                  useUiStore.setState({ classicAccounts: null });
+                  commands.classicPickAccount(acct.value).catch(() => {
+                    useUiStore.setState({ classicStatus: "failed" });
+                  });
+                }}
+                className="w-full truncate rounded-lg border border-border bg-[var(--surface)] px-3 py-2 text-left text-[12px] font-semibold text-[var(--text)] transition-colors hover:border-accent hover:text-accent"
+              >
+                {acct.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {classicStatus !== "idle" && (
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-[var(--bg)]/95 backdrop-blur-sm">
           {classicStatus === "launching" && (

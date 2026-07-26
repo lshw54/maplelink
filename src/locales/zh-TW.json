@@ -38,6 +38,8 @@
   "login.classic_launching": "正在啟動經典版…",
   "login.classic_launched": "已啟動經典版，請切換至遊戲視窗",
   "login.classic_launch_failed": "自動啟動失敗。已開啟經典版入口，請於該視窗手動啟動（需已安裝 Nexon Game Manager）。",
+  "login.classic_pick_account_title": "選擇遊戲帳號",
+  "login.classic_pick_account_hint": "此 GamaPass 帳號下有多個遊戲帳號，請選擇要用來登入經典版的一個。",
   "login.username": "帳號",
   "login.password": "密碼",
   "login.username_placeholder": "輸入你的帳號",

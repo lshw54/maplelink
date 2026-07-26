@@ -1,0 +1,9 @@
+{
+  "identifier": "classic-remote",
+  "description": "Allow the classic portal window's remote GamaPass page to report the game-account list (classic_accounts_found). Required because login.beanfun.com is a remote origin.",
+  "windows": ["classic-login"],
+  "remote": {
+    "urls": ["https://*.beanfun.com", "https://login.beanfun.com"]
+  },
+  "permissions": ["core:default"]
+}

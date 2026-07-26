@@ -37,6 +37,12 @@ export interface GameDownloadDto {
   kind: "game" | "patch" | "other";
 }
 
+/** One selectable game account from GamaPass's classic sign-in chooser. */
+export interface ClassicAccountDto {
+  value: string;
+  label: string;
+}
+
 export interface ClassicCheckDto {
   ngmRegistered: boolean;
   ngmExe: string | null;
