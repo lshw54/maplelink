@@ -116,6 +116,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 beanfun_rename_dismissed: true,
                 cafe_mode: true,
                 classic_ngm_path: r"C:\NGM\ngm.exe".into(),
+                announcement_dismissed_id: String::new(),
                 default_login_view: DefaultLoginView::Qr,
             }
         },

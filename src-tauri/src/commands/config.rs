@@ -213,6 +213,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "classicNgmPath" | "classic_ngm_path" => {
             config.classic_ngm_path = value.to_string();
         }
+        "announcementDismissedId" | "announcement_dismissed_id" => {
+            config.announcement_dismissed_id = value.to_string();
+        }
         "defaultLoginView" | "default_login_view" => {
             config.default_login_view = match value.to_lowercase().as_str() {
                 "normal" => DefaultLoginView::Normal,

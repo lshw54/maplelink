@@ -45,7 +45,7 @@ export function OnboardingModal({ onClose }: OnboardingModalProps) {
           {t(`onboarding.${page.key}_title`)}
         </h2>
         {/* One point per line — a solid paragraph is what people skip. */}
-        <ul className="flex w-full max-w-[300px] flex-col gap-1.5 text-left">
+        <ul className="mx-auto flex w-fit max-w-full flex-col gap-1.5 text-left">
           {t(`onboarding.${page.key}_body`)
             .split("\n")
             .map((line) => (

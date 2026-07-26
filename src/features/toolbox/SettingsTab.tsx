@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { ANNOUNCEMENT_ARCHIVE } from "../../lib/announcement";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { useUiStore } from "../../lib/stores/ui-store";
@@ -114,6 +115,22 @@ export function SettingsTab() {
       </SettingRow>
 
       {/* Classic — Nexon Game Manager path (empty = auto-detect) */}
+      {/* Every announcement stays readable here, so closing a banner is never
+          how someone loses the text behind it. */}
+      <SettingRow label={t("settings.announcements")}>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {ANNOUNCEMENT_ARCHIVE.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => useUiStore.setState({ announcementOpen: true })}
+              className="rounded-[var(--radius)] border border-border px-3 py-1 text-xs text-text-dim transition-colors hover:border-accent hover:text-accent"
+            >
+              {a.date} · {t("announcement.title")}
+            </button>
+          ))}
+        </div>
+      </SettingRow>
+
       <SettingRow label={t("settings.classic_ngm_path")}>
         <div className="flex items-center gap-2">
           <span className="max-w-[240px] truncate text-xs text-[var(--text)]">

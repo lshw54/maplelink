@@ -20,8 +20,14 @@ export const ANNOUNCEMENT_ID = "2026-07-dual-track";
  */
 export type AnnouncementLevel = "info" | "pinned" | "blocking";
 
-/** Level of the announcement identified by {@link ANNOUNCEMENT_ID}. */
-export const ANNOUNCEMENT_LEVEL: AnnouncementLevel = "pinned";
+/**
+ * Level of the announcement identified by {@link ANNOUNCEMENT_ID}.
+ *
+ * Downgraded to `info`: it has been shown for a while and is now reference
+ * material rather than news. Its banner can be closed for good, and the toolbox
+ * keeps it readable — see {@link ANNOUNCEMENT_ARCHIVE}.
+ */
+export const ANNOUNCEMENT_LEVEL: AnnouncementLevel = "info";
 
 /** Seconds a `pinned` / `blocking` announcement stays locked open. */
 export const ANNOUNCEMENT_FORCED_SECONDS = 10;
@@ -29,3 +35,18 @@ export const ANNOUNCEMENT_FORCED_SECONDS = 10;
 /** External links opened from the announcement. */
 export const ANNOUNCEMENT_MORE_INFO_URL = "https://github.com/pungin/Beanfun/issues/323";
 export const ANNOUNCEMENT_BEANFUN_URL = "https://github.com/pungin/Beanfun";
+
+/**
+ * Every announcement ever published, newest first — nothing is ever removed.
+ * The toolbox lists these so closing a banner is never how someone loses the
+ * text behind it.
+ */
+export interface ArchivedAnnouncement {
+  id: string;
+  /** Shown next to the title in the list. */
+  date: string;
+}
+
+export const ANNOUNCEMENT_ARCHIVE: ArchivedAnnouncement[] = [
+  { id: ANNOUNCEMENT_ID, date: "2026-07" },
+];

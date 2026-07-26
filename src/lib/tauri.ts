@@ -123,7 +123,8 @@ export const commands = {
   restartApp: () => invoke("restart_app"),
 
   // System (global unless noted)
-  resizeWindow: (page: string) => invoke("resize_window", { page }),
+  resizeWindow: (page: string, announcementBar?: boolean) =>
+    invoke("resize_window", { page, announcementBar }),
   openFileDialog: () => invoke<string | null>("open_file_dialog"),
   getAppVersion: () => invoke<string>("get_app_version"),
   getTextScaleFactor: () => invoke<number>("get_text_scale_factor"),

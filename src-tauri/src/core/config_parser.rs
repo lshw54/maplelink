@@ -116,6 +116,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("classic_ngm_path") {
             config.classic_ngm_path = v.clone();
         }
+        if let Some(v) = general.get("announcement_dismissed_id") {
+            config.announcement_dismissed_id = v.clone();
+        }
         if let Some(v) = general.get("default_login_view") {
             config.default_login_view = parse_default_login_view(v);
         }
@@ -221,6 +224,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     ));
     out.push_str(&format!("cafe_mode = {}\n", config.cafe_mode));
     out.push_str(&format!("classic_ngm_path = {}\n", config.classic_ngm_path));
+    out.push_str(&format!(
+        "announcement_dismissed_id = {}\n",
+        config.announcement_dismissed_id
+    ));
     out.push_str(&format!(
         "default_login_view = {}\n",
         default_login_view_to_str(&config.default_login_view)
@@ -569,6 +576,7 @@ x = not_a_number
             beanfun_rename_dismissed: true,
             cafe_mode: true,
             classic_ngm_path: r"C:\NGM\ngm.exe".into(),
+            announcement_dismissed_id: String::new(),
             default_login_view: DefaultLoginView::Qr,
         };
         let ini = serialize_ini(&original);

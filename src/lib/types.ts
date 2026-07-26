@@ -76,6 +76,7 @@ export interface AppConfigDto {
   beanfunRenameDismissed: boolean;
   cafeMode: boolean;
   classicNgmPath: string;
+  announcementDismissedId: string;
   defaultLoginView: "normal" | "qr";
 }
 

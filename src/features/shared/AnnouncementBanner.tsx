@@ -6,20 +6,36 @@ import { useTranslation } from "../../lib/i18n";
  * persistent entry point to reopen the announcement. Clicking it opens the
  * announcement overlay.
  */
-export function AnnouncementBanner({ onOpen }: { onOpen: () => void }) {
+export function AnnouncementBanner({
+  onOpen,
+  onClose,
+}: {
+  onOpen: () => void;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   return (
-    <button
-      onClick={onOpen}
-      className="flex h-[28px] shrink-0 items-center gap-2 border-b border-[rgba(232,162,58,0.2)] bg-[rgba(232,162,58,0.1)] px-3 text-left transition-colors hover:bg-[rgba(232,162,58,0.16)]"
-    >
-      <span className="shrink-0 text-[12px]">📢</span>
-      <span className="flex-1 truncate text-[11px] font-semibold text-accent">
-        {t("announcement.title")}
-      </span>
-      <span className="shrink-0 text-[11px] font-semibold text-accent/80">
-        {t("announcement.reopen")} ›
-      </span>
-    </button>
+    <div className="flex h-[28px] shrink-0 items-center gap-2 border-b border-[rgba(232,162,58,0.2)] bg-[rgba(232,162,58,0.1)] pr-2 pl-3">
+      <button
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80"
+      >
+        <span className="shrink-0 text-[12px]">📢</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-accent">
+          {t("announcement.title")}
+        </span>
+        <span className="shrink-0 text-[11px] font-semibold text-accent/80">
+          {t("announcement.reopen")} ›
+        </span>
+      </button>
+      <button
+        onClick={onClose}
+        title={t("announcement.hide_banner")}
+        aria-label={t("announcement.hide_banner")}
+        className="shrink-0 px-1 text-[13px] leading-none text-accent/60 transition-colors hover:text-accent"
+      >
+        ×
+      </button>
+    </div>
   );
 }

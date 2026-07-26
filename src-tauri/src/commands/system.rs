@@ -139,17 +139,27 @@ pub fn reset_webview_data() -> Result<(), ErrorDto> {
 
 /// Resize the application window for a page transition.
 #[tauri::command]
-pub async fn resize_window(page: String, window: tauri::Window) -> Result<(), ErrorDto> {
-    // The announcement banner is permanent chrome (always shown), so its height
-    // is baked into every page's base size — that way it never fights the update
-    // banner's dynamic ±height adjustment in the frontend.
+pub async fn resize_window(
+    page: String,
+    announcement_bar: Option<bool>,
+    window: tauri::Window,
+) -> Result<(), ErrorDto> {
+    // The announcement banner's height is part of every page's base size, so it
+    // never fights the update banner's dynamic ±height adjustment in the
+    // frontend. It can be closed for good once read, hence the flag — omitted
+    // means shown.
     const ANNOUNCEMENT_BAR: f64 = 28.0;
+    let bar = if announcement_bar.unwrap_or(true) {
+        ANNOUNCEMENT_BAR
+    } else {
+        0.0
+    };
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" => (350.0, 620.0 + ANNOUNCEMENT_BAR),
-        "login-enlarged" => (540.0, 780.0 + ANNOUNCEMENT_BAR),
-        "main" => (760.0, 530.0 + ANNOUNCEMENT_BAR),
-        "toolbox" => (750.0, 490.0 + ANNOUNCEMENT_BAR),
-        "web_launch" => (560.0, 640.0 + ANNOUNCEMENT_BAR),
+        "login" => (350.0, 620.0 + bar),
+        "login-enlarged" => (540.0, 780.0 + bar),
+        "main" => (760.0, 530.0 + bar),
+        "toolbox" => (750.0, 490.0 + bar),
+        "web_launch" => (560.0, 640.0 + bar),
         // Temporarily enlarged while the announcement overlay is open so the
         // wide notice card has room (restored to the page size on close).
         "announcement" => (640.0, 700.0),
