@@ -332,6 +332,8 @@ pub fn run() {
             commands::system::get_game_download_list,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
+            commands::system::onboarding_is_seen,
+            commands::system::onboarding_mark_seen,
             commands::system::resolve_app_close,
             commands::system::export_data,
             commands::system::open_import_dialog,

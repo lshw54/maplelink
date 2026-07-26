@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 import { useUpdateStore } from "../../lib/stores/update-store";
@@ -91,6 +92,12 @@ export function AboutTab() {
           </div>
         </div>
         <div className="flex-1" />
+        <button
+          onClick={() => useUiStore.setState({ onboardingOpen: true })}
+          className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-95"
+        >
+          {t("onboarding.reopen")}
+        </button>
         <button
           onClick={handleCheckUpdate}
           disabled={checking}

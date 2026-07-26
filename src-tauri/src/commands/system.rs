@@ -721,6 +721,37 @@ pub async fn resolve_app_close(action: String, app: tauri::AppHandle) -> Result<
     Ok(())
 }
 
+/// Whether the given onboarding guide version has already been finished.
+#[tauri::command]
+pub async fn onboarding_is_seen(id: String, app: tauri::AppHandle) -> Result<bool, ErrorDto> {
+    let dir = app.path().app_data_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get app data dir: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+    Ok(crate::services::announcement_service::is_onboarding_seen(
+        &dir, &id,
+    ))
+}
+
+/// Persist that the given onboarding guide version has been finished.
+#[tauri::command]
+pub async fn onboarding_mark_seen(id: String, app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    let dir = app.path().app_data_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get app data dir: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+    crate::services::announcement_service::mark_onboarding_seen(&dir, &id).map_err(|e| ErrorDto {
+        code: "SYS_ONBOARDING_SAVE_FAILED".to_string(),
+        message: e,
+        category: ErrorCategory::FileSystem,
+        details: None,
+    })
+}
+
 /// Whether the given announcement id has already been read-and-dismissed.
 #[tauri::command]
 pub async fn announcement_is_seen(id: String, app: tauri::AppHandle) -> Result<bool, ErrorDto> {

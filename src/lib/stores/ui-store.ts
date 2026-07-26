@@ -33,6 +33,8 @@ export interface UiState {
    * through without asking).
    */
   classicAccounts: ClassicAccountDto[] | null;
+  /** First-run guide is on screen. Also settable from the toolbox to replay it. */
+  onboardingOpen: boolean;
   /**
    * Persisted login view so QR form survives page switches. Empty string
    * means "not yet set this session" — LoginPage falls back to the user's
@@ -65,6 +67,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   classicMode: false,
   classicStatus: "idle",
   classicAccounts: null,
+  onboardingOpen: false,
   loginView: "",
   qrSessionId: null,
   qrData: null,

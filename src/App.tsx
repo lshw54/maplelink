@@ -11,10 +11,12 @@ import { UpdateDialog } from "./features/shared/UpdateDialog";
 import { Modal } from "./components/Modal";
 import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
 import { AnnouncementModal } from "./features/shared/AnnouncementModal";
+import { OnboardingModal } from "./features/shared/OnboardingModal";
 import { CloseDialog } from "./features/shared/CloseDialog";
 import { BeanfunRenameDialog } from "./features/shared/BeanfunRenameDialog";
 import { useErrorToastStore } from "./lib/stores/error-toast-store";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
+import { ONBOARDING_ID } from "./lib/onboarding";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -150,16 +152,28 @@ export function App() {
     setAnnouncementOpen(false);
     commands.resizeWindow(useUiStore.getState().currentPage).catch(() => {});
   };
+  // First-run guide. Queued rather than shown outright: the announcement is a
+  // mandatory read, and stacking two overlays would bury one of them.
+  const onboardingOpen = useUiStore((s) => s.onboardingOpen);
+  const [onboardingPending, setOnboardingPending] = useState(false);
+  const finishOnboarding = () => {
+    commands.onboardingMarkSeen(ONBOARDING_ID).catch(() => {});
+    useUiStore.setState({ onboardingOpen: false });
+  };
   useEffect(() => {
-    commands
-      .announcementIsSeen(ANNOUNCEMENT_ID)
-      .then((seen) => {
-        if (!seen) {
-          setAnnouncementForced(true);
-          openAnnouncementWindow();
-        }
-      })
-      .catch(() => {});
+    Promise.all([
+      commands.announcementIsSeen(ANNOUNCEMENT_ID).catch(() => true),
+      commands.onboardingIsSeen(ONBOARDING_ID).catch(() => true),
+    ]).then(([announcementSeen, guideSeen]) => {
+      if (!announcementSeen) {
+        setAnnouncementForced(true);
+        openAnnouncementWindow();
+      }
+      if (!guideSeen) {
+        if (announcementSeen) useUiStore.setState({ onboardingOpen: true });
+        else setOnboardingPending(true);
+      }
+    });
   }, []);
   const openAnnouncement = () => {
     setAnnouncementForced(false);
@@ -169,6 +183,10 @@ export function App() {
     commands.announcementMarkSeen(ANNOUNCEMENT_ID).catch(() => {});
     setAnnouncementForced(false);
     closeAnnouncementWindow();
+    if (onboardingPending) {
+      setOnboardingPending(false);
+      useUiStore.setState({ onboardingOpen: true });
+    }
   };
 
   // Close behaviour: when set to "ask", the backend intercepts the close and
@@ -399,6 +417,7 @@ export function App() {
           )}
         </div>
       )}
+      {onboardingOpen && <OnboardingModal onClose={finishOnboarding} />}
       {announcementOpen && (
         <AnnouncementModal
           forced={announcementForced}

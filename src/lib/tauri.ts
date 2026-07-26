@@ -173,6 +173,8 @@ export const commands = {
 
   // Announcement "seen" state (global; stored outside config.ini)
   announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),
+  onboardingIsSeen: (id: string) => invoke<boolean>("onboarding_is_seen", { id }),
+  onboardingMarkSeen: (id: string) => invoke("onboarding_mark_seen", { id }),
   announcementMarkSeen: (id: string) => invoke("announcement_mark_seen", { id }),
 
   // Window close behaviour ("quit" | "tray")
