@@ -44,9 +44,17 @@ export function OnboardingModal({ onClose }: OnboardingModalProps) {
         <h2 className="max-w-[420px] text-[15px] font-bold text-[var(--text)]">
           {t(`onboarding.${page.key}_title`)}
         </h2>
-        <p className="max-w-[420px] text-[12px] leading-relaxed text-text-dim">
-          {t(`onboarding.${page.key}_body`)}
-        </p>
+        {/* One point per line — a solid paragraph is what people skip. */}
+        <ul className="flex w-full max-w-[300px] flex-col gap-1.5 text-left">
+          {t(`onboarding.${page.key}_body`)
+            .split("\n")
+            .map((line) => (
+              <li key={line} className="flex items-start gap-2 text-[12px] leading-snug">
+                <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full bg-accent" />
+                <span className="text-text-dim">{line}</span>
+              </li>
+            ))}
+        </ul>
       </div>
 
       <div className="flex items-center justify-between gap-3 px-5 pb-5">
