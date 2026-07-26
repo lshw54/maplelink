@@ -406,6 +406,28 @@ pub async fn open_classic_login(
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
 
+    // A GamaPass classic login runs straight off the back of the GamaPass login
+    // window closing. Creating a webview while another one is still tearing down
+    // fails with ERROR_INVALID_STATE (0x8007139F) — and Tauri still hands back a
+    // window, just one with no webview inside, so every handler below then times
+    // out and nothing ever loads. Wait for those windows to actually be gone,
+    // then let the runtime settle.
+    let mut waited = false;
+    for _ in 0..30 {
+        let busy = ["gamepass-login", "web-login", "recaptcha_window"]
+            .iter()
+            .any(|l| app.get_webview_window(l).is_some());
+        if !busy {
+            break;
+        }
+        waited = true;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    if waited {
+        tracing::info!("classic: waited for a closing login webview before opening the portal");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
     // Seed the session's beanfun cookies so the HK SSO step skips re-login.
     let seed_cookies = cookie_native::cookies_from_jar(
         &ss.cookie_jar,
@@ -426,34 +448,48 @@ pub async fn open_classic_login(
         details: None,
     })?;
 
-    let win = WebviewWindowBuilder::new(
-        &app,
-        label,
-        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
-    )
-    .title("新楓之谷：經典版")
-    .inner_size(1024.0, 720.0)
-    .min_inner_size(400.0, 300.0)
-    .decorations(true)
-    .resizable(true)
-    .center()
-    .visible(false)
-    .data_directory(data_dir)
-    .user_agent(WEBVIEW_USER_AGENT)
-    .initialization_script(&init_script)
-    .build()
-    .map_err(|e| ErrorDto {
-        code: "SYS_POPUP_FAILED".to_string(),
-        message: format!("Failed to open classic portal: {e}"),
-        category: ErrorCategory::Process,
-        details: None,
-    })?;
+    let build_portal = |data_dir: std::path::PathBuf| {
+        WebviewWindowBuilder::new(
+            &app,
+            label,
+            tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+        )
+        .title("新楓之谷：經典版")
+        .inner_size(1024.0, 720.0)
+        .min_inner_size(400.0, 300.0)
+        .decorations(true)
+        .resizable(true)
+        .center()
+        .visible(false)
+        .data_directory(data_dir)
+        .user_agent(WEBVIEW_USER_AGENT)
+        .initialization_script(&init_script)
+        .build()
+        .map_err(|e| ErrorDto {
+            code: "SYS_POPUP_FAILED".to_string(),
+            message: format!("Failed to open classic portal: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })
+    };
 
+    let mut win = build_portal(data_dir.clone())?;
+
+    // Cookie seeding talks to the webview over COM, so it failing is how a
+    // window-without-a-webview shows up (webview creation is logged by the
+    // runtime but still yields a window). Rebuild once rather than run the whole
+    // flow against a dead window and time out 30s later.
+    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+        tracing::warn!("classic portal: cookie seeding failed ({e}) — rebuilding the window");
+        let _ = win.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        win = build_portal(data_dir)?;
+        if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+            tracing::warn!("classic portal: cookie seeding failed again: {e}");
+        }
+    }
     if let Err(e) = cookie_native::register_new_window_handler(&win) {
         tracing::warn!("classic portal: NewWindowRequested handler failed: {e}");
-    }
-    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
-        tracing::warn!("classic portal: native cookie seeding failed: {e}");
     }
 
     // Intercept the portal's own ngm:// launch: cancel WebView2's prompt and start
