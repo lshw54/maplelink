@@ -26,7 +26,7 @@ export interface UiState {
    * Classic launch progress, shown as an overlay after a classic login since the
    * flow runs in a hidden window with no page of its own.
    */
-  classicStatus: "idle" | "launching" | "launched" | "failed";
+  classicStatus: "idle" | "launching" | "launched" | "failed" | "needs_login";
   /**
    * GamaPass game accounts awaiting a pick. Set when the classic sign-in offers
    * more than one; null the rest of the time (a single account goes straight

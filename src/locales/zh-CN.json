@@ -38,6 +38,7 @@
   "login.classic_launching": "正在启动经典版…",
   "login.classic_launched": "已启动经典版，请切换至游戏窗口",
   "login.classic_launch_failed": "自动启动失败。已打开经典版入口，请在该窗口手动启动（需已安装 Nexon Game Manager）。",
+  "login.classic_needs_login": "请在刚打开的经典版窗口中登录。经典版与正式服是分开登录的，登录后会自动启动游戏。",
   "login.classic_pick_account_title": "选择游戏账号",
   "login.classic_pick_account_hint": "此 GamaPass 账号下有多个游戏账号，请选择要用来登录经典版的一个。",
   "login.username": "账号",

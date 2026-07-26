@@ -33,6 +33,12 @@ const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/lo
 /// guide (i.e. Nexon Game Manager isn't installed), so the poller can fail fast.
 const MISSING_MARKER: &str = "NGMMISSING";
 
+/// Title marker for "this needs a human to sign in". Classic on TW is a separate
+/// login from the regular server — signing in there does not carry over — so the
+/// portal can legitimately land on a password form. Revealing it immediately
+/// beats hiding a login prompt behind a spinner until it times out.
+const LOGIN_MARKER: &str = "NEEDLOGIN";
+
 /// Injected on every navigation. On the OTT init page it clicks the right login
 /// button (HK beanfun vs GamePass) to drive the SSO; on GamaPass's game-account
 /// chooser it either auto-continues (single account) or hands the list to the app
@@ -49,6 +55,7 @@ fn auto_login_script(region: Region) -> String {
         r#"
 (function () {{
   var clicked = false, flagged = false, reported = false, chosen = false;
+  var needsLogin = false;
 
   function radios() {{
     return [].slice.call(document.querySelectorAll('input[type=radio][name=account]'));
@@ -99,6 +106,11 @@ fn auto_login_script(region: Region) -> String {
       if (window.__TAURI_INTERNALS__) {{
         window.__TAURI_INTERNALS__.invoke('classic_accounts_found', {{ accounts: list }});
       }}
+    }} else if (document.querySelector('input[type=password]')) {{
+      // A real password field is on screen, so the session didn't carry.
+      // Flag on the field itself, never on the URL: the sign-in hops
+      // redirect straight through when there is a session to reuse.
+      if (!needsLogin) {{ needsLogin = true; document.title = 'NEEDLOGIN'; }}
     }} else if (href.indexOf('maplestoryclassic.beanfun.com/Main') !== -1) {{
       if (!flagged &&
           (document.getElementById('ngmBtnStart') ||
@@ -547,6 +559,7 @@ pub async fn open_classic_login(
         let mut ticks: u32 = 0;
         let mut waiting_ticks: u32 = 0;
         let mut revealed = false;
+        let mut manual_login = false;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             let Ok(title) = win.title() else {
@@ -561,6 +574,18 @@ pub async fn open_classic_login(
                 let _ = win.show();
                 let _ = win.set_focus();
                 return;
+            }
+            // Classic wants a sign-in of its own (on TW it is a separate login
+            // from the regular server, so this is normal, not a failure). Show
+            // the portal at once and let the user finish it there — the launch
+            // carries on from this same loop afterwards.
+            if title == LOGIN_MARKER && !manual_login {
+                manual_login = true;
+                revealed = true;
+                tracing::info!("classic: portal is asking for a sign-in — revealing it");
+                let _ = win.app_handle().emit("classic-needs-login", ());
+                let _ = win.show();
+                let _ = win.set_focus();
             }
             match flag.load(Ordering::SeqCst) {
                 LAUNCHED => {
@@ -581,7 +606,9 @@ pub async fn open_classic_login(
             }
             // The account chooser is up: hold the launch countdown, the user is
             // deciding. Only the (much longer) waiting budget ticks down.
-            if AWAITING_ACCOUNT.load(Ordering::SeqCst) {
+            // Both "a human is typing" states draw on the same long allowance
+            // rather than the launch countdown.
+            if manual_login || AWAITING_ACCOUNT.load(Ordering::SeqCst) {
                 waiting_ticks += 1;
                 if waiting_ticks >= AWAIT_TICKS {
                     break;

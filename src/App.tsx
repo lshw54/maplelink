@@ -126,6 +126,9 @@ export function App() {
       listen<ClassicAccountDto[]>("classic-select-account", (e) =>
         useUiStore.setState({ classicAccounts: e.payload }),
       ),
+      // Classic needs its own sign-in (separate from the regular server on TW).
+      // Its window is now on screen, so point the user at it.
+      listen("classic-needs-login", () => useUiStore.setState({ classicStatus: "needs_login" })),
     ];
     return () => subs.forEach((s) => s.then((un) => un()));
   }, []);
@@ -366,6 +369,7 @@ export function App() {
             {classicStatus === "launching" && t("login.classic_launching")}
             {classicStatus === "launched" && `✓ ${t("login.classic_launched")}`}
             {classicStatus === "failed" && t("login.classic_launch_failed")}
+            {classicStatus === "needs_login" && t("login.classic_needs_login")}
           </div>
           {classicStatus !== "launching" && (
             <button
