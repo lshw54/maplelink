@@ -1,9 +1,13 @@
 {
   "identifier": "classic-remote",
-  "description": "Allow the classic portal window's remote GamaPass page to report the game-account list (classic_accounts_found). Required because login.beanfun.com is a remote origin.",
+  "description": "Allow the classic portal window's remote pages to report their state (classic_accounts_found / classic_needs_login / classic_ngm_missing). Required because beanfun and galaxy are remote origins.",
   "windows": ["classic-login"],
   "remote": {
-    "urls": ["https://*.beanfun.com", "https://login.beanfun.com"]
+    "urls": [
+      "https://*.beanfun.com",
+      "https://login.beanfun.com",
+      "https://galaxy.games.gamania.com"
+    ]
   },
   "permissions": ["core:default"]
 }

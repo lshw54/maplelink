@@ -828,6 +828,21 @@ pub fn classic_accounts_found(
     crate::services::classic_service::accounts_found(accounts, &app);
 }
 
+/// Reported by the classic portal when it puts a password form on screen —
+/// Classic on TW is a separate login from the regular server, so this is an
+/// expected step, not a failure. The portal window is revealed for the user.
+#[tauri::command]
+pub fn classic_needs_login() {
+    crate::services::classic_service::mark_needs_login();
+}
+
+/// Reported by the classic portal when it shows the "install Nexon Game
+/// Manager" guide instead of launching.
+#[tauri::command]
+pub fn classic_ngm_missing() {
+    crate::services::classic_service::mark_ngm_missing();
+}
+
 /// Apply the game account the user picked in the native dialog, resuming the
 /// GamaPass sign-in inside the classic portal window.
 #[tauri::command]

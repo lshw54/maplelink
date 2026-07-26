@@ -341,6 +341,8 @@ pub fn run() {
             commands::auth::classic_self_check,
             commands::auth::classic_accounts_found,
             commands::auth::classic_pick_account,
+            commands::auth::classic_needs_login,
+            commands::auth::classic_ngm_missing,
             commands::auth::gamepass_webview_done,
             commands::auth::open_regular_web_login,
             commands::auth::regular_web_login_done,

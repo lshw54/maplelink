@@ -29,16 +29,6 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// its own `ngm://` launch on arrival.
 const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/login/mstc?redirect_url=https://maplestoryclassic.beanfun.com/Main?af_click_id=";
 
-/// Title marker the injected script sets when the portal shows the NGM install
-/// guide (i.e. Nexon Game Manager isn't installed), so the poller can fail fast.
-const MISSING_MARKER: &str = "NGMMISSING";
-
-/// Title marker for "this needs a human to sign in". Classic on TW is a separate
-/// login from the regular server — signing in there does not carry over — so the
-/// portal can legitimately land on a password form. Revealing it immediately
-/// beats hiding a login prompt behind a spinner until it times out.
-const LOGIN_MARKER: &str = "NEEDLOGIN";
-
 /// Injected on every navigation. On the OTT init page it clicks the right login
 /// button (HK beanfun vs GamePass) to drive the SSO; on GamaPass's game-account
 /// chooser it either auto-continues (single account) or hands the list to the app
@@ -83,6 +73,12 @@ fn auto_login_script(region: Region) -> String {
   // Called from the app once the user picks in the native dialog.
   window.__mlPickClassicAccount = choose;
 
+  // Report state to the app over IPC. Setting document.title looks tempting but
+  // does not reach the native window title, so the app never sees it.
+  function report(cmd) {{
+    if (window.__TAURI_INTERNALS__) window.__TAURI_INTERNALS__.invoke(cmd);
+  }}
+
   function tick() {{
     var href = location.href;
     if (href.indexOf('/login/init/mstc/') !== -1) {{
@@ -110,13 +106,13 @@ fn auto_login_script(region: Region) -> String {
       // A real password field is on screen, so the session didn't carry.
       // Flag on the field itself, never on the URL: the sign-in hops
       // redirect straight through when there is a session to reuse.
-      if (!needsLogin) {{ needsLogin = true; document.title = 'NEEDLOGIN'; }}
+      if (!needsLogin) {{ needsLogin = true; report('classic_needs_login'); }}
     }} else if (href.indexOf('maplestoryclassic.beanfun.com/Main') !== -1) {{
       if (!flagged &&
           (document.getElementById('ngmBtnStart') ||
            document.getElementById('ngmInstallLayerClose'))) {{
         flagged = true;
-        document.title = 'NGMMISSING';
+        report('classic_ngm_missing');
       }}
     }}
   }}
@@ -140,6 +136,23 @@ pub struct ClassicAccount {
 /// exist at a time (the label is fixed and any previous one is destroyed first),
 /// so a single global is enough.
 static AWAITING_ACCOUNT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set by the portal when it puts a password form on screen, and when it shows
+/// the NGM install guide. Reported over IPC because a page's `document.title`
+/// never reaches the native window title, so polling `win.title()` for markers
+/// silently saw nothing.
+static NEEDS_LOGIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static NGM_MISSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The portal is asking for a sign-in of its own.
+pub fn mark_needs_login() {
+    NEEDS_LOGIN.store(true, Ordering::SeqCst);
+}
+
+/// The portal showed the "install Nexon Game Manager" guide.
+pub fn mark_ngm_missing() {
+    NGM_MISSING.store(true, Ordering::SeqCst);
+}
 
 /// Hand the GamaPass account list to the frontend and pause the launch timeout.
 /// Invoked from the injected script when the chooser lists more than one account.
@@ -563,6 +576,8 @@ pub async fn open_classic_login(
     // Hidden auto-launch: wait for the intercept to fire, then close (success) or
     // reveal for manual completion (failure / timeout).
     AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
+    NEEDS_LOGIN.store(false, Ordering::SeqCst);
+    NGM_MISSING.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         tracing::info!("classic portal running (hidden), waiting for launch");
         // Ticks are 500ms. The galaxy SSO → GamaPass → portal chain routinely
@@ -580,13 +595,13 @@ pub async fn open_classic_login(
         let mut manual_login = false;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let Ok(title) = win.title() else {
+            if win.title().is_err() {
                 return; // window gone
-            };
+            }
             // NGM isn't installed — the portal shows the official install guide.
             // Reveal it (so the user gets that guide) and report the failure now
             // instead of waiting out the timeout.
-            if title == MISSING_MARKER {
+            if NGM_MISSING.load(Ordering::SeqCst) {
                 tracing::warn!("classic: NGM install guide shown — not installed");
                 let _ = win.app_handle().emit("classic-launch-failed", ());
                 let _ = win.show();
@@ -597,7 +612,7 @@ pub async fn open_classic_login(
             // from the regular server, so this is normal, not a failure). Show
             // the portal at once and let the user finish it there — the launch
             // carries on from this same loop afterwards.
-            if title == LOGIN_MARKER && !manual_login {
+            if NEEDS_LOGIN.load(Ordering::SeqCst) && !manual_login {
                 manual_login = true;
                 revealed = true;
                 tracing::info!("classic: portal is asking for a sign-in — revealing it");
