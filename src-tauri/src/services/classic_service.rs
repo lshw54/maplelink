@@ -530,11 +530,19 @@ pub async fn open_classic_login(
     AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         tracing::info!("classic portal running (hidden), waiting for launch");
-        // 60 ticks (30s) of launch time, plus a separate 5-minute allowance that
-        // only burns while the user is picking a game account.
-        let mut ticks = 0;
-        let mut waiting_ticks = 0;
-        while ticks < 60 && waiting_ticks < 600 {
+        // Ticks are 500ms. The galaxy SSO → GamaPass → portal chain routinely
+        // takes well past half a minute, so stay hidden for a good while before
+        // giving up on it; revealing early only puts a half-loaded page in the
+        // user's face. After revealing we keep watching, because the portal often
+        // does fire its launch late — that has to end in success, not a stale
+        // "failed". A separate allowance covers time spent in the account picker.
+        const HIDDEN_TICKS: u32 = 180; // 90s before showing the portal
+        const LATE_TICKS: u32 = 240; // then 120s more, still watching
+        const AWAIT_TICKS: u32 = 600; // 5 min of the user picking an account
+        let mut ticks: u32 = 0;
+        let mut waiting_ticks: u32 = 0;
+        let mut revealed = false;
+        loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             let Ok(title) = win.title() else {
                 return; // window gone
@@ -551,6 +559,9 @@ pub async fn open_classic_login(
             }
             match flag.load(Ordering::SeqCst) {
                 LAUNCHED => {
+                    // Also the late path: a launch after the reveal replaces the
+                    // reported timeout with success and closes the portal.
+                    tracing::info!("classic: launch detected after {}s", ticks / 2);
                     let _ = win.app_handle().emit("classic-launched", ());
                     let _ = win.destroy();
                     return;
@@ -567,15 +578,30 @@ pub async fn open_classic_login(
             // deciding. Only the (much longer) waiting budget ticks down.
             if AWAITING_ACCOUNT.load(Ordering::SeqCst) {
                 waiting_ticks += 1;
-            } else {
-                ticks += 1;
+                if waiting_ticks >= AWAIT_TICKS {
+                    break;
+                }
+                continue;
+            }
+            ticks += 1;
+            if !revealed && ticks >= HIDDEN_TICKS {
+                revealed = true;
+                tracing::warn!("classic: no launch yet — revealing portal, still watching");
+                let _ = win.app_handle().emit("classic-launch-timeout", ());
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+            if ticks >= HIDDEN_TICKS + LATE_TICKS {
+                break;
             }
         }
-        tracing::warn!("classic: no launch within timeout — revealing portal");
         AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
-        let _ = win.app_handle().emit("classic-launch-timeout", ());
-        let _ = win.show();
-        let _ = win.set_focus();
+        if !revealed {
+            tracing::warn!("classic: gave up waiting — revealing portal");
+            let _ = win.app_handle().emit("classic-launch-timeout", ());
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
     });
 
     Ok(())
