@@ -398,9 +398,8 @@ export function MainPage() {
             {/* +86 accounts can't play classic — only relevant to the HK id-pass
                 path (a GamaPass session is TW). */}
             {showClassic && session?.region === "HK" && (
-              <p className="flex max-w-[220px] items-start gap-1.5 text-center text-[10px] leading-snug text-text-faint">
-                <span className="shrink-0">ℹ️</span>
-                <span>{t("login.classic_no_cn")}</span>
+              <p className="max-w-[220px] text-center text-[10px] leading-relaxed text-text-faint">
+                {t("login.classic_no_cn")}
               </p>
             )}
 
