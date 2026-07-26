@@ -331,8 +331,10 @@ export function MainPage() {
     <div className="flex h-full flex-col">
       <SessionTabs />
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Focus Side (40%) */}
-        <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6">
+        {/* Left: Focus Side (40%). The status bar below is absolutely placed, so
+            the centred column reserves its height — otherwise taller content
+            (e.g. the classic notice) pushes the logout button onto it. */}
+        <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6 pb-16">
           {/* Ghost icon bg */}
           <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
             <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
@@ -398,7 +400,7 @@ export function MainPage() {
             {/* +86 accounts can't play classic — only relevant to the HK id-pass
                 path (a GamaPass session is TW). */}
             {showClassic && session?.region === "HK" && (
-              <p className="max-w-[220px] text-center text-[10px] leading-relaxed text-text-faint">
+              <p className="-mt-1 max-w-[210px] text-center text-[10px] leading-snug text-text-faint">
                 {t("login.classic_no_cn")}
               </p>
             )}
