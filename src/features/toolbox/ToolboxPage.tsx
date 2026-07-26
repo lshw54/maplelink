@@ -12,10 +12,10 @@ type ToolboxTab = "tools" | "account_manager" | "settings" | "advanced" | "annou
 
 const TABS: { key: ToolboxTab; labelKey: string; icon: string }[] = [
   { key: "tools", labelKey: "toolbox.tabs.tools", icon: "🛠" },
+  { key: "announcements", labelKey: "toolbox.tabs.announcements", icon: "📢" },
   { key: "account_manager", labelKey: "toolbox.tabs.account_manager", icon: "👤" },
   { key: "settings", labelKey: "toolbox.tabs.settings", icon: "⚙" },
   { key: "advanced", labelKey: "toolbox.tabs.advanced", icon: "🔧" },
-  { key: "announcements", labelKey: "toolbox.tabs.announcements", icon: "📢" },
   { key: "about", labelKey: "toolbox.tabs.about", icon: "ℹ" },
 ];
 
