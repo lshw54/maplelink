@@ -423,6 +423,10 @@ pub async fn open_classic_login(
     } else {
         Some(state.require_session(&session_id).await?)
     };
+    // No session means no cookies to ride in on, so a sign-in is certain rather
+    // than something to detect: show the portal straight away instead of hiding
+    // a login form behind the launch spinner.
+    let needs_manual = ss.is_none();
     let label = "classic-login";
 
     // The portal offers both HK-beanfun and GamaPass sign-in; auto-click the one
@@ -565,6 +569,13 @@ pub async fn open_classic_login(
 
     let _ = win.eval(format!("window.location.href = '{CLASSIC_ENTRY_URL}';"));
 
+    if needs_manual {
+        tracing::info!("classic: no session — showing the portal for its own sign-in");
+        let _ = app.emit("classic-needs-login", ());
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+
     // Without interception the prompt can't be suppressed — reveal the window so
     // the user can complete the launch by hand.
     if !intercept_ok {
@@ -591,8 +602,8 @@ pub async fn open_classic_login(
         const AWAIT_TICKS: u32 = 600; // 5 min of the user picking an account
         let mut ticks: u32 = 0;
         let mut waiting_ticks: u32 = 0;
-        let mut revealed = false;
-        let mut manual_login = false;
+        let mut revealed = needs_manual;
+        let mut manual_login = needs_manual;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if win.title().is_err() {
