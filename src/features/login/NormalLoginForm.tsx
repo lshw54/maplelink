@@ -305,10 +305,10 @@ export function NormalLoginForm({
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col">
       {classicMode && (
-        <p className="mb-3 flex items-start gap-1.5 text-[11px] leading-snug text-text-dim">
+        <div className="mb-3 flex items-start gap-2 rounded-lg bg-[var(--surface)] px-2.5 py-2 text-[11px] leading-relaxed text-text-dim">
           <span className="shrink-0">ℹ️</span>
-          <span>{t("login.classic_no_cn")}</span>
-        </p>
+          <span className="min-w-0 flex-1">{t("login.classic_no_cn")}</span>
+        </div>
       )}
       {classicMode &&
         (classicCheck && !(classicCheck.ngmRegistered && classicCheck.ngmExeExists) ? (
@@ -321,9 +321,9 @@ export function NormalLoginForm({
             <button
               type="button"
               onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
-              className="shrink-0 rounded-md bg-[var(--danger)] px-2 py-1 font-semibold text-white transition-opacity hover:opacity-90"
+              className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--danger)] px-2.5 py-1 font-bold text-white transition-opacity hover:opacity-90"
             >
-              {t("login.classic_download")}
+              ⬇ {t("login.classic_download")}
             </button>
           </div>
         ) : (
@@ -626,17 +626,17 @@ export function NormalLoginForm({
         )}
       </div>
 
-      {/* Classic also accepts GamePass (TW) sign-in, reusing the regular flow */}
+      {/* TW GamaPass classic sign-in. Unlike HK, TW keeps Classic and the regular
+          server on separate logins, so this deliberately does NOT run the regular
+          GamaPass flow — it opens the classic portal and signs in there. */}
       {classicMode && (
         <button
           type="button"
           onClick={() => {
-            // GamePass OAuth is gated to TW; classic reuses it, so switch the
-            // region to TW for the flow. The portal keys off the session region.
-            commands.setConfig("region", "TW").catch(() => {});
-            const cfg = useConfigStore.getState().config;
-            if (cfg) useConfigStore.setState({ config: { ...cfg, region: "TW" } });
-            onGamePass();
+            useUiStore.setState({ classicStatus: "launching" });
+            commands.openClassicLogin("").catch(() => {
+              useUiStore.setState({ classicStatus: "failed" });
+            });
           }}
           disabled={isLoading}
           className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-[var(--surface)] px-5 py-2.5 text-[12px] font-semibold text-text-dim transition-all hover:border-accent hover:text-accent active:scale-95 disabled:opacity-40"
@@ -735,31 +735,30 @@ export function NormalLoginForm({
               {classicCheck?.webview2Version ?? t("login.check_unknown")}
             </span>
           </div>
-          <p className="flex items-start gap-1.5 pt-0.5 text-[11px] leading-snug text-text-dim">
+          <div className="mt-1 flex items-start gap-2 rounded-md bg-[var(--surface)] px-2.5 py-2 text-[11px] leading-relaxed text-text-dim">
             <span className="shrink-0">ℹ️</span>
-            <span>{t("login.classic_no_cn")}</span>
-          </p>
+            <span className="min-w-0 flex-1">{t("login.classic_no_cn")}</span>
+          </div>
           {!classicCheck?.ngmRegistered && (
             <div className="mt-1 flex flex-col gap-2 rounded-md bg-[rgba(234,179,8,0.08)] px-2.5 py-2">
               <p className="text-[11px] leading-relaxed text-yellow-500">
                 {t("login.check_ngm_missing")}
               </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
-                  className="rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
-                >
-                  {t("login.classic_download")}
-                </button>
-                <button
-                  type="button"
-                  onClick={pickNgmPath}
-                  className="rounded-md border border-border px-3 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
-                >
-                  {t("login.classic_manual_path")}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[12px] font-bold text-white shadow-[0_2px_10px_var(--accent-glow)] transition-opacity hover:opacity-90"
+              >
+                ⬇ {t("login.classic_download")}
+                <span className="text-[10px] opacity-80">↗</span>
+              </button>
+              <button
+                type="button"
+                onClick={pickNgmPath}
+                className="w-full rounded-md border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+              >
+                {t("login.classic_manual_path")}
+              </button>
             </div>
           )}
           <div className="flex justify-end gap-2 pt-1">

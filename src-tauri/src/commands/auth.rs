@@ -817,6 +817,39 @@ pub async fn classic_self_check(
     Ok(crate::services::classic_service::self_check(&manual))
 }
 
+/// Reported by the classic portal's init script when GamaPass asks which game
+/// account to sign in with and there is more than one to choose from. Hands the
+/// list to the frontend, which shows a native picker.
+#[tauri::command]
+pub fn classic_accounts_found(
+    accounts: Vec<crate::services::classic_service::ClassicAccount>,
+    app: tauri::AppHandle,
+) {
+    crate::services::classic_service::accounts_found(accounts, &app);
+}
+
+/// Reported by the classic portal when it puts a password form on screen —
+/// Classic on TW is a separate login from the regular server, so this is an
+/// expected step, not a failure. The portal window is revealed for the user.
+#[tauri::command]
+pub fn classic_needs_login() {
+    crate::services::classic_service::mark_needs_login();
+}
+
+/// Reported by the classic portal when it shows the "install Nexon Game
+/// Manager" guide instead of launching.
+#[tauri::command]
+pub fn classic_ngm_missing() {
+    crate::services::classic_service::mark_ngm_missing();
+}
+
+/// Apply the game account the user picked in the native dialog, resuming the
+/// GamaPass sign-in inside the classic portal window.
+#[tauri::command]
+pub fn classic_pick_account(value: String, app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    crate::services::classic_service::pick_account(&value, &app)
+}
+
 /// Called by the GamePass webview init script when login completes.
 ///
 /// `web_token` is the JS `document.cookie` value, only useful as a fallback

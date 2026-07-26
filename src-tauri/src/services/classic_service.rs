@@ -29,15 +29,13 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// its own `ngm://` launch on arrival.
 const CLASSIC_ENTRY_URL: &str = "https://galaxy.games.gamania.com/webapi/view/login/mstc?redirect_url=https://maplestoryclassic.beanfun.com/Main?af_click_id=";
 
-/// Title marker the injected script sets when the portal shows the NGM install
-/// guide (i.e. Nexon Game Manager isn't installed), so the poller can fail fast.
-const MISSING_MARKER: &str = "NGMMISSING";
-
 /// Injected on every navigation. On the OTT init page it clicks the right login
-/// button (HK beanfun vs GamePass) to drive the SSO; on the portal Main page it
-/// watches for the NGM install guide (which appears instead of the launch when
-/// NGM is missing) and flags it via the title. A no-op elsewhere.
-fn auto_login_script(region: Region) -> String {
+/// button (HK beanfun vs GamePass) to drive the SSO; on GamaPass's game-account
+/// chooser it either auto-continues (single account) or hands the list to the app
+/// for a native picker; on the portal Main page it watches for the NGM install
+/// guide (which appears instead of the launch when NGM is missing) and flags it
+/// via the title. A no-op elsewhere.
+fn auto_login_script(region: Region, always_pick: bool) -> String {
     // HK accounts use the gamania (HK) button; TW / GamePass accounts use Gama Pass.
     let selector = match region {
         Region::HK => ".btnLogin-beanfun",
@@ -46,7 +44,42 @@ fn auto_login_script(region: Region) -> String {
     format!(
         r#"
 (function () {{
-  var clicked = false, flagged = false;
+  var alwaysPick = {always_pick};
+  var clicked = false, flagged = false, reported = false, chosen = false;
+  var needsLogin = false;
+
+  function radios() {{
+    return [].slice.call(document.querySelectorAll('input[type=radio][name=account]'));
+  }}
+
+  // The chooser is a JS-driven page: tick the radio, then press 繼續. Both are
+  // real clicks so the page's own handlers run.
+  function choose(value) {{
+    var rs = radios();
+    for (var i = 0; i < rs.length; i++) {{
+      if (rs[i].value !== value) continue;
+      chosen = true;
+      rs[i].click();
+      setTimeout(function () {{
+        var btns = [].slice.call(
+          document.querySelectorAll('.bottom-fixed-action-area a.ui-btn, a.ui-btn')
+        );
+        var go = btns[btns.length - 1];
+        if (go) go.click();
+      }}, 150);
+      return true;
+    }}
+    return false;
+  }}
+  // Called from the app once the user picks in the native dialog.
+  window.__mlPickClassicAccount = choose;
+
+  // Report state to the app over IPC. Setting document.title looks tempting but
+  // does not reach the native window title, so the app never sees it.
+  function report(cmd) {{
+    if (window.__TAURI_INTERNALS__) window.__TAURI_INTERNALS__.invoke(cmd);
+  }}
+
   function tick() {{
     var href = location.href;
     if (href.indexOf('/login/init/mstc/') !== -1) {{
@@ -54,12 +87,35 @@ fn auto_login_script(region: Region) -> String {
         var btn = document.querySelector('{selector}');
         if (btn) {{ btn.click(); clicked = true; }}
       }}
+    }} else if (href.indexOf('/GamaPassLogin/SelectGameAccount') !== -1) {{
+      if (chosen) return;
+      var rs = radios();
+      if (!rs.length) return;
+      // One account is not a choice — go straight through, no dialog. With
+      // debug logging on it is shown anyway, so the picker can be seen (and the
+      // IPC that feeds it verified) without a second game account.
+      if (rs.length === 1 && !alwaysPick) {{ choose(rs[0].value); return; }}
+      if (reported) return;
+      reported = true;
+      var list = rs.map(function (r) {{
+        var lbl = r.closest('label');
+        var name = ((lbl && lbl.innerText) || '').trim();
+        return {{ value: r.value, label: name || r.value }};
+      }});
+      if (window.__TAURI_INTERNALS__) {{
+        window.__TAURI_INTERNALS__.invoke('classic_accounts_found', {{ accounts: list }});
+      }}
+    }} else if (document.querySelector('input[type=password]')) {{
+      // A real password field is on screen, so the session didn't carry.
+      // Flag on the field itself, never on the URL: the sign-in hops
+      // redirect straight through when there is a session to reuse.
+      if (!needsLogin) {{ needsLogin = true; report('classic_needs_login'); }}
     }} else if (href.indexOf('maplestoryclassic.beanfun.com/Main') !== -1) {{
       if (!flagged &&
           (document.getElementById('ngmBtnStart') ||
            document.getElementById('ngmInstallLayerClose'))) {{
         flagged = true;
-        document.title = 'NGMMISSING';
+        report('classic_ngm_missing');
       }}
     }}
   }}
@@ -67,6 +123,72 @@ fn auto_login_script(region: Region) -> String {
 }})();
 "#
     )
+}
+
+/// A selectable GamaPass game account from the chooser page.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClassicAccount {
+    /// The radio's value — what the page POSTs as `OpidSelAccount`.
+    pub value: String,
+    /// Display name shown next to the radio.
+    pub label: String,
+}
+
+/// Set while the user is choosing a game account in the native dialog, so the
+/// launch poll doesn't age out waiting for a human. Only one classic window can
+/// exist at a time (the label is fixed and any previous one is destroyed first),
+/// so a single global is enough.
+static AWAITING_ACCOUNT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set by the portal when it puts a password form on screen, and when it shows
+/// the NGM install guide. Reported over IPC because a page's `document.title`
+/// never reaches the native window title, so polling `win.title()` for markers
+/// silently saw nothing.
+static NEEDS_LOGIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static NGM_MISSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The portal is asking for a sign-in of its own.
+pub fn mark_needs_login() {
+    NEEDS_LOGIN.store(true, Ordering::SeqCst);
+}
+
+/// The portal showed the "install Nexon Game Manager" guide.
+pub fn mark_ngm_missing() {
+    NGM_MISSING.store(true, Ordering::SeqCst);
+}
+
+/// Hand the GamaPass account list to the frontend and pause the launch timeout.
+/// Invoked from the injected script when the chooser lists more than one account.
+pub fn accounts_found(accounts: Vec<ClassicAccount>, app: &tauri::AppHandle) {
+    tracing::info!(
+        "classic: GamaPass chooser listed {} accounts",
+        accounts.len()
+    );
+    AWAITING_ACCOUNT.store(true, Ordering::SeqCst);
+    let _ = app.emit("classic-select-account", accounts);
+}
+
+/// Apply the user's pick in the classic window and resume the launch timeout.
+pub fn pick_account(value: &str, app: &tauri::AppHandle) -> Result<(), ErrorDto> {
+    let win = app
+        .get_webview_window("classic-login")
+        .ok_or_else(|| ErrorDto {
+            code: "CLASSIC_WINDOW_GONE".to_string(),
+            message: "The classic portal window is no longer open".to_string(),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+    // serde_json renders a correctly escaped JS string literal for any value.
+    let literal = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+    win.eval(format!("window.__mlPickClassicAccount({literal});"))
+        .map_err(|e| ErrorDto {
+            code: "CLASSIC_PICK_FAILED".to_string(),
+            message: format!("Failed to select the game account: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })?;
+    AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
+    Ok(())
 }
 
 // Launch state shared between the intercept callback and the poll task.
@@ -293,37 +415,85 @@ pub async fn open_classic_login(
 ) -> Result<(), ErrorDto> {
     use tauri::WebviewWindowBuilder;
 
-    let ss = state.require_session(&session_id).await?;
+    // TW keeps Classic and the regular server on separate logins — signing in to
+    // one gets you nowhere on the other — so a TW classic sign-in starts from
+    // scratch on the galaxy side. Called with no session id we seed nothing and
+    // let the portal run its own GamaPass flow (the password form is detected and
+    // the window revealed). HK is interoperable, so it keeps passing its session
+    // and riding the SSO through without interaction.
+    let ss = if session_id.is_empty() {
+        None
+    } else {
+        Some(state.require_session(&session_id).await?)
+    };
+    // No session means no cookies to ride in on, so a sign-in is certain rather
+    // than something to detect: show the portal straight away instead of hiding
+    // a login form behind the launch spinner.
+    let needs_manual = ss.is_none();
     let label = "classic-login";
 
-    // The portal offers both HK-beanfun and GamePass sign-in; auto-click the one
-    // matching this session's region so the SSO completes without interaction.
-    let region = ss
-        .session
-        .read()
-        .await
-        .as_ref()
-        .map(|s| s.region.clone())
-        .unwrap_or(Region::HK);
-    let init_script = auto_login_script(region);
+    // The portal offers both HK-beanfun and GamaPass sign-in; auto-click the one
+    // matching this session's region. Sessionless means the TW GamaPass path.
+    let region = match ss.as_ref() {
+        Some(ss) => ss
+            .session
+            .read()
+            .await
+            .as_ref()
+            .map(|s| s.region.clone())
+            .unwrap_or(Region::HK),
+        None => Region::TW,
+    };
+    let always_pick = state.config.read().await.debug_logging;
+    let init_script = auto_login_script(region, always_pick);
 
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
 
+    // A GamaPass classic login runs straight off the back of the GamaPass login
+    // window closing. Creating a webview while another one is still tearing down
+    // fails with ERROR_INVALID_STATE (0x8007139F) — and Tauri still hands back a
+    // window, just one with no webview inside, so every handler below then times
+    // out and nothing ever loads. Wait for those windows to actually be gone,
+    // then let the runtime settle.
+    let mut waited = false;
+    for _ in 0..30 {
+        let busy = ["gamepass-login", "web-login", "recaptcha_window"]
+            .iter()
+            .any(|l| app.get_webview_window(l).is_some());
+        if !busy {
+            break;
+        }
+        waited = true;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    if waited {
+        tracing::info!("classic: waited for a closing login webview before opening the portal");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
     // Seed the session's beanfun cookies so the HK SSO step skips re-login.
-    let seed_cookies = cookie_native::cookies_from_jar(
-        &ss.cookie_jar,
-        &[
-            "https://bfweb.hk.beanfun.com/",
-            "https://login.hk.beanfun.com/",
-            "https://beanfun.com/",
-            "https://login.beanfun.com/",
-            "https://tw.beanfun.com/",
-            "https://tw.newlogin.beanfun.com/",
-        ],
-    );
+    let seed_cookies = match ss.as_ref() {
+        None => Vec::new(),
+        Some(ss) => cookie_native::cookies_from_jar(
+            &ss.cookie_jar,
+            &[
+                "https://bfweb.hk.beanfun.com/",
+                "https://login.hk.beanfun.com/",
+                "https://beanfun.com/",
+                "https://login.beanfun.com/",
+                "https://tw.beanfun.com/",
+                "https://tw.newlogin.beanfun.com/",
+                // Classic's GamaPass button goes to openid.beanfun.com/login/index
+                // (clientid 17599671-…, redirecting to galaxy .../mstc/beanfun).
+                // Without this origin's cookies that hop starts logged out and the
+                // portal falls back to asking for the password again.
+                "https://openid.beanfun.com/",
+            ],
+        ),
+    };
 
     let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
         code: "SYS_PATH_ERROR".to_string(),
@@ -332,31 +502,47 @@ pub async fn open_classic_login(
         details: None,
     })?;
 
-    let win = WebviewWindowBuilder::new(
-        &app,
-        label,
-        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
-    )
-    .title("新楓之谷：經典版")
-    .inner_size(1024.0, 720.0)
-    .min_inner_size(400.0, 300.0)
-    .decorations(true)
-    .resizable(true)
-    .center()
-    .visible(false)
-    .data_directory(data_dir)
-    .user_agent(WEBVIEW_USER_AGENT)
-    .initialization_script(&init_script)
-    .build()
-    .map_err(|e| ErrorDto {
-        code: "SYS_POPUP_FAILED".to_string(),
-        message: format!("Failed to open classic portal: {e}"),
-        category: ErrorCategory::Process,
-        details: None,
-    })?;
+    let build_portal = |data_dir: std::path::PathBuf| {
+        WebviewWindowBuilder::new(
+            &app,
+            label,
+            tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+        )
+        .title("新楓之谷：經典版")
+        .inner_size(1024.0, 720.0)
+        .min_inner_size(400.0, 300.0)
+        .decorations(true)
+        .resizable(true)
+        .center()
+        .visible(false)
+        .data_directory(data_dir)
+        .user_agent(WEBVIEW_USER_AGENT)
+        .initialization_script(&init_script)
+        .build()
+        .map_err(|e| ErrorDto {
+            code: "SYS_POPUP_FAILED".to_string(),
+            message: format!("Failed to open classic portal: {e}"),
+            category: ErrorCategory::Process,
+            details: None,
+        })
+    };
 
+    let mut win = build_portal(data_dir.clone())?;
+
+    // This talks to the webview over COM, so it failing is how a
+    // window-without-a-webview shows up (webview creation is logged by the
+    // runtime but still yields a window). Rebuild once rather than run the whole
+    // flow against a dead window and time out much later. It doubles as the
+    // liveness probe for the sessionless path, where there are no cookies to
+    // seed and seeding would return Ok without touching the webview at all.
     if let Err(e) = cookie_native::register_new_window_handler(&win) {
-        tracing::warn!("classic portal: NewWindowRequested handler failed: {e}");
+        tracing::warn!("classic portal: webview looks dead ({e}) — rebuilding the window");
+        let _ = win.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        win = build_portal(data_dir)?;
+        if let Err(e) = cookie_native::register_new_window_handler(&win) {
+            tracing::warn!("classic portal: NewWindowRequested handler failed again: {e}");
+        }
     }
     if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
         tracing::warn!("classic portal: native cookie seeding failed: {e}");
@@ -387,6 +573,13 @@ pub async fn open_classic_login(
 
     let _ = win.eval(format!("window.location.href = '{CLASSIC_ENTRY_URL}';"));
 
+    if needs_manual {
+        tracing::info!("classic: no session — showing the portal for its own sign-in");
+        let _ = app.emit("classic-needs-login", ());
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+
     // Without interception the prompt can't be suppressed — reveal the window so
     // the user can complete the launch by hand.
     if !intercept_ok {
@@ -397,25 +590,56 @@ pub async fn open_classic_login(
 
     // Hidden auto-launch: wait for the intercept to fire, then close (success) or
     // reveal for manual completion (failure / timeout).
+    AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
+    NEEDS_LOGIN.store(false, Ordering::SeqCst);
+    NGM_MISSING.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         tracing::info!("classic portal running (hidden), waiting for launch");
-        for _ in 0..60 {
+        // Ticks are 500ms. The galaxy SSO → GamaPass → portal chain routinely
+        // takes well past half a minute, so stay hidden for a good while before
+        // giving up on it; revealing early only puts a half-loaded page in the
+        // user's face. After revealing we keep watching, because the portal often
+        // does fire its launch late — that has to end in success, not a stale
+        // "failed". A separate allowance covers time spent in the account picker.
+        const HIDDEN_TICKS: u32 = 180; // 90s before showing the portal
+        const LATE_TICKS: u32 = 240; // then 120s more, still watching
+        const AWAIT_TICKS: u32 = 600; // 5 min of the user picking an account
+        let mut ticks: u32 = 0;
+        let mut waiting_ticks: u32 = 0;
+        let mut revealed = needs_manual;
+        let mut manual_login = needs_manual;
+        loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let Ok(title) = win.title() else {
+            if win.title().is_err() {
                 return; // window gone
-            };
+            }
             // NGM isn't installed — the portal shows the official install guide.
             // Reveal it (so the user gets that guide) and report the failure now
             // instead of waiting out the timeout.
-            if title == MISSING_MARKER {
+            if NGM_MISSING.load(Ordering::SeqCst) {
                 tracing::warn!("classic: NGM install guide shown — not installed");
                 let _ = win.app_handle().emit("classic-launch-failed", ());
                 let _ = win.show();
                 let _ = win.set_focus();
                 return;
             }
+            // Classic wants a sign-in of its own (on TW it is a separate login
+            // from the regular server, so this is normal, not a failure). Show
+            // the portal at once and let the user finish it there — the launch
+            // carries on from this same loop afterwards.
+            if NEEDS_LOGIN.load(Ordering::SeqCst) && !manual_login {
+                manual_login = true;
+                revealed = true;
+                tracing::info!("classic: portal is asking for a sign-in — revealing it");
+                let _ = win.app_handle().emit("classic-needs-login", ());
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
             match flag.load(Ordering::SeqCst) {
                 LAUNCHED => {
+                    // Also the late path: a launch after the reveal replaces the
+                    // reported timeout with success and closes the portal.
+                    tracing::info!("classic: launch detected after {}s", ticks / 2);
                     let _ = win.app_handle().emit("classic-launched", ());
                     let _ = win.destroy();
                     return;
@@ -428,11 +652,36 @@ pub async fn open_classic_login(
                 }
                 _ => {}
             }
+            // The account chooser is up: hold the launch countdown, the user is
+            // deciding. Only the (much longer) waiting budget ticks down.
+            // Both "a human is typing" states draw on the same long allowance
+            // rather than the launch countdown.
+            if manual_login || AWAITING_ACCOUNT.load(Ordering::SeqCst) {
+                waiting_ticks += 1;
+                if waiting_ticks >= AWAIT_TICKS {
+                    break;
+                }
+                continue;
+            }
+            ticks += 1;
+            if !revealed && ticks >= HIDDEN_TICKS {
+                revealed = true;
+                tracing::warn!("classic: no launch yet — revealing portal, still watching");
+                let _ = win.app_handle().emit("classic-launch-timeout", ());
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+            if ticks >= HIDDEN_TICKS + LATE_TICKS {
+                break;
+            }
         }
-        tracing::warn!("classic: no launch within timeout — revealing portal");
-        let _ = win.app_handle().emit("classic-launch-timeout", ());
-        let _ = win.show();
-        let _ = win.set_focus();
+        AWAITING_ACCOUNT.store(false, Ordering::SeqCst);
+        if !revealed {
+            tracing::warn!("classic: gave up waiting — revealing portal");
+            let _ = win.app_handle().emit("classic-launch-timeout", ());
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
     });
 
     Ok(())

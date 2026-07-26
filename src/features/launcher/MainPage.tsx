@@ -18,9 +18,6 @@ export function MainPage() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
   const activeSessionId = useAuthStore((s) => s.activeSessionId);
-  const activeLoginMethod = useAuthStore((s) =>
-    s.activeSessionId ? s.sessions.get(s.activeSessionId)?.loginMethod : undefined,
-  );
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const region = useConfigStore((s) => s.config?.region ?? "HK");
@@ -77,10 +74,12 @@ export function MainPage() {
   // this same session — no re-login, so the regular session stays alive.
   const [classicGame, setClassicGame] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
-  // Classic can reuse this session only for HK (account/password) or TW GamePass.
-  // A TW account/password or QR session can't drive the classic SSO (the portal
-  // offers only HK-beanfun and GamePass sign-in), so it gets no switcher.
-  const canClassic = session?.region === "HK" || activeLoginMethod === "gamepass";
+  // HK only: one beanfun login covers both servers there, so this session can
+  // open Classic as-is. TW keeps them on separate logins — reusing a TW session
+  // just lands on another sign-in form, so offering the switch would promise
+  // something it can't deliver. TW players start Classic from the login page,
+  // which signs in on the classic side.
+  const canClassic = session?.region === "HK";
   const showClassic = classicGame && canClassic;
   const ngmReady = !!classicCheck && classicCheck.ngmRegistered && classicCheck.ngmExeExists;
 
@@ -332,8 +331,10 @@ export function MainPage() {
     <div className="flex h-full flex-col">
       <SessionTabs />
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Focus Side (40%) */}
-        <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6">
+        {/* Left: Focus Side (40%). The status bar below is absolutely placed, so
+            the centred column reserves its height — otherwise taller content
+            (e.g. the classic notice) pushes the logout button onto it. */}
+        <div className="relative flex w-[40%] shrink-0 flex-col items-center justify-center overflow-hidden p-6 pb-16">
           {/* Ghost icon bg */}
           <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.04] blur-[2px]">
             <img src="/MapleStory.ico" alt="" className="h-[160px] w-[160px]" draggable={false} />
@@ -399,9 +400,8 @@ export function MainPage() {
             {/* +86 accounts can't play classic — only relevant to the HK id-pass
                 path (a GamaPass session is TW). */}
             {showClassic && session?.region === "HK" && (
-              <p className="flex max-w-[220px] items-start gap-1.5 text-center text-[10px] leading-snug text-text-faint">
-                <span className="shrink-0">ℹ️</span>
-                <span>{t("login.classic_no_cn")}</span>
+              <p className="-mt-1 max-w-[210px] text-center text-[10px] leading-snug text-text-faint">
+                {t("login.classic_no_cn")}
               </p>
             )}
 

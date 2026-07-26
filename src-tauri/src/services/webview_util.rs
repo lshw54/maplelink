@@ -29,6 +29,10 @@ pub async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Ve
         "https://tw.beanfun.com".to_string(),
         "https://login.beanfun.com".to_string(),
         "https://tw.newlogin.beanfun.com".to_string(),
+        // The GamaPass OAuth hop lives here. Classic's GamaPass sign-in goes
+        // through the same origin, so without these its authorize step has no
+        // session and sends the user back to a password form.
+        "https://openid.beanfun.com".to_string(),
     ];
     let total = urls.len();
 

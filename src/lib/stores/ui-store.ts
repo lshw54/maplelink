@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
+import type { ClassicAccountDto } from "../types";
 
 export type Page = "login" | "main" | "toolbox" | "web_launch";
 export type ThemeMode = "system" | "dark" | "light";
@@ -25,7 +26,13 @@ export interface UiState {
    * Classic launch progress, shown as an overlay after a classic login since the
    * flow runs in a hidden window with no page of its own.
    */
-  classicStatus: "idle" | "launching" | "launched" | "failed";
+  classicStatus: "idle" | "launching" | "launched" | "failed" | "needs_login";
+  /**
+   * GamaPass game accounts awaiting a pick. Set when the classic sign-in offers
+   * more than one; null the rest of the time (a single account goes straight
+   * through without asking).
+   */
+  classicAccounts: ClassicAccountDto[] | null;
   /**
    * Persisted login view so QR form survives page switches. Empty string
    * means "not yet set this session" — LoginPage falls back to the user's
@@ -57,6 +64,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   addingSession: false,
   classicMode: false,
   classicStatus: "idle",
+  classicAccounts: null,
   loginView: "",
   qrSessionId: null,
   qrData: null,
