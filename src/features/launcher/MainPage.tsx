@@ -462,7 +462,9 @@ export function MainPage() {
                 <span className="font-semibold text-accent">
                   {t("launcher.beans")}: <b>{remainPoint}</b>
                 </span>
-                {remainPoint > 0 && (
+                {/* HK beans buy game points at 2.5 : 1. TW is 1 : 1, so the
+                    second figure would only repeat the first. */}
+                {(session?.region ?? region) === "HK" && remainPoint > 0 && (
                   <>
                     <span className="text-text-faint">·</span>
                     <span className="text-text-dim">
