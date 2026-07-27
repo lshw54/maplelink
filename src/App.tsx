@@ -11,10 +11,13 @@ import { UpdateDialog } from "./features/shared/UpdateDialog";
 import { Modal } from "./components/Modal";
 import { AnnouncementBanner } from "./features/shared/AnnouncementBanner";
 import { AnnouncementModal } from "./features/shared/AnnouncementModal";
+import { OnboardingModal } from "./features/shared/OnboardingModal";
 import { CloseDialog } from "./features/shared/CloseDialog";
 import { BeanfunRenameDialog } from "./features/shared/BeanfunRenameDialog";
 import { useErrorToastStore } from "./lib/stores/error-toast-store";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
+import { useConfigStore } from "./lib/stores/config-store";
+import { ONBOARDING_ID } from "./lib/onboarding";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -139,7 +142,18 @@ export function App() {
   }, [classicStatus]);
 
   // Announcement: forced-read on first launch, then a permanent reopen banner.
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const announcementOpen = useUiStore((s) => s.announcementOpen);
+  const setAnnouncementOpen = (open: boolean) => useUiStore.setState({ announcementOpen: open });
+  // Closed for good once read — the toolbox keeps every announcement readable,
+  // so this loses nothing. A new announcement id brings the banner back.
+  const bannerHidden = useConfigStore((s) => s.config?.announcementDismissedId) === ANNOUNCEMENT_ID;
+  const hideAnnouncementBanner = () => {
+    const cfg = useConfigStore.getState().config;
+    if (cfg)
+      useConfigStore.setState({ config: { ...cfg, announcementDismissedId: ANNOUNCEMENT_ID } });
+    commands.setConfig("announcement_dismissed_id", ANNOUNCEMENT_ID).catch(() => {});
+    commands.resizeWindow(useUiStore.getState().currentPage, false).catch(() => {});
+  };
   const [announcementForced, setAnnouncementForced] = useState(false);
   // Enlarge the window while the wide notice is open; restore to the page size.
   const openAnnouncementWindow = () => {
@@ -150,16 +164,30 @@ export function App() {
     setAnnouncementOpen(false);
     commands.resizeWindow(useUiStore.getState().currentPage).catch(() => {});
   };
+  // First-run guide. Queued rather than shown outright: the announcement is a
+  // mandatory read, and stacking two overlays would bury one of them.
+  const onboardingOpen = useUiStore((s) => s.onboardingOpen);
+  const [onboardingPending, setOnboardingPending] = useState(false);
+  const finishOnboarding = () => {
+    commands.onboardingMarkSeen(ONBOARDING_ID).catch(() => {});
+    useUiStore.setState({ onboardingOpen: false });
+  };
   useEffect(() => {
-    commands
-      .announcementIsSeen(ANNOUNCEMENT_ID)
-      .then((seen) => {
-        if (!seen) {
-          setAnnouncementForced(true);
-          openAnnouncementWindow();
-        }
-      })
-      .catch(() => {});
+    Promise.all([
+      commands.announcementIsSeen(ANNOUNCEMENT_ID).catch(() => true),
+      commands.onboardingIsSeen(ONBOARDING_ID).catch(() => true),
+    ]).then(([announcementSeen, guideSeen]) => {
+      if (!announcementSeen) {
+        setAnnouncementForced(true);
+        openAnnouncementWindow();
+      }
+      if (!guideSeen) {
+        if (announcementSeen) useUiStore.setState({ onboardingOpen: true });
+        else setOnboardingPending(true);
+      }
+    });
+    // Runs once on mount; the openers it calls are stable in practice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const openAnnouncement = () => {
     setAnnouncementForced(false);
@@ -169,6 +197,10 @@ export function App() {
     commands.announcementMarkSeen(ANNOUNCEMENT_ID).catch(() => {});
     setAnnouncementForced(false);
     closeAnnouncementWindow();
+    if (onboardingPending) {
+      setOnboardingPending(false);
+      useUiStore.setState({ onboardingOpen: true });
+    }
   };
 
   // Close behaviour: when set to "ask", the backend intercepts the close and
@@ -299,7 +331,9 @@ export function App() {
   return (
     <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
-      <AnnouncementBanner onOpen={openAnnouncement} />
+      {!bannerHidden && (
+        <AnnouncementBanner onOpen={openAnnouncement} onClose={hideAnnouncementBanner} />
+      )}
       {showBanner && (
         <div className="flex shrink-0 items-center justify-between bg-[rgba(232,162,58,0.12)] px-3 py-1.5 backdrop-blur-sm">
           <button
@@ -399,6 +433,7 @@ export function App() {
           )}
         </div>
       )}
+      {onboardingOpen && <OnboardingModal onClose={finishOnboarding} />}
       {announcementOpen && (
         <AnnouncementModal
           forced={announcementForced}

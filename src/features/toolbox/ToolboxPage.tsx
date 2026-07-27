@@ -6,11 +6,13 @@ import { AccountManagerTab } from "./AccountManagerTab";
 import { SettingsTab } from "./SettingsTab";
 import { AdvancedTab } from "./AdvancedTab";
 import { AboutTab } from "./AboutTab";
+import { AnnouncementsTab } from "./AnnouncementsTab";
 
-type ToolboxTab = "tools" | "account_manager" | "settings" | "advanced" | "about";
+type ToolboxTab = "tools" | "account_manager" | "settings" | "advanced" | "announcements" | "about";
 
 const TABS: { key: ToolboxTab; labelKey: string; icon: string }[] = [
   { key: "tools", labelKey: "toolbox.tabs.tools", icon: "🛠" },
+  { key: "announcements", labelKey: "toolbox.tabs.announcements", icon: "📢" },
   { key: "account_manager", labelKey: "toolbox.tabs.account_manager", icon: "👤" },
   { key: "settings", labelKey: "toolbox.tabs.settings", icon: "⚙" },
   { key: "advanced", labelKey: "toolbox.tabs.advanced", icon: "🔧" },
@@ -58,6 +60,7 @@ export function ToolboxPage() {
         {activeTab === "account_manager" && <AccountManagerTab />}
         {activeTab === "settings" && <SettingsTab />}
         {activeTab === "advanced" && <AdvancedTab />}
+        {activeTab === "announcements" && <AnnouncementsTab />}
         {activeTab === "about" && <AboutTab />}
       </div>
     </div>

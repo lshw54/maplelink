@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
 import type { ClassicAccountDto } from "../types";
+import { useConfigStore } from "./config-store";
+import { ANNOUNCEMENT_ID } from "../announcement";
+
+/** The announcement banner is chrome the backend sizes pages around. */
+function announcementBarShown(): boolean {
+  return useConfigStore.getState().config?.announcementDismissedId !== ANNOUNCEMENT_ID;
+}
 
 export type Page = "login" | "main" | "toolbox" | "web_launch";
 export type ThemeMode = "system" | "dark" | "light";
@@ -33,6 +40,10 @@ export interface UiState {
    * through without asking).
    */
   classicAccounts: ClassicAccountDto[] | null;
+  /** First-run guide is on screen. Also settable from the toolbox to replay it. */
+  onboardingOpen: boolean;
+  /** Announcement overlay is on screen. Openable from the toolbox archive. */
+  announcementOpen: boolean;
   /**
    * Persisted login view so QR form survives page switches. Empty string
    * means "not yet set this session" — LoginPage falls back to the user's
@@ -65,6 +76,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   classicMode: false,
   classicStatus: "idle",
   classicAccounts: null,
+  onboardingOpen: false,
+  announcementOpen: false,
   loginView: "",
   qrSessionId: null,
   qrData: null,
@@ -73,14 +86,14 @@ export const useUiStore = create<UiState>((set, get) => ({
     // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.
     const prev = current !== "toolbox" && current !== "web_launch" ? current : get().previousPage;
     set({ currentPage: page, previousPage: prev });
-    commands.resizeWindow(page).catch((e) => {
+    commands.resizeWindow(page, announcementBarShown()).catch((e) => {
       commands.logFrontendError("warn", "ui-store", `resize failed for ${page}: ${e}`);
     });
   },
   goBack: () => {
     const prev = get().previousPage;
     set({ currentPage: prev });
-    commands.resizeWindow(prev).catch((e) => {
+    commands.resizeWindow(prev, announcementBarShown()).catch((e) => {
       commands.logFrontendError("warn", "ui-store", `resize failed for ${prev}: ${e}`);
     });
   },

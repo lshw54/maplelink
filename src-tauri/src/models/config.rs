@@ -61,6 +61,11 @@ pub struct AppConfig {
     /// exe be renamed to `Beanfun.exe` for accelerator compatibility. Default: false.
     #[serde(default)]
     pub beanfun_rename_dismissed: bool,
+    /// Id of the announcement whose banner the user permanently closed. Empty
+    /// means the banner shows. Publishing a new announcement (a new id) brings
+    /// it back; the toolbox keeps every announcement readable regardless.
+    #[serde(default)]
+    pub announcement_dismissed_id: String,
     /// Café / shared-PC mode: closing the app wipes all local data (saved
     /// accounts, display overrides, config, logs, and the webview session) so the
     /// next user starts clean. Default: false. Because the wipe removes
@@ -116,6 +121,7 @@ impl Default for AppConfig {
             close_behavior: CloseBehavior::Ask,
             hide_account_names: false,
             beanfun_rename_dismissed: false,
+            announcement_dismissed_id: String::new(),
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,

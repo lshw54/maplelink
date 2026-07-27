@@ -16,6 +16,11 @@ const FILE: &str = "announcement.json";
 struct AnnouncementState {
     #[serde(default)]
     seen_id: Option<String>,
+    /// Which onboarding guide version has been finished. Kept beside the
+    /// announcement rather than in `config.ini` for the same reason — a guide
+    /// meant to be seen once shouldn't be dismissible by editing a text file.
+    #[serde(default)]
+    onboarding_id: Option<String>,
 }
 
 fn read_state(dir: &Path) -> AnnouncementState {
@@ -32,10 +37,26 @@ pub fn is_seen(dir: &Path, id: &str) -> bool {
 
 /// Persist that the given announcement id has been read-and-dismissed.
 pub fn mark_seen(dir: &Path, id: &str) -> Result<(), String> {
+    let mut state = read_state(dir);
+    state.seen_id = Some(id.to_string());
+    write_state(dir, &state)
+}
+
+/// Whether the given onboarding guide version has already been finished.
+pub fn is_onboarding_seen(dir: &Path, id: &str) -> bool {
+    read_state(dir).onboarding_id.as_deref() == Some(id)
+}
+
+/// Persist that the given onboarding guide version has been finished.
+pub fn mark_onboarding_seen(dir: &Path, id: &str) -> Result<(), String> {
+    let mut state = read_state(dir);
+    state.onboarding_id = Some(id.to_string());
+    write_state(dir, &state)
+}
+
+/// Write the whole state back, preserving the field the caller didn't touch.
+fn write_state(dir: &Path, state: &AnnouncementState) -> Result<(), String> {
     let _ = std::fs::create_dir_all(dir);
-    let state = AnnouncementState {
-        seen_id: Some(id.to_string()),
-    };
-    let json = serde_json::to_string(&state).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(state).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(FILE), json).map_err(|e| e.to_string())
 }
