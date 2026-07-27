@@ -453,5 +453,6 @@
   "onboarding.captcha_body": "會不會跳驗證，取決於你當下的網路環境分數\n這不是程式能控制的\n本程式是第三方登入器，部分防毒會誤判\n請自行評估是否使用",
   "announcement.hide_banner": "不再顯示這條公告橫幅",
   "toolbox.tabs.announcements": "公告",
-  "toolbox.announcements.empty": "暫時沒有公告"
+  "toolbox.announcements.empty": "暫時沒有公告",
+  "update.probing_mirrors": "正在測試下載速度…"
 }

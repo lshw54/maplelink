@@ -1,6 +1,6 @@
 //! Tauri commands for the auto-update system.
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::core::error::AppError;
 use crate::models::app_state::AppState;
@@ -41,7 +41,14 @@ pub async fn apply_update(
     use_proxy: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<String, ErrorDto> {
-    let url = update_service::get_download_url(&download_url, use_proxy.unwrap_or(false));
+    // Which route is quickest changes through the day, so measure now rather
+    // than trusting the mirror that happened to answer a probe at startup.
+    // Ticking the proxy box keeps GitHub itself out of the race.
+    let forced_proxy = use_proxy.unwrap_or(false);
+    let _ = app.emit("update-probing-mirrors", ());
+    let url =
+        update_service::fastest_download_url(&state.http_client, &download_url, !forced_proxy)
+            .await;
 
     let bytes = update_service::download_update_with_progress(&state.http_client, &url, &app)
         .await

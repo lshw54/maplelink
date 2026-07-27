@@ -87,6 +87,99 @@ async fn ensure_proxy_resolved(client: &reqwest::Client) {
     let _ = PROXY_CACHE.set(None);
 }
 
+/// Measure how fast `url` actually delivers bytes, by pulling the first slice of
+/// the real asset. Returns bytes/sec, or `None` if it never produced any data.
+///
+/// Reachability and throughput are different questions: a mirror can answer a
+/// HEAD instantly and then trickle the file. This asks the question that
+/// matters, on the file being downloaded.
+async fn measure_speed(client: &reqwest::Client, url: &str) -> Option<u64> {
+    use futures_util::StreamExt;
+
+    /// Enough of the file to see past connection setup, small enough that
+    /// probing every mirror stays cheap.
+    const PROBE_BYTES: u64 = 384 * 1024;
+    const PROBE_LIMIT: std::time::Duration = std::time::Duration::from_secs(4);
+
+    let started = std::time::Instant::now();
+    let response = client
+        .get(url)
+        .header("User-Agent", "MapleLink-Updater")
+        // Mirrors that ignore Range just start sending the whole file; the read
+        // loop below stops either way.
+        .header("Range", format!("bytes=0-{}", PROBE_BYTES - 1))
+        .timeout(PROBE_LIMIT)
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let mut got: u64 = 0;
+    let mut stream = response.bytes_stream();
+    // On timeout the read future is dropped and `got` keeps whatever arrived, so
+    // a slow mirror still scores rather than being discarded.
+    let _ = tokio::time::timeout(PROBE_LIMIT, async {
+        while let Some(Ok(chunk)) = stream.next().await {
+            got += chunk.len() as u64;
+            if got >= PROBE_BYTES {
+                break;
+            }
+        }
+    })
+    .await;
+
+    let secs = started.elapsed().as_secs_f64();
+    (got > 0 && secs > 0.0).then(|| (got as f64 / secs) as u64)
+}
+
+/// Pick the fastest way to fetch `url`, by racing the candidates against each
+/// other on the actual file.
+///
+/// Mirror speed swings by the hour, so the mirror that answered a probe at
+/// startup is no guide to which one will serve the download now. `direct_too`
+/// adds GitHub itself to the race — left out when the user explicitly asked for
+/// a proxy.
+pub async fn fastest_download_url(client: &reqwest::Client, url: &str, direct_too: bool) -> String {
+    let mut candidates: Vec<String> = Vec::new();
+    if direct_too {
+        candidates.push(url.to_string());
+    }
+    candidates.extend(PROXY_MIRRORS.iter().map(|m| format!("{m}{url}")));
+
+    let measured = futures_util::future::join_all(
+        candidates
+            .iter()
+            .map(|c| async move { (c.clone(), measure_speed(client, c).await) }),
+    )
+    .await;
+
+    let mut best: Option<(String, u64)> = None;
+    for (candidate, speed) in measured {
+        match speed {
+            Some(bps) => {
+                tracing::info!("mirror probe: {} KB/s — {candidate}", bps / 1024);
+                if best.as_ref().is_none_or(|(_, b)| bps > *b) {
+                    best = Some((candidate, bps));
+                }
+            }
+            None => tracing::debug!("mirror probe: no response — {candidate}"),
+        }
+    }
+
+    match best {
+        Some((candidate, bps)) => {
+            tracing::info!("downloading via the fastest route ({} KB/s)", bps / 1024);
+            candidate
+        }
+        None => {
+            tracing::warn!("no candidate responded to the speed probe; using the default route");
+            maybe_proxy_url(url)
+        }
+    }
+}
+
 /// Apply proxy prefix to a URL if needed.
 fn maybe_proxy_url(url: &str) -> String {
     match PROXY_CACHE.get() {

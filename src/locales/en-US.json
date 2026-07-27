@@ -453,5 +453,6 @@
   "onboarding.captcha_body": "Whether a bot check appears depends on your network's score\nThe app can't control that\nMapleLink is third-party, so some antivirus flags it\nJudge for yourself whether to use it",
   "announcement.hide_banner": "Hide this announcement banner",
   "toolbox.tabs.announcements": "Announcements",
-  "toolbox.announcements.empty": "No announcements yet"
+  "toolbox.announcements.empty": "No announcements yet",
+  "update.probing_mirrors": "Testing download speeds…"
 }

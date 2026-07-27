@@ -453,5 +453,6 @@
   "onboarding.captcha_body": "会不会跳验证，取决于你当下的网络环境分数\n这不是程序能控制的\n本程序是第三方登录器，部分杀毒会误判\n请自行评估是否使用",
   "announcement.hide_banner": "不再显示这条公告横幅",
   "toolbox.tabs.announcements": "公告",
-  "toolbox.announcements.empty": "暂时没有公告"
+  "toolbox.announcements.empty": "暂时没有公告",
+  "update.probing_mirrors": "正在测试下载速度…"
 }

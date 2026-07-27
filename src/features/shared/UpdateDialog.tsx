@@ -28,6 +28,9 @@ export function UpdateDialog({ update, onClose }: Props) {
   const store = useUpdateStore();
   const [needsProxy, setNeedsProxy] = useState(false);
   const [useProxy, setUseProxy] = useState(false);
+  // The speed race runs before the first byte arrives, so say so — otherwise
+  // the bar sits at zero for a few seconds and reads as a hang.
+  const [probing, setProbing] = useState(false);
   const [probeComplete, setProbeComplete] = useState(false);
 
   const isDownloading = store.status === "downloading";
@@ -53,11 +56,14 @@ export function UpdateDialog({ update, onClose }: Props) {
     const unlisten = listen<{ downloaded: number; total: number; speed: number }>(
       "update-download-progress",
       (event) => {
+        setProbing(false);
         store.updateProgress(event.payload.downloaded, event.payload.total, event.payload.speed);
       },
     );
+    const unlistenProbe = listen("update-probing-mirrors", () => setProbing(true));
     return () => {
       unlisten.then((f) => f());
+      unlistenProbe.then((f) => f());
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,13 +142,19 @@ export function UpdateDialog({ update, onClose }: Props) {
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-text-dim">
-              <span>
-                {formatBytes(store.downloaded)}
-                {store.total > 0 ? ` / ${formatBytes(store.total)}` : ""}
-                {" · "}
-                {percent}%
-              </span>
-              <span>{formatSpeed(store.speed)}</span>
+              {probing && store.downloaded === 0 ? (
+                <span>{t("update.probing_mirrors")}</span>
+              ) : (
+                <>
+                  <span>
+                    {formatBytes(store.downloaded)}
+                    {store.total > 0 ? ` / ${formatBytes(store.total)}` : ""}
+                    {" · "}
+                    {percent}%
+                  </span>
+                  <span>{formatSpeed(store.speed)}</span>
+                </>
+              )}
             </div>
             <div className="text-[10px] text-text-faint">
               {t("update.method")}:{" "}
