@@ -53,6 +53,7 @@ const KEY_MAP: Record<string, string> = {
   cafeMode: "cafe_mode",
   classicNgmPath: "classic_ngm_path",
   announcementDismissedId: "announcement_dismissed_id",
+  webviewViaProxy: "webview_via_proxy",
   defaultLoginView: "default_login_view",
   __reset__: "__reset__",
 };

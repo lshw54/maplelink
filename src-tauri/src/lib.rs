@@ -544,6 +544,13 @@ pub fn run() {
                 }
             });
 
+            // 5b. Loopback proxy for the webviews. Bound now so its port is
+            // known before any webview window is built; whether a window uses it
+            // is a per-window decision from config.
+            tauri::async_runtime::spawn(async {
+                services::local_proxy::start().await;
+            });
+
             // 6. Backend ping loop — keeps every logged-in session alive (~60s).
             let ping_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {

@@ -277,7 +277,7 @@ pub async fn open_recaptcha_helper_window(
     .center()
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .additional_browser_args(&crate::services::webview_util::browser_args(&app).await)
     .data_directory(data_dir)
     .initialization_script(&init_script)
     .build()
