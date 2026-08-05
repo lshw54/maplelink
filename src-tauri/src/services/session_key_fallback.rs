@@ -292,7 +292,7 @@ async fn fetch_session_key_via_webview2(
     .inner_size(320.0, 240.0)
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .additional_browser_args(&crate::services::webview_util::browser_args(app).await)
     .initialization_script(&init_script)
     .build()
     .map_err(|e| {

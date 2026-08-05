@@ -117,6 +117,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 cafe_mode: true,
                 classic_ngm_path: r"C:\NGM\ngm.exe".into(),
                 announcement_dismissed_id: String::new(),
+                webview_via_proxy: false,
                 default_login_view: DefaultLoginView::Qr,
             }
         },

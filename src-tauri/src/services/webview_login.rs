@@ -202,7 +202,7 @@ pub async fn open_gamepass_login_window(
     .center()
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .additional_browser_args(&crate::services::webview_util::browser_args(&app).await)
     .initialization_script(&init_script)
     .devtools(true);
 
@@ -576,7 +576,7 @@ pub async fn open_regular_web_login_window(
     .center()
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .additional_browser_args(&crate::services::webview_util::browser_args(&app).await)
     .data_directory(data_dir)
     .initialization_script(&init_script)
     .devtools(true)

@@ -49,6 +49,23 @@ export function AdvancedTab() {
         />
       </SettingRow>
 
+      {/* Route webview traffic through this process, for accelerator users */}
+      <SettingRow label={t("settings.webview_via_proxy")}>
+        <Toggle
+          checked={config?.webviewViaProxy ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "webview_via_proxy",
+              value: String(!config.webviewViaProxy),
+            });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.webview_via_proxy_desc")}
+      </p>
+
       {/* Skip play confirmation */}
       <SettingRow label={t("settings.skip_play_confirm")}>
         <Toggle
