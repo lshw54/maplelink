@@ -18,7 +18,13 @@ pub async fn browser_args(app: &tauri::AppHandle) -> String {
         Some(state) => state.config.read().await.webview_via_proxy,
         None => false,
     };
-    match wanted.then(crate::services::local_proxy::port).flatten() {
+    // Started here rather than at boot, so a user who leaves the setting off
+    // never has a listener on their machine at all.
+    let port = match wanted {
+        true => crate::services::local_proxy::start().await,
+        false => None,
+    };
+    match port {
         Some(port) => {
             format!("{BASE} --proxy-server=http://127.0.0.1:{port} --proxy-bypass-list=<-loopback>")
         }

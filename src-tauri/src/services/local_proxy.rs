@@ -12,6 +12,17 @@
 //! connection the accelerator sees is the one *this* process opens to beanfun.
 //! `CONNECT` is tunnelled byte-for-byte, so TLS is never touched, terminated, or
 //! inspected — we only move bytes.
+//!
+//! Scope, deliberately: the flag is per-WebView2-instance, so nothing outside
+//! this app is affected — no system proxy, no registry, no other browser. What
+//! loopback cannot do is tell processes apart, so anything else on the machine
+//! can reach this listener too. Two limits follow from that, and from this
+//! process running elevated:
+//!
+//! - It only listens while a window that uses it is being opened — a user who
+//!   leaves the setting off never has a listener at all.
+//! - It refuses to connect anywhere that isn't a public address, so it can't be
+//!   borrowed to reach `127.0.0.1` or LAN-only services.
 
 use std::sync::OnceLock;
 
@@ -98,7 +109,7 @@ async fn serve(mut client: TcpStream) -> std::io::Result<()> {
 
     if method.eq_ignore_ascii_case("CONNECT") {
         // Tunnel: reply, then shuttle bytes in both directions untouched.
-        let mut server = TcpStream::connect(with_default_port(target, 443)).await?;
+        let mut server = connect_public(&with_default_port(target, 443)).await?;
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
@@ -111,7 +122,7 @@ async fn serve(mut client: TcpStream) -> std::io::Result<()> {
     let Some((authority, path)) = split_absolute_url(target) else {
         return Ok(());
     };
-    let mut server = TcpStream::connect(with_default_port(&authority, 80)).await?;
+    let mut server = connect_public(&with_default_port(&authority, 80)).await?;
     let rewritten = text.replacen(target, &path, 1);
     server.write_all(rewritten.as_bytes()).await?;
     server.write_all(b"\r\n\r\n").await?;
@@ -121,6 +132,58 @@ async fn serve(mut client: TcpStream) -> std::io::Result<()> {
     }
     tokio::io::copy_bidirectional(&mut client, &mut server).await?;
     Ok(())
+}
+
+/// Connect to `authority`, but only over a public address.
+///
+/// The proxy is reachable by anything on this machine, so without this it could
+/// be asked to reach loopback or LAN services on the caller's behalf — with our
+/// privileges rather than theirs.
+async fn connect_public(authority: &str) -> std::io::Result<TcpStream> {
+    use std::io::{Error, ErrorKind};
+
+    let mut last = None;
+    for addr in tokio::net::lookup_host(authority).await? {
+        if !is_public(&addr.ip()) {
+            tracing::warn!("webview proxy: refusing non-public target {authority}");
+            continue;
+        }
+        match TcpStream::connect(addr).await {
+            Ok(stream) => return Ok(stream),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| Error::new(ErrorKind::PermissionDenied, "no public address")))
+}
+
+/// Whether an address is out on the internet, rather than this machine or the
+/// local network. `IpAddr::is_global` is still unstable, hence the long hand.
+fn is_public(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                // 100.64.0.0/10, carrier-grade NAT
+                || (v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1]))
+                // 0.0.0.0/8
+                || v4.octets()[0] == 0)
+        }
+        std::net::IpAddr::V6(v6) => {
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                // fc00::/7 unique-local, fe80::/10 link-local
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                // IPv4 mapped/compatible addresses get judged as IPv4
+                || v6.to_ipv4_mapped().is_some_and(|m| !is_public(&m.into())))
+        }
+    }
 }
 
 /// Offset of the blank line ending the request head, if it has arrived.
@@ -191,6 +254,29 @@ mod tests {
         // An IPv6 literal's own colons must not read as a port.
         assert_eq!(with_default_port("[::1]", 80), "[::1]:80");
         assert_eq!(with_default_port("[::1]:8080", 80), "[::1]:8080");
+    }
+
+    #[test]
+    fn only_public_addresses_count_as_reachable() {
+        for blocked in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "192.168.1.1",
+            "172.16.0.1",
+            "169.254.1.1",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            // An IPv4 loopback wearing an IPv6 costume is still loopback.
+            "::ffff:127.0.0.1",
+        ] {
+            assert!(!is_public(&blocked.parse().unwrap()), "{blocked}");
+        }
+        for allowed in ["1.1.1.1", "8.8.8.8", "104.16.0.1", "2606:4700::1111"] {
+            assert!(is_public(&allowed.parse().unwrap()), "{allowed}");
+        }
     }
 
     #[test]
