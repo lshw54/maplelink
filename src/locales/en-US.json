@@ -454,5 +454,7 @@
   "announcement.hide_banner": "Hide this announcement banner",
   "toolbox.tabs.announcements": "Announcements",
   "toolbox.announcements.empty": "No announcements yet",
-  "update.probing_mirrors": "Testing download speeds…"
+  "update.probing_mirrors": "Testing download speeds…",
+  "settings.webview_via_proxy": "VPN / accelerator fix",
+  "settings.webview_via_proxy_desc": "Web content such as the sign-in window doesn't connect through the app by default, so a per-process accelerator or split-tunnel VPN never covers it. Turn this on to route it through the app. Enabled automatically on a mainland-China address; turn it off if sign-in misbehaves."
 }

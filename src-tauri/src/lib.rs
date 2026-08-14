@@ -544,6 +544,16 @@ pub fn run() {
                 }
             });
 
+            // 5b. Behind a per-process accelerator the webviews fall outside
+            // the tunnel, so switch the workaround on for the users who need it
+            // rather than expecting them to find it. Once, and overridable.
+            let proxy_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(state) = proxy_app.try_state::<AppState>() {
+                    services::local_proxy::enable_for_china_once(&state).await;
+                }
+            });
+
             // 6. Backend ping loop — keeps every logged-in session alive (~60s).
             let ping_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {

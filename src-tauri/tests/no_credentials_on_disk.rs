@@ -122,6 +122,8 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 cafe_mode: false,
                 classic_ngm_path: String::new(),
                 announcement_dismissed_id: String::new(),
+                webview_via_proxy: false,
+                webview_proxy_auto_applied: false,
                 default_login_view: maplelink_lib::models::config::DefaultLoginView::Normal,
             }
         },

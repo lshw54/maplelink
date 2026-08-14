@@ -178,7 +178,7 @@ pub async fn open_gash_popup(
     .visible(false) // hidden until page loads
     .data_directory(data_dir)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args("--disable-blink-features=AutomationControlled --no-sandbox")
+    .additional_browser_args(&crate::services::webview_util::browser_args(&app).await)
     .initialization_script(format!("{init_script}{KEEP_LINKS_IN_WINDOW}"))
     .devtools(true)
     .build()

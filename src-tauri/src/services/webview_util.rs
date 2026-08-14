@@ -3,6 +3,35 @@
 /// User-Agent for WebView2 windows and HTTP requests.
 pub const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
 
+/// Browser flags for every webview window we open.
+///
+/// When the user has asked for it, WebView2 is pointed at the loopback proxy so
+/// its traffic leaves through this process — see `services::local_proxy` for why
+/// that matters to accelerator users. Loopback is excluded from the proxy, or it
+/// would be asked to reach itself.
+pub async fn browser_args(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+
+    const BASE: &str = "--disable-blink-features=AutomationControlled --no-sandbox";
+
+    let wanted = match app.try_state::<crate::models::app_state::AppState>() {
+        Some(state) => state.config.read().await.webview_via_proxy,
+        None => false,
+    };
+    // Started here rather than at boot, so a user who leaves the setting off
+    // never has a listener on their machine at all.
+    let port = match wanted {
+        true => crate::services::local_proxy::start().await,
+        false => None,
+    };
+    match port {
+        Some(port) => {
+            format!("{BASE} --proxy-server=http://127.0.0.1:{port} --proxy-bypass-list=<-loopback>")
+        }
+        None => BASE.to_string(),
+    }
+}
+
 /// A cookie tuple: (name, value, domain, path).
 pub type CookieTuple = (String, String, String, String);
 

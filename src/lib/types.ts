@@ -77,6 +77,7 @@ export interface AppConfigDto {
   cafeMode: boolean;
   classicNgmPath: string;
   announcementDismissedId: string;
+  webviewViaProxy: boolean;
   defaultLoginView: "normal" | "qr";
 }
 

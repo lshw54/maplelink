@@ -66,6 +66,17 @@ pub struct AppConfig {
     /// it back; the toolbox keeps every announcement readable regardless.
     #[serde(default)]
     pub announcement_dismissed_id: String,
+    /// Route the embedded webviews through a loopback proxy so their traffic
+    /// leaves through this process. Off by default: it only helps users behind a
+    /// per-process accelerator or VPN, and a proxy in the path is one more thing
+    /// that can break a sign-in.
+    #[serde(default)]
+    pub webview_via_proxy: bool,
+    /// Set once the China-IP check has switched `webview_via_proxy` on by
+    /// itself, so it only ever does so once and a user who turns it back off
+    /// stays off.
+    #[serde(default)]
+    pub webview_proxy_auto_applied: bool,
     /// Café / shared-PC mode: closing the app wipes all local data (saved
     /// accounts, display overrides, config, logs, and the webview session) so the
     /// next user starts clean. Default: false. Because the wipe removes
@@ -122,6 +133,8 @@ impl Default for AppConfig {
             hide_account_names: false,
             beanfun_rename_dismissed: false,
             announcement_dismissed_id: String::new(),
+            webview_via_proxy: false,
+            webview_proxy_auto_applied: false,
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,
