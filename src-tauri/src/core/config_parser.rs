@@ -123,6 +123,13 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.webview_via_proxy =
                 parse_bool(v, "webview_via_proxy", defaults.webview_via_proxy);
         }
+        if let Some(v) = general.get("webview_proxy_auto_applied") {
+            config.webview_proxy_auto_applied = parse_bool(
+                v,
+                "webview_proxy_auto_applied",
+                defaults.webview_proxy_auto_applied,
+            );
+        }
         if let Some(v) = general.get("default_login_view") {
             config.default_login_view = parse_default_login_view(v);
         }
@@ -235,6 +242,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "webview_via_proxy = {}\n",
         config.webview_via_proxy
+    ));
+    out.push_str(&format!(
+        "webview_proxy_auto_applied = {}\n",
+        config.webview_proxy_auto_applied
     ));
     out.push_str(&format!(
         "default_login_view = {}\n",
@@ -586,6 +597,7 @@ x = not_a_number
             classic_ngm_path: r"C:\NGM\ngm.exe".into(),
             announcement_dismissed_id: String::new(),
             webview_via_proxy: false,
+            webview_proxy_auto_applied: false,
             default_login_view: DefaultLoginView::Qr,
         };
         let ini = serialize_ini(&original);

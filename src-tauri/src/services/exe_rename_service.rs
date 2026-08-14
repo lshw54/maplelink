@@ -101,7 +101,7 @@ pub async fn check(client: &reqwest::Client, dismissed: bool) -> BeanfunRenameCh
         return decide("", dismissed, already, false, current_name);
     }
 
-    let (_ip, country) = network_service::geo_lookup(client).await;
+    let (_ip, country) = network_service::geo_lookup_cached(client).await;
     let target_exists = beanfun_target().map(|(_, exists)| exists).unwrap_or(false);
     decide(&country, dismissed, already, target_exists, current_name)
 }

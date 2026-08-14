@@ -72,6 +72,11 @@ pub struct AppConfig {
     /// that can break a sign-in.
     #[serde(default)]
     pub webview_via_proxy: bool,
+    /// Set once the China-IP check has switched `webview_via_proxy` on by
+    /// itself, so it only ever does so once and a user who turns it back off
+    /// stays off.
+    #[serde(default)]
+    pub webview_proxy_auto_applied: bool,
     /// Café / shared-PC mode: closing the app wipes all local data (saved
     /// accounts, display overrides, config, logs, and the webview session) so the
     /// next user starts clean. Default: false. Because the wipe removes
@@ -129,6 +134,7 @@ impl Default for AppConfig {
             beanfun_rename_dismissed: false,
             announcement_dismissed_id: String::new(),
             webview_via_proxy: false,
+            webview_proxy_auto_applied: false,
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,

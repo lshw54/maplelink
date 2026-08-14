@@ -219,6 +219,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "webviewViaProxy" | "webview_via_proxy" => {
             config.webview_via_proxy = parse_bool(value)?;
         }
+        "webviewProxyAutoApplied" | "webview_proxy_auto_applied" => {
+            config.webview_proxy_auto_applied = parse_bool(value)?;
+        }
         "defaultLoginView" | "default_login_view" => {
             config.default_login_view = match value.to_lowercase().as_str() {
                 "normal" => DefaultLoginView::Normal,

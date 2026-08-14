@@ -267,6 +267,7 @@ mod tests {
                         classic_ngm_path: String::new(),
                         announcement_dismissed_id: String::new(),
                         webview_via_proxy: false,
+                        webview_proxy_auto_applied: false,
                         default_login_view: crate::models::config::DefaultLoginView::Normal,
                     }
                 },

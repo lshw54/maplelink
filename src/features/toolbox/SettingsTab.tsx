@@ -114,6 +114,24 @@ export function SettingsTab() {
       </SettingRow>
 
       {/* Classic — Nexon Game Manager path (empty = auto-detect) */}
+      {/* Route webview traffic through this process — for accelerator users,
+          switched on by itself when the IP says mainland China. */}
+      <SettingRow label={t("settings.webview_via_proxy")}>
+        <Toggle
+          checked={config?.webviewViaProxy ?? false}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "webview_via_proxy",
+              value: String(!config.webviewViaProxy),
+            });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.webview_via_proxy_desc")}
+      </p>
+
       <SettingRow label={t("settings.classic_ngm_path")}>
         <div className="flex items-center gap-2">
           <span className="max-w-[240px] truncate text-xs text-[var(--text)]">

@@ -82,6 +82,44 @@ pub async fn start() -> Option<u16> {
     Some(bound)
 }
 
+/// Turn the proxy on by itself for users who are behind an accelerator.
+///
+/// The webviews only fall outside a tunnel for people using a per-process
+/// accelerator, which in practice means mainland China — the same population the
+/// `Beanfun.exe` rename exists for. Rather than expect them to find a setting
+/// whose need isn't visible from the symptom, switch it on when the IP says so.
+///
+/// Once only, recorded separately from the setting itself: someone who turns it
+/// back off is making a choice, and it shouldn't be undone on the next launch.
+pub async fn enable_for_china_once(state: &crate::models::app_state::AppState) {
+    {
+        let config = state.config.read().await;
+        if config.webview_proxy_auto_applied || config.webview_via_proxy {
+            return;
+        }
+    }
+
+    let (_ip, country) =
+        crate::services::network_service::geo_lookup_cached(&state.http_client).await;
+    if country != "CN" {
+        return; // no marker: they may be on a Chinese connection next time
+    }
+
+    {
+        let mut config = state.config.write().await;
+        config.webview_via_proxy = true;
+        config.webview_proxy_auto_applied = true;
+    }
+    let snapshot = state.config.read().await.clone();
+    if let Err(e) =
+        crate::services::config_service::save_config(&state.config_path, &snapshot).await
+    {
+        tracing::warn!("webview proxy: could not persist the automatic enable: {e}");
+        return;
+    }
+    tracing::info!("webview proxy: enabled automatically for a mainland-China address");
+}
+
 /// Serve one client connection: a `CONNECT` tunnel, or a plain HTTP request in
 /// absolute-form.
 async fn serve(mut client: TcpStream) -> std::io::Result<()> {
