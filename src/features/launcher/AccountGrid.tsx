@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
+import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 import { AccountContextMenu } from "./AccountContextMenu";
@@ -9,7 +10,6 @@ import type { GameAccountDto } from "../../lib/types";
 
 /** Applied to account name/id text when the "hide account names" privacy
  *  setting is on: blurred by default, revealed on hover. */
-const MASK_CLASS = "blur-[5px] transition-[filter] duration-150 select-none hover:blur-none";
 
 interface AccountGridProps {
   selectedAccountId: string | null;

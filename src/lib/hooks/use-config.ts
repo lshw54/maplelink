@@ -54,6 +54,7 @@ const KEY_MAP: Record<string, string> = {
   classicNgmPath: "classic_ngm_path",
   announcementDismissedId: "announcement_dismissed_id",
   webviewViaProxy: "webview_via_proxy",
+  otpAutoInput: "otp_auto_input",
   defaultLoginView: "default_login_view",
   __reset__: "__reset__",
 };

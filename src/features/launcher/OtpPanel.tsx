@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { useConfigStore } from "../../lib/stores/config-store";
+import { useSetConfig } from "../../lib/hooks/use-config";
 import { useGameCredentials } from "../../lib/hooks/use-accounts";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
@@ -15,7 +17,14 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
   const [copied, setCopied] = useState(false);
-  const [autoInput, setAutoInput] = useState(true);
+  // Persisted: as component state this reset to on every time the panel
+  // remounted, which is why it appeared to tick itself back on.
+  const autoInput = useConfigStore((s) => s.config?.otpAutoInput ?? true);
+  const setConfig = useSetConfig();
+  const setAutoInput = (on: boolean) => {
+    useConfigStore.getState().updateConfigField("otpAutoInput", on);
+    setConfig.mutate({ key: "otp_auto_input", value: String(on) });
+  };
   const [pasting, setPasting] = useState(false);
   const { t } = useTranslation();
   const addToast = useErrorToastStore((s) => s.addToast);
@@ -47,6 +56,18 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
     }
   }
 
+  /** Show the OTP and put it on the clipboard, every time one is fetched — the
+   *  old launcher did the same. The copy goes through the backend because
+   *  auto-input has just handed focus to the game, and the webview's own
+   *  clipboard refuses to write when the document isn't focused. */
+  async function applyOtp(accountId: string, data: GameCredentialsDto) {
+    setCredentials(data);
+    onOtpFetched?.(accountId, data.otp);
+    const copied = await commands.copyToClipboard(data.otp).catch(() => false);
+    setCopied(copied);
+    if (copied) setTimeout(() => setCopied(false), 2000);
+  }
+
   async function handleGetOtp() {
     if (!selectedAccountId) return;
 
@@ -54,22 +75,14 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       // Auto-paste mode: get OTP + auto-input to game window
       setPasting(true);
       try {
-        const pasted = await commands.autoPasteOtp(
+        await commands.autoPasteOtp(
           useAuthStore.getState().sessionIdForAccount(selectedAccountId) ?? "",
           selectedAccountId,
         );
         // Always fetch credentials to display OTP regardless of paste result
         credentialsMutation.mutate(selectedAccountId, {
-          onSuccess: async (data) => {
-            setCredentials(data);
-            onOtpFetched?.(selectedAccountId, data.otp);
-            setCopied(false);
-            if (!pasted) {
-              // Window not found — copy to clipboard as fallback
-              await navigator.clipboard.writeText(data.otp);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }
+          onSuccess: (data) => {
+            void applyOtp(selectedAccountId, data);
           },
           onError: handleOtpError,
         });
@@ -77,9 +90,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
         // Error — fall back to regular OTP
         credentialsMutation.mutate(selectedAccountId, {
           onSuccess: (data) => {
-            setCredentials(data);
-            onOtpFetched?.(selectedAccountId, data.otp);
-            setCopied(false);
+            void applyOtp(selectedAccountId, data);
           },
           onError: handleOtpError,
         });
@@ -90,9 +101,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       // Manual mode: just get OTP and display
       credentialsMutation.mutate(selectedAccountId, {
         onSuccess: (data) => {
-          setCredentials(data);
-          onOtpFetched?.(selectedAccountId, data.otp);
-          setCopied(false);
+          void applyOtp(selectedAccountId, data);
         },
         onError: handleOtpError,
       });
@@ -101,9 +110,9 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
 
   async function handleCopyOtp() {
     if (!credentials) return;
-    await navigator.clipboard.writeText(credentials.otp);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    const copied = await commands.copyToClipboard(credentials.otp).catch(() => false);
+    setCopied(copied);
+    if (copied) setTimeout(() => setCopied(false), 1500);
   }
 
   return (

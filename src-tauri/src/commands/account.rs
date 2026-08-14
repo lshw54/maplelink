@@ -75,6 +75,16 @@ impl From<&GameCredentials> for GameCredentialsDto {
 /// Requires an active session. Returns the accounts stored in
 /// the session's `game_accounts` — populated at login or by
 /// [`refresh_accounts`].
+/// Copy text to the clipboard from the backend.
+///
+/// The webview's own clipboard API requires the document to have focus, which
+/// it does not right after auto-input brings the game window forward — the very
+/// moment the code most needs copying.
+#[tauri::command]
+pub fn copy_to_clipboard(text: String) -> bool {
+    crate::utils::clipboard::set_text(&text)
+}
+
 #[tauri::command]
 pub async fn get_game_accounts(
     session_id: String,

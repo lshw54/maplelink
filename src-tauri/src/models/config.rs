@@ -77,6 +77,11 @@ pub struct AppConfig {
     /// stays off.
     #[serde(default)]
     pub webview_proxy_auto_applied: bool,
+    /// Feed the one-time password straight into the game window. A per-launch
+    /// component state before, so turning it off lasted only until the panel
+    /// remounted. Default on, which is what it always defaulted to.
+    #[serde(default = "default_true")]
+    pub otp_auto_input: bool,
     /// Café / shared-PC mode: closing the app wipes all local data (saved
     /// accounts, display overrides, config, logs, and the webview session) so the
     /// next user starts clean. Default: false. Because the wipe removes
@@ -135,6 +140,7 @@ impl Default for AppConfig {
             announcement_dismissed_id: String::new(),
             webview_via_proxy: false,
             webview_proxy_auto_applied: false,
+            otp_auto_input: true,
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,
