@@ -46,6 +46,7 @@ mod win32 {
 
     // Windows message constants
     const WM_KEYDOWN: u32 = 0x0100;
+    const WM_KEYUP: u32 = 0x0101;
     const WM_CHAR: u32 = 0x0102;
     const WM_LBUTTONDOWN: u32 = 0x0201;
 
@@ -72,16 +73,6 @@ mod win32 {
             .collect()
     }
 
-    /// Build the `lParam` for a `WM_KEYDOWN` message.
-    ///
-    /// Layout: repeat count (bits 0-15) = 1, scan code (bits 16-23),
-    /// extended flag (bit 24) = 0, context (bit 29) = 0,
-    /// previous state (bit 30) = 0, transition (bit 31) = 0.
-    fn make_key_lparam(vk: u32) -> LPARAM {
-        let scan_code = unsafe { MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) };
-        (1 | ((scan_code as LPARAM) << 16)) as LPARAM
-    }
-
     /// Find the MapleStory window handle by trying known class names.
     fn find_maple_window() -> Option<HWND> {
         for class_name in CLASS_NAMES {
@@ -104,11 +95,20 @@ mod win32 {
         None
     }
 
-    /// Send a single virtual key press via `PostMessageW(WM_KEYDOWN)`.
+    /// Press and release a virtual key.
+    ///
+    /// The release half used to be left out. A game that reads key state rather
+    /// than only messages then sees the key as still held — for the 64
+    /// backspaces that clear a field, that means the deletion carries on into
+    /// the characters posted next, and the account lands half-typed.
     fn send_key(hwnd: HWND, vk: u32) {
-        let lparam = make_key_lparam(vk);
+        let scan_code = unsafe { MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) };
+        let down = (1 | ((scan_code as LPARAM) << 16)) as LPARAM;
+        // Bits 30 and 31 mark the previous-down state and the up transition.
+        let up = down | (1 << 30) | (1 << 31);
         unsafe {
-            PostMessageW(hwnd, WM_KEYDOWN, vk as WPARAM, lparam);
+            PostMessageW(hwnd, WM_KEYDOWN, vk as WPARAM, down);
+            PostMessageW(hwnd, WM_KEYUP, vk as WPARAM, up);
         }
     }
 
@@ -126,6 +126,10 @@ mod win32 {
         for _ in 0..backspace_count {
             send_key(hwnd, VK_BACK);
         }
+        // Posted messages queue in order, but a game that samples input per
+        // frame doesn't consume them in one go. Give the field a frame or two
+        // to empty before characters start arriving.
+        sleep_ms(60);
     }
 
     /// Type a string character by character via `WM_CHAR`.
