@@ -56,18 +56,16 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
     }
   }
 
-  /** Show the OTP and put it on the clipboard — the old launcher did the same,
-   *  and it saves a click whenever auto-input can't reach the game window. */
+  /** Show the OTP and put it on the clipboard, every time one is fetched — the
+   *  old launcher did the same. The copy goes through the backend because
+   *  auto-input has just handed focus to the game, and the webview's own
+   *  clipboard refuses to write when the document isn't focused. */
   async function applyOtp(accountId: string, data: GameCredentialsDto) {
     setCredentials(data);
     onOtpFetched?.(accountId, data.otp);
-    try {
-      await navigator.clipboard.writeText(data.otp);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false); // clipboard denied — the code is still on screen
-    }
+    const copied = await commands.copyToClipboard(data.otp).catch(() => false);
+    setCopied(copied);
+    if (copied) setTimeout(() => setCopied(false), 2000);
   }
 
   async function handleGetOtp() {
@@ -112,9 +110,9 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
 
   async function handleCopyOtp() {
     if (!credentials) return;
-    await navigator.clipboard.writeText(credentials.otp);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    const copied = await commands.copyToClipboard(credentials.otp).catch(() => false);
+    setCopied(copied);
+    if (copied) setTimeout(() => setCopied(false), 1500);
   }
 
   return (

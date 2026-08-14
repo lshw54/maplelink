@@ -79,6 +79,9 @@ export const commands = {
     invoke<GameAccountDto[]>("get_game_accounts", { sessionId }),
   refreshAccounts: (sessionId: string) =>
     invoke<GameAccountDto[]>("refresh_accounts", { sessionId }),
+  /** Copy via the backend — the webview's clipboard needs focus, which the game
+   *  window takes during auto-input. */
+  copyToClipboard: (text: string) => invoke<boolean>("copy_to_clipboard", { text }),
   getGameCredentials: (sessionId: string, accountId: string) =>
     invoke<GameCredentialsDto>("get_game_credentials", { sessionId, accountId }),
   getAccountCreateTime: (sessionId: string, accountId: string) =>

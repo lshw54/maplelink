@@ -361,7 +361,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
         useAuthStore.getState().activeSessionId ?? "",
         accountId,
       );
-      await navigator.clipboard.writeText(`${creds.accountId}\n${creds.otp}`);
+      await commands.copyToClipboard(`${creds.accountId}\n${creds.otp}`);
       useErrorToastStore.getState().removeToast(loadingId);
       addToast({
         message: t("launcher.context.credentials_copied"),
