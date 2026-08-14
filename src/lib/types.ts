@@ -78,6 +78,7 @@ export interface AppConfigDto {
   classicNgmPath: string;
   announcementDismissedId: string;
   webviewViaProxy: boolean;
+  otpAutoInput: boolean;
   defaultLoginView: "normal" | "qr";
 }
 

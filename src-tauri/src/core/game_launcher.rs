@@ -268,6 +268,7 @@ mod tests {
                         announcement_dismissed_id: String::new(),
                         webview_via_proxy: false,
                         webview_proxy_auto_applied: false,
+                        otp_auto_input: true,
                         default_login_view: crate::models::config::DefaultLoginView::Normal,
                     }
                 },

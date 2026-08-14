@@ -3,6 +3,7 @@ import { commands } from "../../lib/tauri";
 import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
@@ -21,6 +22,8 @@ export function MainPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const region = useConfigStore((s) => s.config?.region ?? "HK");
+  // The account header sits next to the beans count and was left unmasked.
+  const nameMask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
   const logout = useLogout();
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -450,7 +453,9 @@ export function MainPage() {
               <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white">
                 {session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
               </div>
-              <span className="max-w-[200px] truncate">{session?.accountName ?? ""}</span>
+              <span className={`max-w-[200px] truncate ${nameMask}`}>
+                {session?.accountName ?? ""}
+              </span>
             </div>
             <div className="flex-1" />
             <div className="relative">

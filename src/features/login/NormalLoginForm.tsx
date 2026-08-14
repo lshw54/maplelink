@@ -155,8 +155,13 @@ export function NormalLoginForm({
       password.trim() &&
       !isLoading
     ) {
-      markAutoLoginFired();
       const timer = setTimeout(() => {
+        // Claimed here rather than when the timer is armed. The saved account
+        // and its password arrive from separate state updates, so the effect
+        // re-runs mid-wait and clears this timer — with the flag already set,
+        // nothing re-armed it and the sign-in was simply dropped.
+        if (hasAutoLoginFired()) return;
+        markAutoLoginFired();
         login.mutate(
           { account: account.trim(), password, rememberPassword: remember },
           {

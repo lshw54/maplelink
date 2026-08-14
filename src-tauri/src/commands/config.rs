@@ -222,6 +222,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "webviewProxyAutoApplied" | "webview_proxy_auto_applied" => {
             config.webview_proxy_auto_applied = parse_bool(value)?;
         }
+        "otpAutoInput" | "otp_auto_input" => {
+            config.otp_auto_input = parse_bool(value)?;
+        }
         "defaultLoginView" | "default_login_view" => {
             config.default_login_view = match value.to_lowercase().as_str() {
                 "normal" => DefaultLoginView::Normal,

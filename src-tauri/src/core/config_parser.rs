@@ -123,6 +123,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.webview_via_proxy =
                 parse_bool(v, "webview_via_proxy", defaults.webview_via_proxy);
         }
+        if let Some(v) = general.get("otp_auto_input") {
+            config.otp_auto_input = parse_bool(v, "otp_auto_input", defaults.otp_auto_input);
+        }
         if let Some(v) = general.get("webview_proxy_auto_applied") {
             config.webview_proxy_auto_applied = parse_bool(
                 v,
@@ -247,6 +250,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         "webview_proxy_auto_applied = {}\n",
         config.webview_proxy_auto_applied
     ));
+    out.push_str(&format!("otp_auto_input = {}\n", config.otp_auto_input));
     out.push_str(&format!(
         "default_login_view = {}\n",
         default_login_view_to_str(&config.default_login_view)
@@ -598,6 +602,7 @@ x = not_a_number
             announcement_dismissed_id: String::new(),
             webview_via_proxy: false,
             webview_proxy_auto_applied: false,
+            otp_auto_input: true,
             default_login_view: DefaultLoginView::Qr,
         };
         let ini = serialize_ini(&original);

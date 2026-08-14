@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "../../lib/i18n";
 import { useAuthStore, type SessionEntry } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 
@@ -13,11 +14,7 @@ export function SessionTabs() {
   const setActiveSessionId = useAuthStore((s) => s.setActiveSessionId);
   const removeSession = useAuthStore((s) => s.removeSession);
   const setPage = useUiStore((s) => s.setPage);
-  const mask = useConfigStore((s) =>
-    s.config?.hideAccountNames
-      ? "blur-[5px] transition-[filter] duration-150 select-none hover:blur-none"
-      : "",
-  );
+  const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
