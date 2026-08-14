@@ -455,6 +455,6 @@
   "toolbox.tabs.announcements": "公告",
   "toolbox.announcements.empty": "暫時沒有公告",
   "update.probing_mirrors": "正在測試下載速度…",
-  "settings.webview_via_proxy": "網頁視窗走本程式連線",
-  "settings.webview_via_proxy_desc": "登入視窗等網頁內容預設由 WebView2 自行連線，加速器／分流 VPN 只認本程式，因此不會加速。開啟後改由本程式代為連線。若登入異常請關閉。"
+  "settings.webview_via_proxy": "VPN／加速器連線修復",
+  "settings.webview_via_proxy_desc": "登入視窗等網頁內容預設不經本程式連線，加速器與分流 VPN 只認本程式，所以加速不到。開啟後改由本程式代為連線。偵測到中國大陸 IP 會自動開啟；若登入異常請關閉。"
 }
