@@ -28,8 +28,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 rolling-file = "0.2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-shell = "2"
 base64 = "0.22.1"
 open = "5.3.4"
 urlencoding = "2.1.3"

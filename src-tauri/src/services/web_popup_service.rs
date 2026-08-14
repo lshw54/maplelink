@@ -15,28 +15,22 @@ use crate::models::session::Region;
 use crate::services::cookie_native;
 use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
-/// Stop `tauri-plugin-shell` from hijacking `<a target="_blank">` in these
-/// remote pages.
+/// Keep `<a target="_blank">` navigations inside the popup that owns them.
 ///
-/// The plugin injects a body click listener into every webview that cancels the
-/// click and routes the link through `plugin:shell|open`. On beanfun that fails
-/// twice over: the site's CSP has no `ipc.localhost` in `connect-src`, and these
-/// popup windows hold no capability for the command — so the click is swallowed
-/// and buttons on the member centre simply do nothing. It is also the wrong
-/// destination: the app runs elevated, so opening the browser that way is what
-/// corrupts the user's Chrome profile (see the unelevated `shell_open` path).
+/// Left to itself WebView2 answers such a click by opening a bare window of its
+/// own. Three of these popups intercept that natively (`NewWindowRequested`),
+/// but retargeting the link is both simpler and covers the ones that don't.
 ///
-/// A capture-phase listener runs before the plugin's, and only rewrites the
-/// target — no `preventDefault`, no `stopPropagation`, so the page's own
-/// handlers still see the click. The plugin then ignores the link (it only acts
-/// on `_blank`) and normal navigation happens inside the popup, which is what
-/// its native `NewWindowRequested` handler does with these links anyway.
+/// This began as a workaround for `tauri-plugin-shell`, which injected a body
+/// click listener into every webview and routed these links through
+/// `plugin:shell|open` — swallowed on beanfun, whose CSP blocks the IPC. That
+/// plugin is no longer shipped, so only the retarget remains.
 ///
 /// Two details matter. The resolved `a.href` is what gets tested, not the raw
-/// attribute — the plugin resolves it too, so reading the attribute let every
-/// relative link slip through to it. And the target becomes `_top` rather than
-/// `_self`: a link inside a frame would otherwise navigate that frame, and sites
-/// like `accounts.gamania.com` refuse to be framed (`frame-ancestors 'none'`).
+/// attribute, so relative links are caught too. And the target becomes `_top`
+/// rather than `_self`: a link inside a frame would otherwise navigate that
+/// frame, and sites like `accounts.gamania.com` refuse to be framed
+/// (`frame-ancestors 'none'`).
 const KEEP_LINKS_IN_WINDOW: &str = r#"
 (function () {
   document.addEventListener('click', function (e) {

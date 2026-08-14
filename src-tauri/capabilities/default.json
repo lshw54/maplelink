@@ -1,7 +1,13 @@
 {
   "identifier": "default",
   "description": "Default capabilities for MapleLink",
-  "windows": ["main", "debug-console", "gamepass-login", "recaptcha_window", "web-login"],
+  "windows": [
+    "main",
+    "debug-console",
+    "gamepass-login",
+    "recaptcha_window",
+    "web-login"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -13,13 +19,6 @@
     "core:window:allow-current-monitor",
     "core:window:allow-scale-factor",
     "dialog:default",
-    "dialog:allow-open",
-    "fs:default",
-    "fs:allow-read",
-    "fs:allow-write",
-    "fs:allow-exists",
-    "fs:allow-mkdir",
-    "shell:default",
-    "shell:allow-open"
+    "dialog:allow-open"
   ]
 }
