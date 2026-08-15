@@ -448,6 +448,7 @@ pub fn run() {
             // 4. Initialise AppState with loaded config.
             let auto_update_enabled = config.auto_update;
             let update_channel = config.update_channel.clone();
+            let github_hosts_enabled = config.github_hosts;
             let http_client = reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .build()
@@ -505,12 +506,12 @@ pub fn run() {
                     let version = update_service::current_version();
                     let include_prerelease =
                         update_channel == models::config::UpdateChannel::PreRelease;
-                    match update_service::check_for_update(
-                        &update_client,
-                        version,
-                        include_prerelease,
-                    )
-                    .await
+                    // Settle on a route first — direct, GitHub-hosts direct, or
+                    // a mirror — and check through whichever one answered.
+                    let client =
+                        update_service::resolve_route(&update_client, github_hosts_enabled).await;
+                    match update_service::check_for_update(&client, version, include_prerelease)
+                        .await
                     {
                         Ok(Some(info)) => {
                             tracing::info!(

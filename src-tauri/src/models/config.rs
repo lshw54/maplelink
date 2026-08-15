@@ -98,6 +98,14 @@ pub struct AppConfig {
     /// there. Default: normal.
     #[serde(default)]
     pub default_login_view: DefaultLoginView,
+    /// When GitHub can't be reached directly, look its IPs up in the
+    /// community-maintained `github-hosts` list and connect straight to them
+    /// instead of going through a ghproxy mirror. Nothing on the machine is
+    /// modified — the mapping lives in this process only. Default on: it costs
+    /// nothing for users whose direct connection already works, since it is
+    /// only consulted after that fails.
+    #[serde(default = "default_true")]
+    pub github_hosts: bool,
 }
 
 fn default_true() -> bool {
@@ -144,6 +152,7 @@ impl Default for AppConfig {
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,
+            github_hosts: true,
         }
     }
 }

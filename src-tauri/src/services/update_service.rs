@@ -4,11 +4,17 @@
 //! (ghproxy.net, ghfast.top, gh-proxy.com, ghproxy.cc) for users in mainland
 //! China. Each mirror is probed before use, so a dead one is simply skipped.
 //! The probe result is cached for the entire session.
+//!
+//! Between "direct works" and "use a mirror" sits a third route: direct, but
+//! with GitHub's IPs supplied by [`github_hosts`] instead of by a poisoned
+//! resolver. It is tried only after the plain direct probe fails, so users who
+//! can already reach GitHub pay nothing for it and keep their own DNS.
 
 use std::sync::OnceLock;
 
 use crate::core::error::UpdateError;
 use crate::models::update::UpdateInfo;
+use crate::services::github_hosts;
 
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
@@ -36,33 +42,27 @@ const PROXY_MIRRORS: &[&str] = &[
 /// - `Some(prefix)` = use this proxy prefix for GitHub URLs
 static PROXY_CACHE: OnceLock<Option<String>> = OnceLock::new();
 
-/// Ensure the proxy cache is populated. Must be called before github_get.
-async fn ensure_proxy_resolved(client: &reqwest::Client) {
-    if PROXY_CACHE.get().is_some() {
-        return;
-    }
+/// The hosts-override client, once one has been proven to reach GitHub. Held
+/// for the session so the download uses the same route the check did.
+static HOSTS_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-    tracing::info!("probing GitHub connectivity...");
-
-    // Test direct access (5 second timeout)
-    let direct_ok = client
+/// Can this client reach the GitHub API directly?
+async fn direct_reachable(client: &reqwest::Client) -> bool {
+    client
         .head("https://api.github.com")
         .header("User-Agent", "MapleLink-Updater")
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
         .map(|r| r.status().is_success())
-        .unwrap_or(false);
+        .unwrap_or(false)
+}
 
-    if direct_ok {
-        tracing::info!("GitHub direct access OK, no proxy needed");
-        let _ = PROXY_CACHE.set(None);
-        return;
-    }
-
+/// Find a working proxy mirror and record it, or record "no proxy" if none
+/// answers.
+async fn resolve_mirror(client: &reqwest::Client) {
     tracing::info!("GitHub direct access failed, testing proxy mirrors...");
 
-    // Test each proxy mirror
     for &mirror in PROXY_MIRRORS {
         let test_url = format!("{mirror}https://api.github.com");
         let ok = client
@@ -85,6 +85,75 @@ async fn ensure_proxy_resolved(client: &reqwest::Client) {
     // No proxy works either — proceed without proxy (will likely fail later)
     tracing::warn!("no proxy mirror reachable, proceeding with direct access");
     let _ = PROXY_CACHE.set(None);
+}
+
+/// Ensure the proxy cache is populated. Must be called before github_get.
+///
+/// This is the hosts-less path, kept for callers that have no config to consult
+/// — [`resolve_route`] is what the update flow actually uses.
+async fn ensure_proxy_resolved(client: &reqwest::Client) {
+    if PROXY_CACHE.get().is_some() {
+        return;
+    }
+
+    tracing::info!("probing GitHub connectivity...");
+
+    if direct_reachable(client).await {
+        tracing::info!("GitHub direct access OK, no proxy needed");
+        let _ = PROXY_CACHE.set(None);
+        return;
+    }
+
+    resolve_mirror(client).await;
+}
+
+/// Decide how this session reaches GitHub, and hand back the client to use for
+/// it. Resolved once per session; later calls just return the same client.
+///
+/// The order is direct → hosts-override → proxy mirror, each step tried only
+/// because the one before it failed. `hosts_enabled` is the user's setting;
+/// with it off the behaviour is exactly what it was before the override
+/// existed.
+pub async fn resolve_route(client: &reqwest::Client, hosts_enabled: bool) -> reqwest::Client {
+    if PROXY_CACHE.get().is_some() {
+        return github_client(client);
+    }
+
+    tracing::info!("probing GitHub connectivity...");
+
+    if direct_reachable(client).await {
+        tracing::info!("GitHub direct access OK, no proxy needed");
+        let _ = PROXY_CACHE.set(None);
+        return client.clone();
+    }
+
+    if hosts_enabled {
+        let map = github_hosts::load(client, PROXY_MIRRORS).await;
+        if let Some(hosts_client) = github_hosts::build_client(&map) {
+            if direct_reachable(&hosts_client).await {
+                tracing::info!("GitHub reachable directly using the hosts override");
+                let _ = PROXY_CACHE.set(None);
+                let _ = HOSTS_CLIENT.set(hosts_client.clone());
+                return hosts_client;
+            }
+            tracing::info!("hosts override did not make GitHub reachable, falling back to mirrors");
+        }
+    }
+
+    resolve_mirror(client).await;
+    client.clone()
+}
+
+/// The client to send GitHub traffic through: the hosts-override one when this
+/// session established that route, otherwise `fallback`.
+///
+/// Overrides only cover GitHub's own domains, so the same client still reaches
+/// the proxy mirrors normally.
+pub fn github_client(fallback: &reqwest::Client) -> reqwest::Client {
+    HOSTS_CLIENT
+        .get()
+        .cloned()
+        .unwrap_or_else(|| fallback.clone())
 }
 
 /// Measure how fast `url` actually delivers bytes, by pulling the first slice of
@@ -401,8 +470,11 @@ pub fn get_download_url(original_url: &str, use_proxy: bool) -> String {
 
 /// Test if GitHub API is reachable (for frontend proxy toggle detection).
 /// Uses the cached probe result if available.
-pub async fn test_github_connectivity(client: &reqwest::Client) -> bool {
-    ensure_proxy_resolved(client).await;
+///
+/// "Reachable" includes reachable via the hosts override — that route is still
+/// a direct connection, so the dialog should not push the user onto a mirror.
+pub async fn test_github_connectivity(client: &reqwest::Client, hosts_enabled: bool) -> bool {
+    resolve_route(client, hosts_enabled).await;
     matches!(PROXY_CACHE.get(), Some(None))
 }
 

@@ -223,6 +223,24 @@ export function SettingsTab() {
         </div>
       </SettingRow>
 
+      {/* GitHub hosts override — only consulted when a direct connection to
+          GitHub fails, i.e. in practice only for mainland-China users. */}
+      <SettingRow label={t("settings.github_hosts")}>
+        <Toggle
+          checked={config?.githubHosts ?? true}
+          onChange={() => {
+            if (!config) return;
+            setConfig.mutate({
+              key: "githubHosts",
+              value: String(!config.githubHosts),
+            });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.github_hosts_desc")}
+      </p>
+
       {/* Default login view — TW only; HK has no QR login */}
       {config?.region === "TW" && (
         <SettingRow label={t("settings.default_login_view")}>

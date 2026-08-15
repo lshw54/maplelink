@@ -80,6 +80,7 @@ export interface AppConfigDto {
   webviewViaProxy: boolean;
   otpAutoInput: boolean;
   defaultLoginView: "normal" | "qr";
+  githubHosts: boolean;
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */

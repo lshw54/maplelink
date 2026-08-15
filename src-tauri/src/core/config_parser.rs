@@ -136,6 +136,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("default_login_view") {
             config.default_login_view = parse_default_login_view(v);
         }
+        if let Some(v) = general.get("github_hosts") {
+            config.github_hosts = parse_bool(v, "github_hosts", defaults.github_hosts);
+        }
     }
 
     // --- [game] ---
@@ -255,6 +258,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         "default_login_view = {}\n",
         default_login_view_to_str(&config.default_login_view)
     ));
+    out.push_str(&format!("github_hosts = {}\n", config.github_hosts));
     out.push('\n');
 
     // [game]
@@ -604,6 +608,7 @@ x = not_a_number
             webview_proxy_auto_applied: false,
             otp_auto_input: true,
             default_login_view: DefaultLoginView::Qr,
+            github_hosts: false,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

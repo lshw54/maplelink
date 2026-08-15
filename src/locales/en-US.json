@@ -456,5 +456,7 @@
   "toolbox.announcements.empty": "No announcements yet",
   "update.probing_mirrors": "Testing download speeds…",
   "settings.webview_via_proxy": "VPN / accelerator fix",
-  "settings.webview_via_proxy_desc": "Web content such as the sign-in window doesn't connect through the app by default, so a per-process accelerator or split-tunnel VPN never covers it. Turn this on to route it through the app. Enabled automatically on a mainland-China address; turn it off if sign-in misbehaves."
+  "settings.webview_via_proxy_desc": "Web content such as the sign-in window doesn't connect through the app by default, so a per-process accelerator or split-tunnel VPN never covers it. Turn this on to route it through the app. Enabled automatically on a mainland-China address; turn it off if sign-in misbehaves.",
+  "settings.github_hosts": "GitHub direct connection",
+  "settings.github_hosts_desc": "When an update can't reach GitHub directly, fetch the community-maintained GitHub hosts list and connect straight to those IPs instead of going through a ghproxy mirror. The mapping applies inside this app only — your system hosts file is never touched. It kicks in only after a direct connection fails, so it changes nothing if GitHub already works for you."
 }
