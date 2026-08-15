@@ -297,6 +297,18 @@ async fn read_cache(config_dir: &Path, require_fresh: bool) -> Option<String> {
     tokio::fs::read_to_string(&path).await.ok()
 }
 
+/// Throw the cached list away.
+///
+/// Called when the route built from it didn't work. A cache is trusted for a
+/// day without asking the network, which is what makes the common case free —
+/// but once its addresses have been shown not to connect, keeping it would mean
+/// a whole day of skipping the fetch that would have fixed it.
+pub async fn invalidate_cache(config_dir: &Path) {
+    if tokio::fs::remove_file(cache_path(config_dir)).await.is_ok() {
+        tracing::info!("github-hosts: dropped the cached list after a failed probe");
+    }
+}
+
 /// Fetch `url`, returning the body only if it looks like a hosts file.
 async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     let response = client
@@ -512,6 +524,26 @@ mod tests {
         assert!(map.contains_key("api.github.com"));
         // Merging cannot smuggle in what parsing would have rejected.
         assert!(!map.contains_key("evil.example.com"));
+    }
+
+    #[tokio::test]
+    async fn a_fresh_cache_is_used_and_an_invalidated_one_is_not() {
+        let dir = std::env::temp_dir().join(format!("maplelink-hosts-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+
+        tokio::fs::write(cache_path(&dir), "140.82.116.5 api.github.com")
+            .await
+            .unwrap();
+        assert!(read_cache(&dir, true).await.is_some());
+
+        // A route that failed must not keep being handed back for a day.
+        invalidate_cache(&dir).await;
+        assert!(read_cache(&dir, true).await.is_none());
+        assert!(read_cache(&dir, false).await.is_none());
+        // Dropping a cache that isn't there is not an error.
+        invalidate_cache(&dir).await;
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     #[test]

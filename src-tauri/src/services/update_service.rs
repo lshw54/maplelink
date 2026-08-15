@@ -142,6 +142,9 @@ pub async fn resolve_route(
                 return hosts_client;
             }
             tracing::info!("hosts override did not make GitHub reachable, falling back to mirrors");
+            // Those addresses have just been shown not to connect, so the copy
+            // they came from shouldn't be trusted for the rest of its day.
+            github_hosts::invalidate_cache(config_dir).await;
         }
     }
 
