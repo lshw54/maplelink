@@ -8,6 +8,14 @@ use crate::models::error::ErrorDto;
 use crate::models::update::UpdateInfo;
 use crate::services::update_service;
 
+/// Directory holding `config.ini`, where the cached GitHub hosts list lives.
+fn config_dir(state: &AppState) -> &std::path::Path {
+    state
+        .config_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+}
+
 /// Check GitHub Releases for an available update.
 /// Respects the update_channel config (release vs pre-release).
 #[tauri::command]
@@ -24,10 +32,14 @@ pub async fn check_update(
 
     let include_prerelease =
         config.update_channel == crate::models::config::UpdateChannel::PreRelease;
+    let github_hosts = config.github_hosts;
     drop(config);
 
+    let client =
+        update_service::resolve_route(&state.http_client, github_hosts, config_dir(&state)).await;
+
     let version = update_service::current_version();
-    update_service::check_for_update(&state.http_client, version, include_prerelease)
+    update_service::check_for_update(&client, version, include_prerelease)
         .await
         .map_err(|e| ErrorDto::from(AppError::from(e)))
 }
@@ -45,12 +57,16 @@ pub async fn apply_update(
     // than trusting the mirror that happened to answer a probe at startup.
     // Ticking the proxy box keeps GitHub itself out of the race.
     let forced_proxy = use_proxy.unwrap_or(false);
-    let _ = app.emit("update-probing-mirrors", ());
-    let url =
-        update_service::fastest_download_url(&state.http_client, &download_url, !forced_proxy)
-            .await;
+    let github_hosts = state.config.read().await.github_hosts;
+    // Same route the check used, so a direct download raced against the mirrors
+    // gets GitHub's real IPs rather than the poisoned ones.
+    let client =
+        update_service::resolve_route(&state.http_client, github_hosts, config_dir(&state)).await;
 
-    let bytes = update_service::download_update_with_progress(&state.http_client, &url, &app)
+    let _ = app.emit("update-probing-mirrors", ());
+    let url = update_service::fastest_download_url(&client, &download_url, !forced_proxy).await;
+
+    let bytes = update_service::download_update_with_progress(&client, &url, &app)
         .await
         .map_err(|e| ErrorDto::from(AppError::from(e)))?;
 
@@ -70,7 +86,13 @@ pub async fn apply_update(
 /// Test if GitHub is directly reachable (for ghproxy detection).
 #[tauri::command]
 pub async fn test_github_access(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
-    Ok(update_service::test_github_connectivity(&state.http_client).await)
+    let github_hosts = state.config.read().await.github_hosts;
+    Ok(update_service::test_github_connectivity(
+        &state.http_client,
+        github_hosts,
+        config_dir(&state),
+    )
+    .await)
 }
 
 /// Restart the application by spawning a new instance and exiting.

@@ -56,6 +56,7 @@ const KEY_MAP: Record<string, string> = {
   webviewViaProxy: "webview_via_proxy",
   otpAutoInput: "otp_auto_input",
   defaultLoginView: "default_login_view",
+  githubHosts: "github_hosts",
   __reset__: "__reset__",
 };
 

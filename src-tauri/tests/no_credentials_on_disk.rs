@@ -126,6 +126,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 webview_proxy_auto_applied: false,
                 otp_auto_input: true,
                 default_login_view: maplelink_lib::models::config::DefaultLoginView::Normal,
+                github_hosts: true,
             }
         },
     )

@@ -236,6 +236,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
                 }
             };
         }
+        "githubHosts" | "github_hosts" => {
+            config.github_hosts = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }
