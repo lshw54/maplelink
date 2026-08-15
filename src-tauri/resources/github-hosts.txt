@@ -1,11 +1,16 @@
-# Baked-in copy of https://github.com/maxiaof/github-hosts, so the very first
-# direct connection needs no network at all. Only entries for GitHub's own
-# domains are read; the rest is kept verbatim so refreshing this file is a
-# straight re-download of the upstream `hosts`.
+# Shipped copy of https://github.com/maxiaof/github-hosts, read by
+# services/github_hosts.rs. It is what makes the very first direct connection
+# possible with no network at all — including the request that would have
+# fetched a fresher list.
 #
-# It goes stale, and that is fine: it is merged behind whatever fresher list
-# the network produced, so the connector only falls back to these addresses
-# when the newer ones don't answer. GitHub's address blocks move rarely.
+# To refresh before a release, overwrite everything below this header with:
+#   curl https://raw.githubusercontent.com/maxiaof/github-hosts/master/hosts
+# Only GitHub's own domains are read; the rest is kept verbatim so that stays a
+# straight copy-paste.
+#
+# Letting it go stale is not a failure: it is merged *behind* whatever fresher
+# addresses the network produced, so these are only dialled when the newer ones
+# don't answer. GitHub's address blocks move rarely.
 #
 #Github Hosts Start
 #Update Time: 2026-08-15

@@ -26,7 +26,8 @@
 //! sought, in order of cost, from a fresh local cache, then from several
 //! independent networks at once (CDN copies, the ghproxy mirrors, and DoH
 //! resolvers — the same trick upstream uses to build the list), and finally
-//! from a copy compiled into the binary, which needs no network at all.
+//! from the copy shipped in `resources/github-hosts.txt`, which needs no
+//! network at all.
 //! Everything found is merged rather than picked between: an address list is
 //! tried in order, so a stale entry behind a fresh one costs nothing.
 
@@ -48,9 +49,14 @@ const LIST_MIRRORS: &[&str] = &[
     "https://cdn.statically.io/gh/maxiaof/github-hosts/master/hosts",
 ];
 
-/// A copy of the list compiled into the binary. The floor under everything
-/// else: no network, no cache, still an answer.
-const BAKED_IN_LIST: &str = include_str!("github_hosts_fallback.txt");
+/// The shipped copy of the list, kept in `resources/` and refreshed there
+/// before a release — same arrangement as the LR files.
+///
+/// Compiled in rather than left beside the exe because MapleLink ships as a
+/// single standalone binary: a file on disk would simply not be there for most
+/// users, and it is the floor under everything else — no network, no cache,
+/// still an answer. It costs a couple of KB.
+const SHIPPED_LIST: &str = include_str!("../../resources/github-hosts.txt");
 
 /// DNS-over-HTTPS endpoints, JSON flavour, tried in order per host.
 ///
@@ -370,7 +376,7 @@ async fn fetch_list(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str
 /// A fresh cache short-circuits the network entirely. Otherwise the download
 /// and the DoH queries run together, so the wait is the slower of the two
 /// rather than the sum. Whatever that produces is topped up with the stale
-/// cache and the baked-in copy, which is why this never comes back empty: the
+/// cache and the shipped copy, which is why this never comes back empty: the
 /// caller probes the resulting route anyway, and a dead address costs one
 /// failed connect before the next is tried.
 pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
@@ -396,7 +402,7 @@ pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str])
     if let Some(body) = read_cache(config_dir, false).await {
         merge(&mut map, parse(&body));
     }
-    merge(&mut map, parse(BAKED_IN_LIST));
+    merge(&mut map, parse(SHIPPED_LIST));
 
     map
 }
@@ -475,8 +481,8 @@ mod tests {
     }
 
     #[test]
-    fn the_baked_in_list_covers_the_update_path() {
-        let map = parse(BAKED_IN_LIST);
+    fn the_shipped_list_covers_the_update_path() {
+        let map = parse(SHIPPED_LIST);
         // Without these three there is no update: the release JSON, the
         // redirect target the asset actually comes from, and the repo host.
         for host in [
@@ -484,7 +490,7 @@ mod tests {
             "objects.githubusercontent.com",
             "github.com",
         ] {
-            assert!(map.contains_key(host), "baked-in list is missing {host}");
+            assert!(map.contains_key(host), "shipped list is missing {host}");
         }
         assert!(build_client(&map).is_some());
     }
