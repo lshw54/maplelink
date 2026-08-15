@@ -11,20 +11,88 @@
 //! touched: the system hosts file is left alone and only this process sees the
 //! mapping.
 //!
-//! Two rules keep a third-party list from being a foothold:
+//! Three rules keep a third-party list from being a foothold:
 //! - only GitHub's own domains are overridable, so a tampered list cannot point
 //!   `beanfun.com` (or anything else the app talks to) at an attacker;
+//! - addresses that arrive over DNS rather than from the curated list must sit
+//!   inside GitHub's own address blocks, which is also what makes a poisoned
+//!   answer detectable;
 //! - the client built here validates certificates, unlike the app-wide one, so
 //!   a wrong or hostile IP fails the handshake and we fall back to the mirrors
 //!   rather than downloading an exe from it.
+//!
+//! Where the list comes from matters as much as what's in it: the users who
+//! need it are exactly the ones who cannot fetch it from GitHub. So it is
+//! sought, in order of cost, from a fresh local cache, then from several
+//! independent networks at once (CDN copies, the ghproxy mirrors, and DoH
+//! resolvers — the same trick upstream uses to build the list), and finally
+//! from a copy compiled into the binary, which needs no network at all.
+//! Everything found is merged rather than picked between: an address list is
+//! tried in order, so a stale entry behind a fresh one costs nothing.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::time::Duration;
 
 /// The daily-updated hosts list.
 const HOSTS_URL: &str = "https://raw.githubusercontent.com/maxiaof/github-hosts/master/hosts";
+
+/// Places the same list is published that are not GitHub itself. CDN edges are
+/// generally reachable from where GitHub isn't, and none of them is the ghproxy
+/// mirrors this whole feature exists to stop depending on.
+const LIST_MIRRORS: &[&str] = &[
+    "https://cdn.jsdelivr.net/gh/maxiaof/github-hosts@master/hosts",
+    "https://fastly.jsdelivr.net/gh/maxiaof/github-hosts@master/hosts",
+    "https://gcore.jsdelivr.net/gh/maxiaof/github-hosts@master/hosts",
+    "https://cdn.statically.io/gh/maxiaof/github-hosts/master/hosts",
+];
+
+/// A copy of the list compiled into the binary. The floor under everything
+/// else: no network, no cache, still an answer.
+const BAKED_IN_LIST: &str = include_str!("github_hosts_fallback.txt");
+
+/// DNS-over-HTTPS endpoints, JSON flavour, tried in order per host.
+///
+/// This is how the upstream list is built in the first place — it asks
+/// Cloudflare over DoH. Doing it here as well means a working answer even when
+/// every copy of the file is out of reach. Cloudflare goes first because its
+/// answers are the trustworthy ones; the two Chinese resolvers follow because
+/// Cloudflare's own endpoint is frequently unreachable from where this matters,
+/// and a domestic resolver that returns a poisoned answer is caught by
+/// [`is_github_ip`].
+const DOH_ENDPOINTS: &[&str] = &[
+    "https://cloudflare-dns.com/dns-query",
+    "https://dns.alidns.com/resolve",
+    "https://doh.pub/dns-query",
+];
+
+/// The handful of domains the update path actually travels through.
+const DOH_HOSTS: &[&str] = &[
+    "api.github.com",
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+    "raw.githubusercontent.com",
+    "codeload.github.com",
+];
+
+/// GitHub's own IPv4 blocks, as (network, prefix length).
+///
+/// Only applied to DNS answers, never to the curated list. A poisoned reply is
+/// typically an unrelated or unroutable address, and dialling one costs a full
+/// connect timeout — so an answer that isn't GitHub's is dropped rather than
+/// queued up behind the good ones.
+const GITHUB_NETS: &[(Ipv4Addr, u32)] = &[
+    (Ipv4Addr::new(140, 82, 112, 0), 20),
+    (Ipv4Addr::new(185, 199, 108, 0), 22),
+    (Ipv4Addr::new(192, 30, 252, 0), 22),
+    (Ipv4Addr::new(143, 55, 64, 0), 20),
+];
+
+/// Per-DoH-query timeout. Several endpoints are tried per host, so a blocked
+/// one must give up quickly.
+const DOH_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Domains this override is allowed to touch. A suffix match, so
 /// `api.github.com` and `objects.githubusercontent.com` are both covered.
@@ -34,9 +102,10 @@ const ALLOWED_SUFFIXES: &[&str] = &["github.com", "githubusercontent.com", "gith
 /// publishes daily.
 const CACHE_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// Per-candidate fetch timeout. The file is a few KB; anything slower than this
-/// is a mirror not worth waiting on when there are others to try.
-const FETCH_TIMEOUT: Duration = Duration::from_secs(8);
+/// Per-source fetch timeout. The file is a few KB, and every source is asked at
+/// once, so this is the whole download step's ceiling rather than one step of
+/// many.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
 
 /// Cache file name, kept beside `config.ini`.
 const CACHE_FILE: &str = "github-hosts.txt";
@@ -122,6 +191,88 @@ pub fn build_client(map: &HostsMap) -> Option<reqwest::Client> {
     }
 }
 
+/// Whether `ip` falls inside one of GitHub's own address blocks.
+fn is_github_ip(ip: IpAddr) -> bool {
+    let IpAddr::V4(v4) = ip else {
+        return false;
+    };
+    let bits = u32::from(v4);
+    GITHUB_NETS.iter().any(|(net, len)| {
+        let mask = u32::MAX << (32 - len);
+        bits & mask == u32::from(*net) & mask
+    })
+}
+
+/// Fold `from` into `into`, keeping the order addresses were discovered in.
+/// Earlier sources stay in front, so the connector reaches for them first.
+fn merge(into: &mut HostsMap, from: HostsMap) {
+    for (host, ips) in from {
+        let slot = into.entry(host).or_default();
+        for ip in ips {
+            if !slot.contains(&ip) {
+                slot.push(ip);
+            }
+        }
+    }
+}
+
+/// Ask one DoH endpoint for `host`'s A records, keeping only GitHub addresses.
+async fn doh_lookup(client: &reqwest::Client, endpoint: &str, host: &str) -> Vec<IpAddr> {
+    let url = format!("{endpoint}?name={host}&type=A");
+    let Ok(response) = client
+        .get(&url)
+        .header("Accept", "application/dns-json")
+        .timeout(DOH_TIMEOUT)
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    if !response.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(json) = response.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+
+    json["Answer"]
+        .as_array()
+        .map(|answers| {
+            answers
+                .iter()
+                // Type 1 is an A record; CNAME rows in the same answer set are
+                // not addresses.
+                .filter(|entry| entry["type"].as_u64() == Some(1))
+                .filter_map(|entry| entry["data"].as_str()?.parse::<IpAddr>().ok())
+                .filter(|ip| is_github_ip(*ip))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Resolve the update path's domains over DoH, all of them at once.
+async fn resolve_over_doh(client: &reqwest::Client) -> HostsMap {
+    let resolved = futures_util::future::join_all(DOH_HOSTS.iter().map(|host| async move {
+        for endpoint in DOH_ENDPOINTS {
+            let ips = doh_lookup(client, endpoint, host).await;
+            if !ips.is_empty() {
+                return ((*host).to_string(), ips);
+            }
+        }
+        ((*host).to_string(), Vec::new())
+    }))
+    .await;
+
+    let map: HostsMap = resolved
+        .into_iter()
+        .filter(|(_, ips)| !ips.is_empty())
+        .collect();
+    if !map.is_empty() {
+        tracing::info!("github-hosts: DoH resolved {} domains", map.len());
+    }
+    map
+}
+
 /// Path of the cached list for a given config directory.
 fn cache_path(config_dir: &Path) -> std::path::PathBuf {
     config_dir.join(CACHE_FILE)
@@ -161,29 +312,28 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     response.text().await.ok()
 }
 
-/// Obtain the GitHub hosts list: a fresh cached copy if there is one, otherwise
-/// the network (direct first, then each mirror), otherwise whatever stale copy
-/// is on disk.
+/// Download the list, and cache what comes back.
 ///
-/// Always best-effort — an empty map just means the caller carries on with the
-/// mirrors, exactly as before this existed.
-pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
-    if let Some(body) = read_cache(config_dir, true).await {
-        let map = parse(&body);
-        if !map.is_empty() {
-            tracing::info!("github-hosts: using cached list ({} domains)", map.len());
-            return map;
-        }
-    }
-
-    // Direct first: it costs one quick timeout and is the only candidate that
-    // isn't someone else's proxy. The mirrors are the fallback the list exists
-    // to make unnecessary.
+/// Every source is asked at once and the first one to answer *in preference
+/// order* wins: direct, then the CDN copies, then the ghproxy mirrors — direct
+/// because it is nobody's proxy, the mirrors last because needing them is the
+/// situation this feature exists to leave behind. Asking in sequence would
+/// stack one timeout on top of another; the file is a couple of KB, so asking
+/// everyone costs nothing but a few requests.
+async fn fetch_list(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
     let mut candidates = vec![HOSTS_URL.to_string()];
+    candidates.extend(LIST_MIRRORS.iter().map(|m| (*m).to_string()));
     candidates.extend(mirrors.iter().map(|m| format!("{m}{HOSTS_URL}")));
 
-    for url in candidates {
-        let Some(body) = fetch(client, &url).await else {
+    let answers = futures_util::future::join_all(
+        candidates
+            .iter()
+            .map(|url| async move { (url, fetch(client, url).await) }),
+    )
+    .await;
+
+    for (url, body) in answers {
+        let Some(body) = body else {
             tracing::debug!("github-hosts: no response from {url}");
             continue;
         };
@@ -199,18 +349,44 @@ pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str])
         return map;
     }
 
-    // Every route failed. A stale list is still a far better guess than the
-    // poisoned DNS we are working around.
-    if let Some(body) = read_cache(config_dir, false).await {
-        let map = parse(&body);
-        if !map.is_empty() {
-            tracing::info!("github-hosts: falling back to a stale cached list");
-            return map;
+    tracing::info!("github-hosts: no source served the list");
+    HostsMap::new()
+}
+
+/// Obtain GitHub's addresses from every source worth asking, merged.
+///
+/// A fresh cache short-circuits the network entirely. Otherwise the download
+/// and the DoH queries run together, so the wait is the slower of the two
+/// rather than the sum. Whatever that produces is topped up with the stale
+/// cache and the baked-in copy, which is why this never comes back empty: the
+/// caller probes the resulting route anyway, and a dead address costs one
+/// failed connect before the next is tried.
+pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
+    let mut map = HostsMap::new();
+
+    match read_cache(config_dir, true).await {
+        Some(body) => {
+            merge(&mut map, parse(&body));
+            tracing::info!("github-hosts: using cached list ({} domains)", map.len());
+        }
+        None => {
+            let (fetched, resolved) = futures_util::future::join(
+                fetch_list(client, config_dir, mirrors),
+                resolve_over_doh(client),
+            )
+            .await;
+            merge(&mut map, fetched);
+            merge(&mut map, resolved);
         }
     }
 
-    tracing::info!("github-hosts: no list available");
-    HostsMap::new()
+    // Older answers, kept behind the fresh ones as extra candidates.
+    if let Some(body) = read_cache(config_dir, false).await {
+        merge(&mut map, parse(&body));
+    }
+    merge(&mut map, parse(BAKED_IN_LIST));
+
+    map
 }
 
 #[cfg(test)]
@@ -284,6 +460,65 @@ mod tests {
     #[test]
     fn empty_map_builds_no_client() {
         assert!(build_client(&HostsMap::new()).is_none());
+    }
+
+    #[test]
+    fn the_baked_in_list_covers_the_update_path() {
+        let map = parse(BAKED_IN_LIST);
+        // Without these three there is no update: the release JSON, the
+        // redirect target the asset actually comes from, and the repo host.
+        for host in [
+            "api.github.com",
+            "objects.githubusercontent.com",
+            "github.com",
+        ] {
+            assert!(map.contains_key(host), "baked-in list is missing {host}");
+        }
+        assert!(build_client(&map).is_some());
+    }
+
+    #[test]
+    fn dns_answers_must_be_github_addresses() {
+        // Real GitHub blocks.
+        assert!(is_github_ip("140.82.116.5".parse().unwrap()));
+        assert!(is_github_ip("185.199.111.133".parse().unwrap()));
+        assert!(is_github_ip("192.30.255.1".parse().unwrap()));
+        // The shapes a poisoned answer actually takes.
+        assert!(!is_github_ip("127.0.0.1".parse().unwrap()));
+        assert!(!is_github_ip("31.13.64.35".parse().unwrap()));
+        // Just outside 140.82.112.0/20 and 185.199.108.0/22.
+        assert!(!is_github_ip("140.82.128.1".parse().unwrap()));
+        assert!(!is_github_ip("185.199.112.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn merge_keeps_the_first_source_in_front() {
+        let mut map = parse("185.199.109.133 raw.githubusercontent.com");
+        merge(&mut map, parse("1.2.3.4 evil.example.com"));
+        merge(
+            &mut map,
+            parse("185.199.108.133 raw.githubusercontent.com\n140.82.116.5 api.github.com"),
+        );
+        // The fresher address stays first; the older one is kept as a fallback
+        // the connector only reaches if the first doesn't answer.
+        assert_eq!(
+            map["raw.githubusercontent.com"],
+            vec![
+                "185.199.109.133".parse::<IpAddr>().unwrap(),
+                "185.199.108.133".parse::<IpAddr>().unwrap()
+            ]
+        );
+        // A host only the later source knew about is added.
+        assert!(map.contains_key("api.github.com"));
+        // Merging cannot smuggle in what parsing would have rejected.
+        assert!(!map.contains_key("evil.example.com"));
+    }
+
+    #[test]
+    fn merge_does_not_duplicate_a_repeated_address() {
+        let mut map = parse("140.82.116.5 api.github.com");
+        merge(&mut map, parse("140.82.116.5 api.github.com"));
+        assert_eq!(map["api.github.com"].len(), 1);
     }
 
     proptest! {
