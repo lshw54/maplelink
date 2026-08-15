@@ -22,18 +22,18 @@
 //!   rather than downloading an exe from it.
 //!
 //! Where the list comes from matters as much as what's in it: the users who
-//! need it are exactly the ones who cannot fetch it from GitHub. So it is
-//! sought, in order of cost, from a fresh local cache, then from several
-//! independent networks at once (CDN copies, the ghproxy mirrors, and DoH
-//! resolvers — the same trick upstream uses to build the list), and finally
-//! from the copy shipped in `resources/github-hosts.txt`, which needs no
-//! network at all.
-//! Everything found is merged rather than picked between: an address list is
-//! tried in order, so a stale entry behind a fresh one costs nothing.
+//! need it are exactly the ones who cannot fetch it from GitHub. So several
+//! independent networks are asked at once — the ghproxy mirrors, CDN copies of
+//! the same file, and DoH resolvers, which is the trick upstream uses to build
+//! the list in the first place.
+//!
+//! Nothing is stored between runs. Upstream republishes daily, so a kept copy
+//! would only ever be a stale answer standing in the way of a current one; if
+//! no source answers, the mirrors take over exactly as they did before this
+//! existed.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::Path;
 use std::time::Duration;
 
 /// The daily-updated hosts list.
@@ -48,15 +48,6 @@ const LIST_MIRRORS: &[&str] = &[
     "https://gcore.jsdelivr.net/gh/maxiaof/github-hosts@master/hosts",
     "https://cdn.statically.io/gh/maxiaof/github-hosts/master/hosts",
 ];
-
-/// The shipped copy of the list, kept in `resources/` and refreshed there
-/// before a release — same arrangement as the LR files.
-///
-/// Compiled in rather than left beside the exe because MapleLink ships as a
-/// single standalone binary: a file on disk would simply not be there for most
-/// users, and it is the floor under everything else — no network, no cache,
-/// still an answer. It costs a couple of KB.
-const SHIPPED_LIST: &str = include_str!("../../resources/github-hosts.txt");
 
 /// DNS-over-HTTPS endpoints, JSON flavour, tried in order per host.
 ///
@@ -104,17 +95,10 @@ const DOH_TIMEOUT: Duration = Duration::from_secs(4);
 /// `api.github.com` and `objects.githubusercontent.com` are both covered.
 const ALLOWED_SUFFIXES: &[&str] = &["github.com", "githubusercontent.com", "githubassets.com"];
 
-/// How long a cached list is used before refetching. The upstream repo
-/// publishes daily.
-const CACHE_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
-
 /// Per-source fetch timeout. The file is a few KB, and every source is asked at
 /// once, so this is the whole download step's ceiling rather than one step of
 /// many.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
-
-/// Cache file name, kept beside `config.ini`.
-const CACHE_FILE: &str = "github-hosts.txt";
 
 /// A domain → IPs mapping parsed out of a hosts file.
 pub type HostsMap = HashMap<String, Vec<IpAddr>>;
@@ -279,42 +263,6 @@ async fn resolve_over_doh(client: &reqwest::Client) -> HostsMap {
     map
 }
 
-/// Path of the cached list for a given config directory.
-fn cache_path(config_dir: &Path) -> std::path::PathBuf {
-    config_dir.join(CACHE_FILE)
-}
-
-/// Read the cached list, if it exists. `require_fresh` rejects a copy older
-/// than [`CACHE_MAX_AGE`].
-async fn read_cache(config_dir: &Path, require_fresh: bool) -> Option<String> {
-    let path = cache_path(config_dir);
-    if require_fresh {
-        let age = tokio::fs::metadata(&path)
-            .await
-            .ok()?
-            .modified()
-            .ok()?
-            .elapsed()
-            .ok()?;
-        if age > CACHE_MAX_AGE {
-            return None;
-        }
-    }
-    tokio::fs::read_to_string(&path).await.ok()
-}
-
-/// Throw the cached list away.
-///
-/// Called when the route built from it didn't work. A cache is trusted for a
-/// day without asking the network, which is what makes the common case free —
-/// but once its addresses have been shown not to connect, keeping it would mean
-/// a whole day of skipping the fetch that would have fixed it.
-pub async fn invalidate_cache(config_dir: &Path) {
-    if tokio::fs::remove_file(cache_path(config_dir)).await.is_ok() {
-        tracing::info!("github-hosts: dropped the cached list after a failed probe");
-    }
-}
-
 /// Fetch `url`, returning the body only if it looks like a hosts file.
 async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     let response = client
@@ -330,7 +278,7 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     response.text().await.ok()
 }
 
-/// Download the list, and cache what comes back.
+/// Download the list.
 ///
 /// Every source is asked at once and the first one to answer *in preference
 /// order* wins: direct, then the CDN copies, then the ghproxy mirrors — direct
@@ -338,7 +286,7 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
 /// situation this feature exists to leave behind. Asking in sequence would
 /// stack one timeout on top of another; the file is a couple of KB, so asking
 /// everyone costs nothing but a few requests.
-async fn fetch_list(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
+async fn fetch_list(client: &reqwest::Client, mirrors: &[&str]) -> HostsMap {
     let mut candidates = vec![HOSTS_URL.to_string()];
     candidates.extend(LIST_MIRRORS.iter().map(|m| (*m).to_string()));
     candidates.extend(mirrors.iter().map(|m| format!("{m}{HOSTS_URL}")));
@@ -361,9 +309,6 @@ async fn fetch_list(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str
             continue;
         }
         tracing::info!("github-hosts: fetched {} domains from {url}", map.len());
-        if let Err(e) = tokio::fs::write(cache_path(config_dir), &body).await {
-            tracing::debug!("github-hosts: could not cache the list: {e}");
-        }
         return map;
     }
 
@@ -371,39 +316,22 @@ async fn fetch_list(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str
     HostsMap::new()
 }
 
-/// Obtain GitHub's addresses from every source worth asking, merged.
+/// Obtain GitHub's addresses, fresh, from every source worth asking.
 ///
-/// A fresh cache short-circuits the network entirely. Otherwise the download
-/// and the DoH queries run together, so the wait is the slower of the two
-/// rather than the sum. Whatever that produces is topped up with the stale
-/// cache and the shipped copy, which is why this never comes back empty: the
-/// caller probes the resulting route anyway, and a dead address costs one
-/// failed connect before the next is tried.
-pub async fn load(client: &reqwest::Client, config_dir: &Path, mirrors: &[&str]) -> HostsMap {
-    let mut map = HostsMap::new();
+/// Nothing is kept between runs. Upstream republishes daily and the addresses
+/// are the whole point, so a stored copy would only ever be a stale answer
+/// standing in the way of a current one — and the download is a couple of KB
+/// on a path that already waited out a failed connection.
+///
+/// The list download and the DoH queries run together, so the wait is the
+/// slower of the two rather than the sum, and both results are merged: a source
+/// that knows only some of the domains still contributes what it has.
+pub async fn load(client: &reqwest::Client, mirrors: &[&str]) -> HostsMap {
+    let (fetched, resolved) =
+        futures_util::future::join(fetch_list(client, mirrors), resolve_over_doh(client)).await;
 
-    match read_cache(config_dir, true).await {
-        Some(body) => {
-            merge(&mut map, parse(&body));
-            tracing::info!("github-hosts: using cached list ({} domains)", map.len());
-        }
-        None => {
-            let (fetched, resolved) = futures_util::future::join(
-                fetch_list(client, config_dir, mirrors),
-                resolve_over_doh(client),
-            )
-            .await;
-            merge(&mut map, fetched);
-            merge(&mut map, resolved);
-        }
-    }
-
-    // Older answers, kept behind the fresh ones as extra candidates.
-    if let Some(body) = read_cache(config_dir, false).await {
-        merge(&mut map, parse(&body));
-    }
-    merge(&mut map, parse(SHIPPED_LIST));
-
+    let mut map = fetched;
+    merge(&mut map, resolved);
     map
 }
 
@@ -481,21 +409,6 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_list_covers_the_update_path() {
-        let map = parse(SHIPPED_LIST);
-        // Without these three there is no update: the release JSON, the
-        // redirect target the asset actually comes from, and the repo host.
-        for host in [
-            "api.github.com",
-            "objects.githubusercontent.com",
-            "github.com",
-        ] {
-            assert!(map.contains_key(host), "shipped list is missing {host}");
-        }
-        assert!(build_client(&map).is_some());
-    }
-
-    #[test]
     fn dns_answers_must_be_github_addresses() {
         // Real GitHub blocks.
         assert!(is_github_ip("140.82.116.5".parse().unwrap()));
@@ -530,26 +443,6 @@ mod tests {
         assert!(map.contains_key("api.github.com"));
         // Merging cannot smuggle in what parsing would have rejected.
         assert!(!map.contains_key("evil.example.com"));
-    }
-
-    #[tokio::test]
-    async fn a_fresh_cache_is_used_and_an_invalidated_one_is_not() {
-        let dir = std::env::temp_dir().join(format!("maplelink-hosts-{}", uuid::Uuid::new_v4()));
-        tokio::fs::create_dir_all(&dir).await.unwrap();
-
-        tokio::fs::write(cache_path(&dir), "140.82.116.5 api.github.com")
-            .await
-            .unwrap();
-        assert!(read_cache(&dir, true).await.is_some());
-
-        // A route that failed must not keep being handed back for a day.
-        invalidate_cache(&dir).await;
-        assert!(read_cache(&dir, true).await.is_none());
-        assert!(read_cache(&dir, false).await.is_none());
-        // Dropping a cache that isn't there is not an error.
-        invalidate_cache(&dir).await;
-
-        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     #[test]

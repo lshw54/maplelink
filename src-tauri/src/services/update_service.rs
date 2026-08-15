@@ -10,7 +10,6 @@
 //! resolver. It is tried only after the plain direct probe fails, so users who
 //! can already reach GitHub pay nothing for it and keep their own DNS.
 
-use std::path::Path;
 use std::sync::OnceLock;
 
 use crate::core::error::UpdateError;
@@ -115,11 +114,7 @@ async fn ensure_proxy_resolved(client: &reqwest::Client) {
 /// because the one before it failed. `hosts_enabled` is the user's setting;
 /// with it off the behaviour is exactly what it was before the override
 /// existed.
-pub async fn resolve_route(
-    client: &reqwest::Client,
-    hosts_enabled: bool,
-    config_dir: &Path,
-) -> reqwest::Client {
+pub async fn resolve_route(client: &reqwest::Client, hosts_enabled: bool) -> reqwest::Client {
     if PROXY_CACHE.get().is_some() {
         return github_client(client);
     }
@@ -133,7 +128,7 @@ pub async fn resolve_route(
     }
 
     if hosts_enabled {
-        let map = github_hosts::load(client, config_dir, PROXY_MIRRORS).await;
+        let map = github_hosts::load(client, PROXY_MIRRORS).await;
         if let Some(hosts_client) = github_hosts::build_client(&map) {
             if direct_reachable(&hosts_client).await {
                 tracing::info!("GitHub reachable directly using the hosts override");
@@ -142,9 +137,6 @@ pub async fn resolve_route(
                 return hosts_client;
             }
             tracing::info!("hosts override did not make GitHub reachable, falling back to mirrors");
-            // Those addresses have just been shown not to connect, so the copy
-            // they came from shouldn't be trusted for the rest of its day.
-            github_hosts::invalidate_cache(config_dir).await;
         }
     }
 
@@ -481,12 +473,8 @@ pub fn get_download_url(original_url: &str, use_proxy: bool) -> String {
 ///
 /// "Reachable" includes reachable via the hosts override — that route is still
 /// a direct connection, so the dialog should not push the user onto a mirror.
-pub async fn test_github_connectivity(
-    client: &reqwest::Client,
-    hosts_enabled: bool,
-    config_dir: &Path,
-) -> bool {
-    resolve_route(client, hosts_enabled, config_dir).await;
+pub async fn test_github_connectivity(client: &reqwest::Client, hosts_enabled: bool) -> bool {
+    resolve_route(client, hosts_enabled).await;
     matches!(PROXY_CACHE.get(), Some(None))
 }
 

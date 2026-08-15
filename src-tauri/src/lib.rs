@@ -508,20 +508,8 @@ pub fn run() {
                         update_channel == models::config::UpdateChannel::PreRelease;
                     // Settle on a route first — direct, GitHub-hosts direct, or
                     // a mirror — and check through whichever one answered.
-                    let config_dir = {
-                        let state = app_handle_for_update.state::<AppState>();
-                        state
-                            .config_path
-                            .parent()
-                            .unwrap_or_else(|| std::path::Path::new("."))
-                            .to_path_buf()
-                    };
-                    let client = update_service::resolve_route(
-                        &update_client,
-                        github_hosts_enabled,
-                        &config_dir,
-                    )
-                    .await;
+                    let client =
+                        update_service::resolve_route(&update_client, github_hosts_enabled).await;
                     match update_service::check_for_update(&client, version, include_prerelease)
                         .await
                     {
