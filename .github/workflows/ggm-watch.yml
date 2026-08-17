@@ -1,0 +1,105 @@
+# Watch for a new Gamania Games Manager, so `ggm-client.json` can be updated
+# before users notice.
+#
+# TW launches state which build of the game manager is asking — a version and
+# the SHA-256 of `GGMWebStart.dll` — and beanfun refuses a pair it doesn't
+# accept. The pair lives in `ggm-client.json`, which the app fetches, so a new
+# manager only needs a commit here rather than a release. The hard part is
+# noticing beanfun shipped one.
+#
+# beanfun names its installer after its version, and serves that name from a
+# public script with no login. Watching that string is enough to know something
+# moved; the job then downloads the installer and reads the real values out of
+# it, so the issue it opens can be acted on by copying two lines.
+#
+# Runs daily. Public repositories don't consume Actions minutes, and the job is
+# a few seconds unless the version actually changed.
+
+name: Watch GGM version
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check for a new game manager
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read the installer beanfun currently advertises
+        id: upstream
+        run: |
+          params=$(curl -fsS --max-time 30 \
+            "https://tw.beanfun.com/beanfun_block/scripts/BeanFunBlockParams.ashx")
+          url=$(printf '%s' "$params" | grep -oP 'InstallFileDowloadUrl\s*:\s*"\K[^"]+')
+          if [ -z "$url" ]; then
+            echo "could not read InstallFileDowloadUrl from:" >&2
+            printf '%s\n' "$params" >&2
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "installer=$(basename "$url")" >> "$GITHUB_OUTPUT"
+          echo "beanfun currently ships $(basename "$url")"
+
+      - name: Compare against the installer we recorded
+        id: compare
+        run: |
+          recorded=$(jq -r '.installer // ""' ggm-client.json)
+          current='${{ steps.upstream.outputs.installer }}'
+          echo "recorded=$recorded"
+          if [ "$recorded" = "$current" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only past this point does the job do any real work.
+      - name: Read the new values out of the installer
+        id: values
+        if: steps.compare.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq innoextract
+          curl -fsSL --max-time 300 -o installer.exe '${{ steps.upstream.outputs.url }}'
+          innoextract -s -d extracted installer.exe
+          dll=$(find extracted -name GGMWebStart.dll | head -1)
+          if [ -z "$dll" ]; then
+            echo "GGMWebStart.dll not found in the installer" >&2
+            exit 1
+          fi
+          echo "hash=$(sha256sum "$dll" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "found $dll"
+
+      - name: Open an issue
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALLER: ${{ steps.upstream.outputs.installer }}
+          URL: ${{ steps.upstream.outputs.url }}
+          HASH: ${{ steps.values.outputs.hash }}
+        run: |
+          # One open issue at a time: this fires daily until someone acts.
+          existing=$(gh issue list --state open --label ggm-version --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "issue #$existing is already open"
+            exit 0
+          fi
+
+          if [ -n "$HASH" ]; then
+            values=$(printf 'The values, read from the installer:\n\n```json\n{\n  "installer": "%s",\n  "cv": "<run scripts/ggm-client.ps1 on a machine with it installed>",\n  "hash": "%s"\n}\n```\n\nThe hash is the SHA-256 of `GGMWebStart.dll` inside the installer. `cv` is its\nfile version, which needs a Windows machine to read — `scripts/ggm-client.ps1`\nprints both.' "$INSTALLER" "$HASH")
+          else
+            values=$(printf 'The installer could not be unpacked here, so the values need reading by hand:\nrun `scripts/ggm-client.ps1` on a machine with the new manager installed.')
+          fi
+
+          gh issue create \
+            --title "Gamania Games Manager updated to $INSTALLER" \
+            --label ggm-version \
+            --body "$(printf 'beanfun is now shipping `%s`.\n\n%s\n\nDownload: %s\n\nUpdating `ggm-client.json` at the repo root is enough — the app fetches it, so\nno release is needed. Until then, TW launches keep working for anyone with the\nmanager installed (their own copy is read first) and for anyone whose pinned\nvalues still pass.\n' "$INSTALLER" "$values" "$URL")"
