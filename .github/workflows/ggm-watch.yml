@@ -210,7 +210,13 @@ jobs:
       issues: write
 
     steps:
+      # The default branch, not the ref this run was triggered from. A schedule
+      # gives the same thing either way, but a dispatch from a feature branch
+      # would otherwise cut the proposal from that branch and carry its
+      # unrelated commits into the pull request.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       # With both halves in hand there is nothing left to decide, so open the
       # change rather than a request for someone to make it. An issue would be
@@ -251,12 +257,38 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add ggm-client.json
+          # The default branch may already carry these values — the version
+          # that looked stale can have come from the ref this run was
+          # dispatched from, or a previous proposal may have landed since.
+          # Either way there is nothing to propose, and that is not a failure.
+          if git diff --cached --quiet; then
+            echo "the default branch already publishes $VERSION; nothing to propose"
+            exit 0
+          fi
           git commit -m "chore(tw): publish client-integrity values for GGM $VERSION"
           git push origin "$branch"
 
-          gh pr create \
+          body=$(printf 'beanfun now ships Gamania Games Manager `%s`. These values were read from\n`GGMWebStart.dll` inside its installer, on a runner that installed it.\n%s\nMerging publishes them: the app fetches this file and caches it for six hours,\nso every user is carried across without a release and without doing anything.\n\nUntil then, TW launches keep working for anyone whose installed manager is\nnewer than the pair we publish, and for anyone whose current values still\npass.\n\nInstaller: %s\n\nOpened by `.github/workflows/ggm-watch.yml`.\n' "$VERSION" "$note" "$URL")
+
+          # Opening the request can be refused outright: "Allow GitHub Actions
+          # to create and approve pull requests" is a repository setting, and
+          # it is off by default. The branch is already pushed by then, so the
+          # work is not lost — say where it is rather than failing and leaving
+          # a branch nobody was told about.
+          if gh pr create \
             --title "chore(tw): publish client-integrity values for GGM $VERSION" \
-            --body "$(printf 'beanfun now ships Gamania Games Manager `%s`. These values were read from\n`GGMWebStart.dll` inside its installer, on a runner that installed it.\n%s\nMerging publishes them: the app fetches this file and caches it for six hours,\nso every user is carried across without a release and without doing anything.\n\nUntil then, TW launches keep working for anyone whose installed manager is\nnewer than the pair we publish, and for anyone whose current values still\npass.\n\nInstaller: %s\n\nOpened by `.github/workflows/ggm-watch.yml`.\n' "$VERSION" "$note" "$URL")"
+            --body "$body"; then
+            exit 0
+          fi
+
+          echo "::warning::could not open a pull request; falling back to an issue"
+          gh label create ggm-version \
+            --description "beanfun shipped a new Gamania Games Manager" \
+            --color FBCA04 2>/dev/null || true
+          gh issue create \
+            --title "Gamania Games Manager updated to $VERSION" \
+            --label ggm-version \
+            --body "$(printf '%s\n\n---\n\nThe branch `%s` is pushed and holds this change, but the pull request could\nnot be opened — most likely "Allow GitHub Actions to create and approve pull\nrequests" is off under Settings → Actions → General.\n\nOpen it here: %s/compare/%s?expand=1\n' "$body" "$branch" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$branch")"
 
       # Only when the values could not be read. There is nothing to merge, so
       # the version alone is the message.
