@@ -41,7 +41,6 @@ const ERROR_CODES: string[] = [
   "FS_IO",
   // ProcessError variants
   "PROC_SPAWN_FAILED",
-  "PROC_GGM_NOT_INSTALLED",
   // ConfigError variants
   "CFG_PARSE_ERROR",
   "CFG_WRITE_ERROR",

@@ -179,19 +179,6 @@ pub async fn get_game_credentials(
     let session_guard = ss.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
-    // TW launches go out through the Gamania Games Manager, which fetches the
-    // credentials itself — beanfun stopped serving them to anything else. So
-    // without it there is nothing to hand back, and saying so beats a timeout
-    // or a refusal from a server the user can't see. Checked on every attempt,
-    // never cached, so installing it and pressing again just works.
-    if session.region == crate::models::session::Region::TW
-        && !crate::services::process_service::ggm_installed()
-    {
-        return Err(ErrorDto::from(AppError::from(
-            crate::core::error::ProcessError::GgmNotInstalled,
-        )));
-    }
-
     let creds = beanfun_service::get_game_credentials(
         &ss.http_client,
         session,
@@ -337,15 +324,6 @@ pub async fn auto_paste_otp(
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
     let is_hk = session.region == Region::HK;
-
-    // Same requirement as the credential command: without the game manager a TW
-    // launch has no way to produce an OTP, so say that instead of failing deep
-    // inside the fetch.
-    if session.region == Region::TW && !crate::services::process_service::ggm_installed() {
-        return Err(ErrorDto::from(AppError::from(
-            crate::core::error::ProcessError::GgmNotInstalled,
-        )));
-    }
 
     let creds = beanfun_service::get_game_credentials(
         &ss.http_client,

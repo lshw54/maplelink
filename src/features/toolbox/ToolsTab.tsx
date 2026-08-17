@@ -122,6 +122,17 @@ export function ToolsTab() {
               onClick: () => setShowDownload(true),
             }}
           />
+          <ToolCardItem
+            card={{
+              icon: "📂",
+              iconBg: "bg-[rgba(99,102,241,0.1)]",
+              name: t("toolbox.tools.data_folder"),
+              desc: t("toolbox.tools.data_folder_desc"),
+              onClick: () => {
+                commands.openDataFolder().catch(() => {});
+              },
+            }}
+          />
         </div>
       </div>
 

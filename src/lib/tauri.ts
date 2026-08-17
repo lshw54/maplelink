@@ -142,6 +142,7 @@ export const commands = {
   webLaunchTestGamania: () => invoke<WebLaunchTestCode>("web_launch_test_gamania"),
   toggleDebugWindow: (enable: boolean) => invoke("toggle_debug_window", { enable }),
   openLogFolder: () => invoke("open_log_folder"),
+  openDataFolder: () => invoke("open_data_folder"),
   /**
    * Open an external http(s) link in the user's browser.
    *

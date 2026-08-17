@@ -6,7 +6,6 @@
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::core::error::AppError;
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::{game_env_service, web_popup_service};
 
@@ -850,14 +849,25 @@ pub async fn apply_beanfun_rename(app: tauri::AppHandle) -> Result<(), ErrorDto>
     Ok(())
 }
 
-/// Open beanfun's page for installing the Gamania Games Manager.
+/// Open MapleLink's data folder.
 ///
-/// TW game starts run through it, so a user without it has to install it before
-/// anything else can work. Sending them to beanfun's own page rather than a
-/// direct download keeps them on whatever build beanfun is currently shipping.
+/// It holds config, saved accounts, and the optional `GGMWebStart.dll` a user
+/// can drop in to update what TW launches tell beanfun about the client asking.
+/// Having a button for it makes that instruction "press this, put the file
+/// here" rather than a path to be typed out.
 #[tauri::command]
-pub async fn open_ggm_install_page() -> Result<(), ErrorDto> {
-    const INSTALL_PAGE: &str = "https://tw.beanfun.com/ggm/index.aspx";
-    crate::services::process_service::open_uri(INSTALL_PAGE)
-        .map_err(|e| ErrorDto::from(AppError::from(e)))
+pub async fn open_data_folder(app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    let dir = app.path().app_config_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get data dir: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+
+    crate::utils::shell_open::shell_open(&dir.to_string_lossy()).map_err(|e| ErrorDto {
+        code: "SYS_OPEN_FOLDER_FAILED".to_string(),
+        message: format!("Failed to open folder: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })
 }
