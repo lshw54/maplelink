@@ -17,16 +17,22 @@
     Path to GGMWebStart.dll. Located automatically when omitted.
 
 .PARAMETER Write
-    Write ggm-client.json beside this script instead of printing it.
+    Write ggm-client.json to the repository root instead of printing it.
+
+.PARAMETER Pin
+    Write the file to MapleLink's data folder with "override": true, pinning
+    these values on this machine only.
 
 .EXAMPLE
     .\ggm-client.ps1
-    .\ggm-client.ps1 -Dll "D:\GGM\GGMWebStart.dll" -Write
+    .\ggm-client.ps1 -Write
+    .\ggm-client.ps1 -Dll "D:\GGM\GGMWebStart.dll" -Pin
 #>
 [CmdletBinding()]
 param(
     [string]$Dll,
-    [switch]$Write
+    [switch]$Write,
+    [switch]$Pin
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +65,13 @@ function Find-GgmDll {
     return $null
 }
 
+function Write-JsonFile([string]$Path, [string]$Content) {
+    # Not Set-Content -Encoding utf8: on Windows PowerShell that writes a BOM,
+    # and a BOM makes the file unparseable as JSON. Published, it would take the
+    # values away from every user; pinned, it would silently do nothing.
+    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 if (-not $Dll) { $Dll = Find-GgmDll }
 
 if (-not $Dll -or -not (Test-Path $Dll)) {
@@ -72,27 +85,45 @@ $item = Get-Item $Dll
 $cv = $item.VersionInfo.FileVersion
 $hash = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLower()
 
-$json = @"
-{
-  "cv": "$cv",
-  "hash": "$hash"
+# The installer beanfun currently advertises. Recorded so the watcher workflow
+# has something to compare against; it is how a new manager is noticed at all.
+$installer = ''
+try {
+    $params = Invoke-RestMethod -Uri 'https://tw.beanfun.com/beanfun_block/scripts/BeanFunBlockParams.ashx' -TimeoutSec 20
+    if ($params -match 'InstallFileDowloadUrl\s*:\s*"([^"]+)"') {
+        $installer = Split-Path $matches[1] -Leaf
+    }
+} catch {
+    Write-Host "Could not reach beanfun to read the installer name; leaving it blank." -ForegroundColor Yellow
 }
-"@
+
+$fields = @()
+if ($installer) { $fields += "  `"installer`": `"$installer`"" }
+if ($Pin)       { $fields += "  `"override`": true" }
+$fields += "  `"cv`": `"$cv`""
+$fields += "  `"hash`": `"$hash`""
+$json = "{`n" + ($fields -join ",`n") + "`n}`n"
 
 Write-Host "GGMWebStart.dll : $Dll"
 Write-Host "version         : $cv"
 Write-Host "sha256          : $hash"
+Write-Host "installer       : $(if ($installer) { $installer } else { '(unknown)' })"
 Write-Host ""
 
-if ($Write) {
-    $out = Join-Path $PSScriptRoot 'ggm-client.json'
-    Set-Content -Path $out -Value $json -Encoding utf8
+if ($Pin) {
+    $dir = Join-Path $env:APPDATA 'com.maplelink.app'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    $out = Join-Path $dir 'ggm-client.json'
+    Write-JsonFile $out $json
+    Write-Host "Pinned on this machine: $out" -ForegroundColor Green
+    Write-Host "Delete that file to follow the published values again."
+} elseif ($Write) {
+    $out = Join-Path (Split-Path $PSScriptRoot -Parent) 'ggm-client.json'
+    Write-JsonFile $out $json
     Write-Host "Written to $out" -ForegroundColor Green
+    Write-Host "Commit it to publish these values to every user."
 } else {
     Write-Host "ggm-client.json:" -ForegroundColor Green
     Write-Host $json
-    Write-Host ""
-    Write-Host "Publish it by committing this as ggm-client.json at the repo root."
-    Write-Host "To pin these values on this machine only, add `"override`": true and save it to:"
-    Write-Host "  $env:APPDATA\com.maplelink.app\ggm-client.json"
+    Write-Host "Re-run with -Write to publish, or -Pin to apply on this machine only."
 }

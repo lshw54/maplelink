@@ -75,7 +75,11 @@ fn cache_path() -> Option<std::path::PathBuf> {
 /// the endpoint would reject it and the failure would look like beanfun's, not
 /// ours.
 fn parse(body: &str) -> Option<(String, String)> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    // Editors add a byte-order mark unasked, and it makes the file unparseable
+    // as JSON. Someone hand-editing this to fix their own launch shouldn't be
+    // defeated by their text editor.
+    let value: serde_json::Value =
+        serde_json::from_str(body.trim_start_matches('\u{feff}')).ok()?;
     let cv = value["cv"].as_str()?.trim().to_string();
     let hash = value["hash"].as_str()?.trim().to_ascii_lowercase();
 
@@ -173,6 +177,15 @@ mod tests {
         assert_eq!(cv, "1.5.0.2");
         // Stored lowercase, which is the form the endpoint expects.
         assert!(hash.starts_with("dfd568a6") && hash.len() == 64);
+    }
+
+    #[test]
+    fn a_byte_order_mark_does_not_defeat_it() {
+        let body = concat!(
+            "\u{feff}",
+            r#"{"cv":"1.5.0.2","hash":"dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06"}"#
+        );
+        assert!(parse(body).is_some(), "a BOM must not hide the values");
     }
 
     #[test]
