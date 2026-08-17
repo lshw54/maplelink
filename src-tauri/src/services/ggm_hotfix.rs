@@ -9,13 +9,22 @@
 //! Rather than answer that with an emergency release, the values are looked up
 //! in order:
 //!
-//! 1. a `GGMWebStart.dll` the user dropped into MapleLink's data folder — an
-//!    explicit choice, so nothing overrides it;
-//! 2. the game manager installed on this machine, which follows its own
-//!    updates;
-//! 3. a small file published alongside MapleLink, cached here — one commit
-//!    fixes every user without them doing anything;
-//! 4. the pair compiled in, so a machine with none of the above still works.
+//! 1. a `GGMWebStart.dll`, or a `ggm-client.json` marked `"override": true`,
+//!    placed in MapleLink's data folder — an explicit choice, so nothing
+//!    overrides it;
+//! 2. the game manager installed here, or a small file published alongside
+//!    MapleLink and cached for six hours — whichever names the newer build;
+//! 3. the pair compiled in, so a machine with none of the above still works.
+//!
+//! The second layer is a comparison rather than an order because both ways
+//! round have a failure the other doesn't. The manager updates itself, but only
+//! when it runs, and the people this app exists for never run it — so an
+//! install can sit at whatever version it was last opened at, which is exactly
+//! what the endpoint stops accepting, and preferring it would put the stalest
+//! machines beyond the reach of a published fix. Preferring the published pair
+//! instead would let one bad commit take down everyone whose own install was
+//! fine. Comparing costs nothing and avoids both; a tie goes to the installed
+//! file.
 
 use std::time::Duration;
 
@@ -133,10 +142,9 @@ async fn fetch(client: &reqwest::Client) -> Option<(String, String)> {
 
 /// The values to send, from the best source available.
 pub async fn client_integrity(client: &reqwest::Client) -> ClientIntegrity {
-    // A local file or an installed manager is a real build on this machine, so
-    // neither needs the network and neither should be overridden by it.
-    if let Some(local) = process_service::local_client_integrity() {
-        return local;
+    // Placed by hand, so nothing else may override it.
+    if let Some(dropped) = process_service::dropped_client_integrity() {
+        return dropped;
     }
     if let Some((cv, hash)) = local_override() {
         return ClientIntegrity {
@@ -156,19 +164,107 @@ pub async fn client_integrity(client: &reqwest::Client) -> ClientIntegrity {
         },
     };
 
-    match published {
-        Some((cv, hash)) => ClientIntegrity {
+    // The installed manager and the published pair, whichever names the newer
+    // build.
+    //
+    // The manager updates itself, but only when it runs, and the people this
+    // app exists for are the ones who never run it: they launch from here, not
+    // from the official site, and this path no longer starts it at all. An
+    // install left untouched since before beanfun's last release reports what
+    // it was then — exactly the values the endpoint stops accepting. Preferring
+    // it outright would make the stalest machines the only ones a published fix
+    // could never reach.
+    //
+    // Preferring the published pair outright trades that for the opposite
+    // hazard: a bad publish taking down users whose own install was fine.
+    // Comparing avoids both. A tie goes to the installed file, which is this
+    // machine's own truth rather than a claim about it.
+    let installed = process_service::installed_client_integrity();
+    match (installed, published) {
+        (Some(installed), Some((cv, hash))) => {
+            if names_a_newer_build(&cv, &installed.cv) {
+                tracing::info!(
+                    installed = %installed.cv,
+                    published = %cv,
+                    "ggm: the published pair is newer than the installed manager"
+                );
+                ClientIntegrity {
+                    cv,
+                    hash,
+                    arch: process_service::arch(),
+                }
+            } else {
+                installed
+            }
+        }
+        (Some(installed), None) => installed,
+        (None, Some((cv, hash))) => ClientIntegrity {
             cv,
             hash,
             arch: process_service::arch(),
         },
-        None => process_service::builtin_client_integrity(),
+        (None, None) => process_service::builtin_client_integrity(),
     }
+}
+
+/// Whether `candidate` names a strictly newer build than `current`.
+///
+/// Dotted numbers compared segment by segment, missing segments read as zero so
+/// `1.5.1` beats `1.5`. Anything unparseable compares as zero, which makes a
+/// malformed version lose rather than win — the safe direction, since the loser
+/// is simply not used.
+fn names_a_newer_build(candidate: &str, current: &str) -> bool {
+    fn parts(v: &str) -> Vec<u64> {
+        v.split('.')
+            .map(|p| p.trim().parse().unwrap_or(0))
+            .collect()
+    }
+    let (a, b) = (parts(candidate), parts(current));
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (
+            a.get(i).copied().unwrap_or(0),
+            b.get(i).copied().unwrap_or(0),
+        );
+        if x != y {
+            return x > y;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_newer_published_version_wins() {
+        // The case that motivated comparing at all: an install left alone since
+        // before beanfun's last release.
+        assert!(names_a_newer_build("1.5.0.2", "1.4.9.9"));
+        assert!(names_a_newer_build("1.5.1", "1.5.0.2"));
+        assert!(names_a_newer_build("2.0", "1.9.9.9"));
+    }
+
+    #[test]
+    fn an_equal_or_older_published_version_does_not() {
+        // A tie goes to the installed file, and a publish naming an older build
+        // is a mistake that must not take working machines down.
+        assert!(!names_a_newer_build("1.5.0.2", "1.5.0.2"));
+        assert!(
+            !names_a_newer_build("1.5.0", "1.5.0.0"),
+            "missing segments read as zero"
+        );
+        assert!(!names_a_newer_build("1.4.0", "1.5.0.2"));
+    }
+
+    #[test]
+    fn an_unreadable_version_loses() {
+        // Whatever cannot be parsed compares as zero. Losing is the safe
+        // direction: the loser is simply not used.
+        assert!(!names_a_newer_build("", "1.0"));
+        assert!(!names_a_newer_build("not.a.version", "0.0.1"));
+        assert!(names_a_newer_build("0.0.1", "not.a.version"));
+    }
 
     #[test]
     fn accepts_a_well_formed_pair() {

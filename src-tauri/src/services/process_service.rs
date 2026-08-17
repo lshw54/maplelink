@@ -310,15 +310,21 @@ pub fn arch() -> String {
 /// tracks whatever build they are on without us shipping an update. Falls back
 /// to the values above, so a user who doesn't have it — most of them — needs
 /// nothing installed at all.
-/// The values read off a real build on this machine, if there is one.
+/// Values from a `GGMWebStart.dll` the user placed in the data folder.
 ///
-/// A file the user placed comes first: putting it there is a deliberate act,
-/// and nothing published later should quietly override it.
-pub fn local_client_integrity() -> Option<ClientIntegrity> {
-    if let Some(dropped) = dropped_ggm_dll().and_then(|p| integrity_from_dll(&p)) {
-        tracing::info!(cv = %dropped.cv, "ggm: using the {GGM_DLL} placed in the data folder");
-        return Some(dropped);
-    }
+/// Putting it there is a deliberate act, so nothing else overrides it.
+pub fn dropped_client_integrity() -> Option<ClientIntegrity> {
+    let dropped = dropped_ggm_dll().and_then(|p| integrity_from_dll(&p))?;
+    tracing::info!(cv = %dropped.cv, "ggm: using the {GGM_DLL} placed in the data folder");
+    Some(dropped)
+}
+
+/// Values from the game manager installed on this machine.
+///
+/// A real build, but not necessarily a current one: the manager updates itself
+/// when it runs, and a copy that hasn't been run in months reports whatever it
+/// was then. So this is consulted after the published pair, not before.
+pub fn installed_client_integrity() -> Option<ClientIntegrity> {
     let installed = installed_ggm_integrity()?;
     tracing::debug!(cv = %installed.cv, "ggm: using the installed game manager");
     Some(installed)
