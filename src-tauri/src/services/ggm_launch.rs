@@ -79,7 +79,10 @@ pub async fn credentials_via_ggm(
         ));
     }
 
-    let ticket = beanfun_service::tw_ggm_ticket(client, session, account_id, cookie_jar).await?;
+    // The fallback has no cached list to hand over; it fetches one, which on
+    // this path is the least of the costs.
+    let ticket =
+        beanfun_service::tw_ggm_ticket(client, session, account_id, cookie_jar, &[]).await?;
 
     // Without the interception the game manager starts the game directly and we
     // never see the account: no locale emulation, no auto-fill, and nothing to
