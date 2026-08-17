@@ -250,7 +250,9 @@ jobs:
 
           note=""
           if [ -n "$CV" ] && [ "$CV" != "$VERSION" ]; then
-            note=$(printf '\n> beanfun announces `%s` but the installed file reports `%s`. The file'"'"'s\n> version is used here; check which one the endpoint accepts before merging.\n' "$VERSION" "$CV")
+            # No trailing newline: command substitution strips those anyway, so
+            # the blank line that ends the quote is added where it is used.
+            note=$(printf '\n> beanfun announces `%s` but the installed file reports `%s`. The file'"'"'s\n> version is used here; check which one the endpoint accepts before merging.' "$VERSION" "$CV")
           fi
 
           git config user.name "github-actions[bot]"
@@ -268,7 +270,7 @@ jobs:
           git commit -m "chore(tw): publish client-integrity values for GGM $VERSION"
           git push origin "$branch"
 
-          body=$(printf 'beanfun now ships Gamania Games Manager `%s`. These values were read from\n`GGMWebStart.dll` inside its installer, on a runner that installed it.\n%s\nMerging publishes them: the app fetches this file and caches it for six hours,\nso every user is carried across without a release and without doing anything.\n\nUntil then, TW launches keep working for anyone whose installed manager is\nnewer than the pair we publish, and for anyone whose current values still\npass.\n\nInstaller: %s\n\nOpened by `.github/workflows/ggm-watch.yml`.\n' "$VERSION" "$note" "$URL")
+          body=$(printf 'beanfun now ships Gamania Games Manager `%s`. These values were read from\n`GGMWebStart.dll` inside its installer, on a runner that installed it.\n%s\n\nMerging publishes them: the app fetches this file and caches it for six hours,\nso every user is carried across without a release and without doing anything.\n\nUntil then, TW launches keep working for anyone whose installed manager is\nnewer than the pair we publish, and for anyone whose current values still\npass.\n\nInstaller: %s\n\nOpened by `.github/workflows/ggm-watch.yml`.\n' "$VERSION" "$note" "$URL")
 
           # Opening the request can be refused outright: "Allow GitHub Actions
           # to create and approve pull requests" is a repository setting, and
