@@ -371,6 +371,7 @@ pub async fn get_game_credentials(
     session: &Session,
     account_id: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    known_accounts: &[GameAccount],
 ) -> Result<GameCredentials, LoginError> {
     match session.region {
         Region::HK => hk_get_otp(client, session, account_id, cookie_jar).await,
@@ -383,7 +384,9 @@ pub async fn get_game_credentials(
         // produces — slower, and it needs the manager installed, but it
         // survives beanfun changing this API again, because the manager updates
         // itself.
-        Region::TW => match tw_get_otp_v2(client, session, account_id, cookie_jar).await {
+        Region::TW => match tw_get_otp_v2(client, session, account_id, cookie_jar, known_accounts)
+            .await
+        {
             Ok(creds) => Ok(creds),
             Err(e) => {
                 tracing::warn!("TW: the v2 route failed ({e}); handing the launch to the manager");
@@ -2053,17 +2056,25 @@ pub async fn tw_ggm_ticket(
     session: &Session,
     account_id: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    known_accounts: &[GameAccount],
 ) -> Result<GgmTicket, LoginError> {
-    let host = "tw.beanfun.com";
-    let accounts = tw_get_accounts(client, session, cookie_jar).await?;
-    let account = accounts
-        .iter()
-        .find(|a| a.id == account_id)
-        .ok_or_else(|| {
-            LoginError::Auth(AuthError::InvalidCredentials {
-                reason: format!("account {account_id} not found"),
-            })
-        })?;
+    let host = TW_HOST;
+
+    // All this needs from the account is its `sn`, and the caller loaded the
+    // list when it drew the account grid. Re-fetching it costs a round trip on
+    // the path a user is waiting on, for a field that is already in hand.
+    let fetched;
+    let account = match known_accounts.iter().find(|a| a.id == account_id) {
+        Some(account) => account,
+        None => {
+            fetched = tw_get_accounts(client, session, cookie_jar).await?;
+            fetched.iter().find(|a| a.id == account_id).ok_or_else(|| {
+                LoginError::Auth(AuthError::InvalidCredentials {
+                    reason: format!("account {account_id} not found"),
+                })
+            })?
+        }
+    };
 
     let timestamp = get_current_time_method2();
     let url = game_start_step2_url(host, &account.sn, &timestamp);
@@ -2078,9 +2089,28 @@ pub async fn tw_ggm_ticket(
         "TW: GGM launch ticket read"
     );
 
-    // The page records the start alongside handing off to GGM.
+    // The page records the start alongside handing off to GGM, and beanfun's
+    // "last played" is not something the user should wait for.
     let create_time = create_time_from(&html, account);
-    tw_start_service(client, &html, &url, host, account, account_id, &create_time).await;
+    let (bg_client, bg_html, bg_url, bg_account, bg_id) = (
+        client.clone(),
+        html.clone(),
+        url.clone(),
+        account.clone(),
+        account_id.to_string(),
+    );
+    tokio::spawn(async move {
+        tw_start_service(
+            &bg_client,
+            &bg_html,
+            &bg_url,
+            TW_HOST,
+            &bg_account,
+            &bg_id,
+            &create_time,
+        )
+        .await;
+    });
 
     Ok(ticket)
 }
@@ -2838,8 +2868,9 @@ async fn tw_get_otp_v2(
     session: &Session,
     account_id: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+    known_accounts: &[GameAccount],
 ) -> Result<GameCredentials, LoginError> {
-    let ticket = tw_ggm_ticket(client, session, account_id, cookie_jar).await?;
+    let ticket = tw_ggm_ticket(client, session, account_id, cookie_jar, known_accounts).await?;
     let launch = decode_launch_ticket(&ticket.data)
         .ok_or_else(|| parse_error_str("could not read the launch ticket"))?;
     tracing::info!(account_id, sn = %ticket.sn, "TW: launch ticket decoded, requesting credentials");

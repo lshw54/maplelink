@@ -84,6 +84,7 @@ pub async fn launch_game(
             session,
             &account_id,
             &ss.cookie_jar,
+            &ss.game_accounts.read().await,
         )
         .await
         .map_err(login_err_to_dto)?;

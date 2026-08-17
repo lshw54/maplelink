@@ -184,6 +184,7 @@ pub async fn get_game_credentials(
         session,
         &account_id,
         &ss.cookie_jar,
+        &ss.game_accounts.read().await,
     )
     .await
     .map_err(|e| {
@@ -330,6 +331,7 @@ pub async fn auto_paste_otp(
         session,
         &account_id,
         &ss.cookie_jar,
+        &ss.game_accounts.read().await,
     )
     .await
     .map_err(|e| {
