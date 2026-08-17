@@ -11,15 +11,18 @@
 #   GET https://tw.beanfun.com/generic_handlers/CheckVersion.ashx
 #   {"url": "https://tw.beanfun.com/ggm/GGMSetup_1.5.0.2.exe", "version": "1.5.0.2"}
 #
-# `version` is exactly the `cv` we publish, so the check is an equality test
-# rather than a proxy, and the installer it names is served from the same host —
-# which, unlike Gamania's patch CDN, answers from outside Taiwan. So when the
-# version moves, this can fetch the installer, unpack it, and read the hash,
-# and hand over both halves of the new pair ready to paste.
+# `version` is exactly the `cv` we publish, so the hourly check is an equality
+# test on one small GET.
 #
-# Public repositories don't consume Actions minutes. A run that finds nothing is
-# one small GET. GitHub runs scheduled jobs late when it's busy, so "hourly"
-# means "roughly hourly".
+# Reading the hash needs the DLL, and the DLL is inside an Inno Setup 6.3
+# installer that Ubuntu's innoextract (1.9, from 2020) cannot parse and that
+# 7-Zip sees only as a PE with a 16 MB blob appended. A Windows runner sidesteps
+# the question: it installs the thing and reads the file. That runner starts
+# only when the version actually moved, so the hourly cost stays one Linux
+# request.
+#
+# Public repositories don't consume Actions minutes. GitHub runs scheduled jobs
+# late when it's busy, so "hourly" means "roughly hourly".
 
 name: Watch GGM version
 
@@ -29,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Unpack the installer even if the version matches"
+        description: "Install and read the pair even if the version matches"
         type: boolean
         default: false
 
@@ -43,8 +46,12 @@ concurrency:
 
 jobs:
   check:
-    name: Check for a new game manager
+    name: Check the announced version
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.upstream.outputs.version }}
+      url: ${{ steps.upstream.outputs.url }}
+      changed: ${{ steps.compare.outputs.changed }}
 
     steps:
       - uses: actions/checkout@v6
@@ -67,42 +74,87 @@ jobs:
 
       - name: Compare it with what we publish
         id: compare
+        env:
+          UPSTREAM: ${{ steps.upstream.outputs.version }}
+          FORCED: ${{ inputs.force }}
         run: |
           published=$(jq -r '.cv // ""' ggm-client.json)
-          echo "published=$published  upstream=${{ steps.upstream.outputs.version }}"
-          if [ "$published" = '${{ steps.upstream.outputs.version }}' ]; then
+          echo "published=$published  upstream=$UPSTREAM  forced=$FORCED"
+          if [ "$published" = "$UPSTREAM" ] && [ "$FORCED" != "true" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "unchanged"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Only past this point does anything get downloaded.
-      - name: Read the new hash out of the installer
-        id: values
-        if: steps.compare.outputs.changed == 'true' || inputs.force
-        continue-on-error: true
+  values:
+    name: Read the new pair
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: windows-latest
+    outputs:
+      cv: ${{ steps.read.outputs.cv }}
+      hash: ${{ steps.read.outputs.hash }}
+
+    steps:
+      # Installing it is the only reliable way to open it: Inno Setup 6.3 is
+      # newer than any unpacker available here. The runner is discarded
+      # afterwards, so what the installer does to the machine doesn't matter.
+      - name: Install the manager and read the file
+        id: read
+        shell: pwsh
+        env:
+          URL: ${{ needs.check.outputs.url }}
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq innoextract
-          curl -fsSL --max-time 600 --retry 2 -o setup.exe '${{ steps.upstream.outputs.url }}'
-          ls -l setup.exe
-          innoextract -s -d extracted setup.exe
-          dll=$(find extracted -name GGMWebStart.dll | head -1)
-          if [ -z "$dll" ]; then
-            echo "::error::GGMWebStart.dll not found inside the installer"
-            find extracted -maxdepth 3 -type f | head -40
+          Invoke-WebRequest -Uri $env:URL -OutFile setup.exe -TimeoutSec 600
+          "downloaded {0:N1} MB" -f ((Get-Item setup.exe).Length / 1MB)
+
+          $dir = Join-Path $env:RUNNER_TEMP 'ggm'
+          $switches = @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/SP-', "/DIR=$dir"
+          )
+          $p = Start-Process -FilePath .\setup.exe -Wait -PassThru -ArgumentList $switches
+          "installer exit code: $($p.ExitCode)"
+
+          # It may start itself when it finishes; nothing here wants it running.
+          Get-Process -Name GGMWebStart, GamaniaGameDownloader -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+          $dll = Get-ChildItem $dir -Recurse -Filter GGMWebStart.dll -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $dll) {
+            Write-Host "::error::GGMWebStart.dll not found under $dir"
+            Get-ChildItem $dir -Recurse -File -ErrorAction SilentlyContinue |
+              Select-Object -First 30 -ExpandProperty FullName
             exit 1
-          fi
-          echo "hash=$(sha256sum "$dll" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "read $dll"
+          }
+
+          $cv = $dll.VersionInfo.FileVersion
+          $hash = (Get-FileHash $dll.FullName -Algorithm SHA256).Hash.ToLower()
+          "cv=$cv" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "read $($dll.FullName)"
+          "version $cv"
+          "sha256  $hash"
+
+  report:
+    name: Say so
+    needs: [check, values]
+    # `always()` so a failed read still reports the version — knowing a new
+    # manager shipped is most of the value, even without the hash.
+    if: always() && needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Open an issue
-        if: steps.compare.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.upstream.outputs.version }}
-          URL: ${{ steps.upstream.outputs.url }}
-          HASH: ${{ steps.values.outputs.hash }}
+          VERSION: ${{ needs.check.outputs.version }}
+          URL: ${{ needs.check.outputs.url }}
+          CV: ${{ needs.values.outputs.cv }}
+          HASH: ${{ needs.values.outputs.hash }}
         run: |
           # The label has to exist before it can be filtered on or applied, and
           # it won't on the first run.
@@ -119,15 +171,22 @@ jobs:
           fi
 
           installer=$(basename "$URL")
+
           if [ -n "$HASH" ]; then
-            values=$(printf 'Both halves of the new pair, read from the installer:\n\n```json\n{\n  "installer": "%s",\n  "cv": "%s",\n  "hash": "%s"\n}\n```\n' "$installer" "$VERSION" "$HASH")
+            note=""
+            # The version is stated twice — by beanfun and by the file itself —
+            # and a disagreement means one of them isn't describing what shipped.
+            if [ -n "$CV" ] && [ "$CV" != "$VERSION" ]; then
+              note=$(printf '\n> beanfun announces `%s` but the installed file reports `%s`. Check which\n> one the endpoint accepts before publishing.\n' "$VERSION" "$CV")
+            fi
+            values=$(printf 'Both halves, read from the installed file:\n\n```json\n{\n  "installer": "%s",\n  "cv": "%s",\n  "hash": "%s"\n}\n```\n%s' "$installer" "${CV:-$VERSION}" "$HASH" "$note")
           else
-            # The download or the unpack failed. Say which values are missing
-            # rather than implying the pair is ready.
-            values=$(printf 'The installer could not be unpacked here, so the hash is missing — run\n`scripts/ggm-client.ps1 -Write` on a machine with the new manager installed.\n\nThe version is `%s`.\n' "$VERSION")
+            values=$(printf 'The hash could not be read — see the `Read the new pair` job. Run\n`scripts/ggm-client.ps1 -Write` on a machine with the new manager installed.\n\nThe announced version is `%s`.\n' "$VERSION")
           fi
+
+          body=$(printf 'beanfun now ships Gamania Games Manager `%s`, where `ggm-client.json` still\npublishes a different version.\n\n%s\n\nInstaller: %s\n\nA commit is enough — the app fetches this file, so no release is needed.\nUntil then TW launches keep working for anyone with the manager installed\n(their own copy is read first) and for anyone whose current values still pass.\n' "$VERSION" "$values" "$URL")
 
           gh issue create \
             --title "Gamania Games Manager updated to $VERSION" \
             --label ggm-version \
-            --body "$(printf 'beanfun now ships Gamania Games Manager `%s`, where `ggm-client.json` still\npublishes a different version.\n\n%s\n\nInstaller: %s\n\nA commit is enough — the app fetches this file, so no release is needed.\nUntil then TW launches keep working for anyone with the manager installed\n(their own copy is read first) and for anyone whose current values still pass.\n' "$VERSION" "$values" "$URL")"
+            --body "$body"
