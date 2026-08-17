@@ -4,27 +4,41 @@
 # TW launches state which build of the game manager is asking — a version and
 # the SHA-256 of `GGMWebStart.dll` — and beanfun refuses a pair it doesn't
 # accept. The pair lives in `ggm-client.json`, which the app fetches, so a new
-# manager only needs a commit here rather than a release. The hard part is
-# noticing beanfun shipped one.
+# manager needs a commit here rather than a release. The hard part is noticing
+# beanfun shipped one.
 #
-# beanfun names its installer after its version, and serves that name from a
-# public script with no login. Watching that string is enough to know something
-# moved; the job then downloads the installer and reads the real values out of
-# it, so the issue it opens can be acted on by copying two lines.
+# What's compared is the hash of the DLL inside the installer, not the
+# installer's name: the installer is versioned separately (`..._2_2_2_1.exe`
+# alongside a DLL at 1.5.0.2), so beanfun can change the file we care about
+# without renaming the one we can see.
 #
-# Runs daily. Public repositories don't consume Actions minutes, and the job is
-# a few seconds unless the version actually changed.
+# Reading that hash means downloading and unpacking the installer, which is too
+# much to do hourly against someone else's CDN. So each run first asks for the
+# headers only; the download happens when those say the file changed, which is
+# almost never. A run that finds nothing is a single HEAD request.
+#
+# Public repositories don't consume Actions minutes. GitHub also runs scheduled
+# jobs late when it's busy, so "hourly" means "roughly hourly".
 
 name: Watch GGM version
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "23 * * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Download and re-read the hash even if nothing looks changed"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   issues: write
+
+concurrency:
+  group: ggm-watch
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -34,72 +48,106 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read the installer beanfun currently advertises
+      - name: Ask beanfun which installer it ships, and how big it is
         id: upstream
         run: |
           params=$(curl -fsS --max-time 30 \
             "https://tw.beanfun.com/beanfun_block/scripts/BeanFunBlockParams.ashx")
           url=$(printf '%s' "$params" | grep -oP 'InstallFileDowloadUrl\s*:\s*"\K[^"]+')
           if [ -z "$url" ]; then
-            echo "could not read InstallFileDowloadUrl from:" >&2
-            printf '%s\n' "$params" >&2
+            echo "::error::could not read InstallFileDowloadUrl"
+            printf '%s\n' "$params"
             exit 1
           fi
+
+          # Headers only. Size and last-modified move whenever the installer is
+          # rebuilt, which is the cheapest signal that its contents might differ.
+          headers=$(curl -fsSI --max-time 30 "$url" || true)
+          length=$(printf '%s' "$headers" | grep -i '^content-length:' | tr -d '\r' | awk '{print $2}')
+          modified=$(printf '%s' "$headers" | grep -i '^last-modified:' | tr -d '\r' | cut -d' ' -f2-)
+
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "installer=$(basename "$url")" >> "$GITHUB_OUTPUT"
-          echo "beanfun currently ships $(basename "$url")"
+          echo "fingerprint=$(basename "$url")|${length:-?}|${modified:-?}" >> "$GITHUB_OUTPUT"
+          echo "$(basename "$url")  ${length:-unknown} bytes  ${modified:-unknown}"
 
-      - name: Compare against the installer we recorded
-        id: compare
-        run: |
-          recorded=$(jq -r '.installer // ""' ggm-client.json)
-          current='${{ steps.upstream.outputs.installer }}'
-          echo "recorded=$recorded"
-          if [ "$recorded" = "$current" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Have we already looked at this exact file?
+        id: seen
+        uses: actions/cache@v4
+        with:
+          path: .ggm-seen
+          key: ggm-seen-${{ hashFiles('ggm-client.json') }}-${{ steps.upstream.outputs.fingerprint }}
 
-      # Only past this point does the job do any real work.
-      - name: Read the new values out of the installer
+      # Everything below runs only when the installer looks new to us.
+      - name: Read the DLL's hash out of the installer
         id: values
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.seen.outputs.cache-hit != 'true' || inputs.force
         continue-on-error: true
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq innoextract
-          curl -fsSL --max-time 300 -o installer.exe '${{ steps.upstream.outputs.url }}'
+          curl -fsSL --max-time 600 -o installer.exe '${{ steps.upstream.outputs.url }}'
           innoextract -s -d extracted installer.exe
           dll=$(find extracted -name GGMWebStart.dll | head -1)
           if [ -z "$dll" ]; then
-            echo "GGMWebStart.dll not found in the installer" >&2
+            echo "::error::GGMWebStart.dll not found inside the installer"
             exit 1
           fi
           echo "hash=$(sha256sum "$dll" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "found $dll"
+          echo "read $dll"
 
-      - name: Open an issue
-        if: steps.compare.outputs.changed == 'true'
+      - name: Compare it with what we publish
+        id: compare
+        if: steps.seen.outputs.cache-hit != 'true' || inputs.force
+        run: |
+          published=$(jq -r '.hash // ""' ggm-client.json)
+          found='${{ steps.values.outputs.hash }}'
+          echo "published=$published"
+          echo "found=${found:-<unreadable>}"
+
+          if [ -z "$found" ]; then
+            # The installer moved but we couldn't read it. Worth saying so: it
+            # may be a new format rather than a new build.
+            echo "state=unreadable" >> "$GITHUB_OUTPUT"
+          elif [ "$found" = "$published" ]; then
+            # A rebuild that left the file we care about alone. Nothing to do.
+            echo "state=same" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=changed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Say so
+        if: steps.compare.outputs.state == 'changed' || steps.compare.outputs.state == 'unreadable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INSTALLER: ${{ steps.upstream.outputs.installer }}
           URL: ${{ steps.upstream.outputs.url }}
           HASH: ${{ steps.values.outputs.hash }}
+          STATE: ${{ steps.compare.outputs.state }}
         run: |
-          # One open issue at a time: this fires daily until someone acts.
-          existing=$(gh issue list --state open --label ggm-version --json number --jq '.[0].number')
+          # The label has to exist before it can be filtered on or applied,
+          # and it won't on the first run.
+          gh label create ggm-version \
+            --description "beanfun shipped a new Gamania Games Manager" \
+            --color FBCA04 2>/dev/null || true
+
+          # One open issue at a time — this runs hourly.
+          existing=$(gh issue list --state open --label ggm-version --json number --jq '.[0].number // ""' 2>/dev/null || true)
           if [ -n "$existing" ]; then
             echo "issue #$existing is already open"
             exit 0
           fi
 
-          if [ -n "$HASH" ]; then
-            values=$(printf 'The values, read from the installer:\n\n```json\n{\n  "installer": "%s",\n  "cv": "<run scripts/ggm-client.ps1 on a machine with it installed>",\n  "hash": "%s"\n}\n```\n\nThe hash is the SHA-256 of `GGMWebStart.dll` inside the installer. `cv` is its\nfile version, which needs a Windows machine to read — `scripts/ggm-client.ps1`\nprints both.' "$INSTALLER" "$HASH")
+          if [ "$STATE" = "changed" ]; then
+            body=$(printf 'beanfun is shipping a new `GGMWebStart.dll` in `%s`.\n\nUpdate `ggm-client.json` at the repo root:\n\n```json\n{\n  "installer": "%s",\n  "cv": "<file version — see below>",\n  "hash": "%s"\n}\n```\n\n`cv` is the DLL'"'"'s file version and needs a Windows machine to read.\n`scripts/ggm-client.ps1` prints both, from an installed manager.\n\nInstaller: %s\n\nA commit is enough — the app fetches this file, so no release is needed.\nUntil then TW launches keep working for anyone with the manager installed\n(their own copy is read first) and for anyone whose current values still pass.\n' "$INSTALLER" "$INSTALLER" "$HASH" "$URL")
           else
-            values=$(printf 'The installer could not be unpacked here, so the values need reading by hand:\nrun `scripts/ggm-client.ps1` on a machine with the new manager installed.')
+            body=$(printf 'The installer at %s changed, but `GGMWebStart.dll` could not be read out of it here — possibly a new installer format.\n\nRun `scripts/ggm-client.ps1` on a machine with the new manager installed and\nupdate `ggm-client.json` by hand.\n' "$URL")
           fi
 
           gh issue create \
-            --title "Gamania Games Manager updated to $INSTALLER" \
+            --title "Gamania Games Manager: new build in $INSTALLER" \
             --label ggm-version \
-            --body "$(printf 'beanfun is now shipping `%s`.\n\n%s\n\nDownload: %s\n\nUpdating `ggm-client.json` at the repo root is enough — the app fetches it, so\nno release is needed. Until then, TW launches keep working for anyone with the\nmanager installed (their own copy is read first) and for anyone whose pinned\nvalues still pass.\n' "$INSTALLER" "$values" "$URL")"
+            --body "$body"
+
+      - name: Remember this file, so the next run is a single request
+        if: always() && steps.seen.outputs.cache-hit != 'true'
+        run: echo '${{ steps.upstream.outputs.fingerprint }}' > .ggm-seen
