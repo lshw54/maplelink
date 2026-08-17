@@ -297,6 +297,7 @@ pub fn run() {
             commands::account::get_auth_email,
             commands::launcher::launch_game,
             commands::launcher::launch_game_direct,
+            commands::system::open_ggm_install_page,
             commands::launcher::is_game_running,
             commands::launcher::get_game_pid,
             commands::launcher::get_process_status,

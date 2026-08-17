@@ -69,6 +69,9 @@ pub enum FsError {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ProcessError {
+    /// TW launches go through the Gamania Games Manager, and it isn't here.
+    #[error("the Gamania Games Manager is not installed")]
+    GgmNotInstalled,
     #[error("Failed to start process: {path} — {reason}")]
     SpawnFailed { path: String, reason: String },
 }

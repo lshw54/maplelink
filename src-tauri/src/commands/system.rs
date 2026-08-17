@@ -6,6 +6,7 @@
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::core::error::AppError;
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::{game_env_service, web_popup_service};
 
@@ -847,4 +848,16 @@ pub async fn apply_beanfun_rename(app: tauri::AppHandle) -> Result<(), ErrorDto>
     // The renamed copy is now running; exit this instance.
     app.exit(0);
     Ok(())
+}
+
+/// Open beanfun's page for installing the Gamania Games Manager.
+///
+/// TW game starts run through it, so a user without it has to install it before
+/// anything else can work. Sending them to beanfun's own page rather than a
+/// direct download keeps them on whatever build beanfun is currently shipping.
+#[tauri::command]
+pub async fn open_ggm_install_page() -> Result<(), ErrorDto> {
+    const INSTALL_PAGE: &str = "https://tw.beanfun.com/ggm/index.aspx";
+    crate::services::process_service::open_uri(INSTALL_PAGE)
+        .map_err(|e| ErrorDto::from(AppError::from(e)))
 }

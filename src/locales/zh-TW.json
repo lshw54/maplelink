@@ -426,6 +426,7 @@
   "errors.FS_NOT_FOUND": "找不到檔案：{{path}}",
   "errors.FS_PERMISSION_DENIED": "權限不足：{{path}}",
   "errors.FS_IO": "檔案錯誤：{{path}}",
+  "errors.PROC_GGM_NOT_INSTALLED": "尚未安裝「遊戲橘子遊戲管理員」。台版遊戲改由它啟動，請先安裝再重試。",
   "errors.PROC_SPAWN_FAILED": "無法啟動程序",
   "errors.CFG_PARSE_ERROR": "設定檔已損壞",
   "errors.CFG_WRITE_ERROR": "無法儲存設定",

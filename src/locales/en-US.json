@@ -426,6 +426,7 @@
   "errors.FS_NOT_FOUND": "File not found: {{path}}",
   "errors.FS_PERMISSION_DENIED": "Permission denied: {{path}}",
   "errors.FS_IO": "File error: {{path}}",
+  "errors.PROC_GGM_NOT_INSTALLED": "The Gamania Games Manager isn't installed. TW game launches now go through it — install it and try again.",
   "errors.PROC_SPAWN_FAILED": "Failed to start process",
   "errors.CFG_PARSE_ERROR": "Configuration file is corrupted",
   "errors.CFG_WRITE_ERROR": "Failed to save configuration",
