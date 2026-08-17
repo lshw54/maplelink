@@ -90,6 +90,42 @@ pub fn register() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Point the Gamania key straight at MapleLink, with no console helper in
+/// between.
+///
+/// The opt-in web-launch toggle registers a `.bat` that echoes the account and
+/// password and then waits on a keypress — useful when the user launched from
+/// their browser and wants to see the pair. A launch MapleLink started itself
+/// needs none of that, and the console window it leaves on screen is pure
+/// noise, so this path registers the executable directly. beanfun appends the
+/// same arguments either way, and `game_intercept` reads them the same.
+#[cfg(target_os = "windows")]
+pub fn register_direct() -> std::io::Result<()> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let exe = std::env::current_exe()?.to_string_lossy().into_owned();
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (key, _) = hkcu.create_subkey(GAMANIA_SUBKEY)?;
+
+    // Keep beanfun's own value, but never mistake one of ours for it.
+    if let Ok(current) = key.get_value::<String, _>(PATH_VALUE) {
+        let ours = current.eq_ignore_ascii_case(&exe)
+            || current.to_ascii_lowercase().ends_with(HELPER_BAT);
+        if !ours && key.get_value::<String, _>(BACKUP_VALUE).is_err() {
+            key.set_value(BACKUP_VALUE, &current)?;
+        }
+    }
+    key.set_value(PATH_VALUE, &exe)?;
+    tracing::info!("web-launch interception registered directly: {exe}");
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn register_direct() -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Restore beanfun's original PATH (or remove ours), drop the backup, and
 /// delete the helper `.bat`.
 #[cfg(target_os = "windows")]
@@ -499,6 +535,15 @@ pub fn run_intercept(creds: InterceptCreds, quiet: bool) {
         "web-launch interception: handling beanfun game start"
     );
 
+    // A MapleLink window asked for this launch and is waiting on the other side
+    // of it. Hand the credentials over and stop: launching the game and showing
+    // a popup are that window's job, and doing either here would double up.
+    if ggm_handoff_expected() {
+        tracing::info!("web-launch interception: this launch belongs to a running instance");
+        write_handoff(&creds);
+        return;
+    }
+
     let (auto_launch, auto_paste) = load_web_launch_prefs();
     tracing::info!(auto_launch, auto_paste, "web-launch: preferences");
     let game_path = load_game_path();
@@ -760,4 +805,112 @@ fn auto_paste_when_ready(account: &str, otp: &str) {
         }
     }
     tracing::warn!("web-launch: game login window not found within 30s; auto-paste skipped");
+}
+
+// ---------------------------------------------------------------------------
+// Hand-off to a running MapleLink
+// ---------------------------------------------------------------------------
+//
+// A TW launch now goes out through the Gamania Games Manager, which fetches the
+// credentials and starts "the game" — which the Gamania registry key points
+// back at us. That intercepted process is a second, headless MapleLink, and the
+// credentials land there rather than in the window the user is looking at.
+//
+// So the running instance leaves a note before it opens the URL, and the
+// intercepted one, seeing that note, writes the credentials down and exits
+// quietly instead of launching anything. The window that asked then picks them
+// up and carries on exactly as it always did: OTP in the box, auto-fill, launch
+// through Locale Remulator.
+//
+// A browser-initiated web launch leaves no note, so it behaves as before.
+
+/// Note left by the instance that opened the game manager's URL.
+const PENDING_FILENAME: &str = "ggm_pending";
+
+/// Where the intercepted process leaves what it was given.
+const HANDOFF_FILENAME: &str = "ggm_handoff";
+
+/// How long a note stays valid. Long enough for the game manager to update
+/// itself first, short enough that a launch abandoned an hour ago can't
+/// silently swallow a later web launch.
+const PENDING_TTL: std::time::Duration = std::time::Duration::from_secs(180);
+
+fn ipc_dir() -> std::path::PathBuf {
+    std::env::var("LOCALAPPDATA")
+        .map(|local| std::path::Path::new(&local).join("com.maplelink.app"))
+        .unwrap_or_else(|_| std::env::temp_dir())
+}
+
+/// Announce that this process is about to hand a launch to the game manager.
+pub fn mark_ggm_pending() {
+    let dir = ipc_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    // Any leftover answer belongs to an earlier attempt.
+    let _ = std::fs::remove_file(dir.join(HANDOFF_FILENAME));
+    match std::fs::write(dir.join(PENDING_FILENAME), "1") {
+        Ok(()) => tracing::info!("ggm: waiting for the interception to report back"),
+        Err(e) => tracing::warn!("ggm: could not leave the pending note: {e}"),
+    }
+}
+
+/// Whether a running instance is waiting for this interception's credentials.
+fn ggm_handoff_expected() -> bool {
+    let path = ipc_dir().join(PENDING_FILENAME);
+    let Ok(age) = std::fs::metadata(&path).and_then(|m| m.modified()) else {
+        return false;
+    };
+    match age.elapsed() {
+        Ok(elapsed) if elapsed <= PENDING_TTL => true,
+        _ => {
+            // Stale: the launch it belonged to is long gone.
+            let _ = std::fs::remove_file(&path);
+            false
+        }
+    }
+}
+
+/// Leave the credentials for the waiting instance and clear the note.
+fn write_handoff(creds: &InterceptCreds) {
+    let dir = ipc_dir();
+    let body = format!(
+        "{}\n{}\n{}\n",
+        creds.account,
+        creds.otp,
+        creds.raw_args.join("\t")
+    );
+    match std::fs::write(dir.join(HANDOFF_FILENAME), body) {
+        Ok(()) => tracing::info!("ggm: reported credentials back to the running instance"),
+        Err(e) => tracing::warn!("ggm: could not report credentials back: {e}"),
+    }
+    let _ = std::fs::remove_file(dir.join(PENDING_FILENAME));
+}
+
+/// Collect what the intercepted process left, if it has run yet.
+///
+/// The file is removed as it is read: these are one-shot credentials and
+/// nothing should be able to pick them up twice.
+pub fn take_ggm_handoff() -> Option<InterceptCreds> {
+    let path = ipc_dir().join(HANDOFF_FILENAME);
+    let body = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+
+    let mut lines = body.lines();
+    let account = lines.next()?.to_string();
+    let otp = lines.next()?.to_string();
+    let raw_args = lines
+        .next()
+        .map(|a| a.split('\t').map(String::from).collect())
+        .unwrap_or_default();
+    (!account.is_empty() && !otp.is_empty()).then_some(InterceptCreds {
+        account,
+        otp,
+        raw_args,
+    })
+}
+
+/// Give up waiting, so a later web launch isn't mistaken for this one.
+pub fn clear_ggm_pending() {
+    let dir = ipc_dir();
+    let _ = std::fs::remove_file(dir.join(PENDING_FILENAME));
+    let _ = std::fs::remove_file(dir.join(HANDOFF_FILENAME));
 }

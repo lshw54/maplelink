@@ -78,6 +78,7 @@ pub async fn launch_game(
         }
     } else {
         let _bf_lock = ss.bf_client_lock.lock().await;
+
         let creds = beanfun_service::get_game_credentials(
             &ss.http_client,
             session,
