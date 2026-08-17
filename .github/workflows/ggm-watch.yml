@@ -92,6 +92,9 @@ jobs:
     needs: check
     if: needs.check.outputs.changed == 'true'
     runs-on: windows-latest
+    # A silent install that isn't silent waits for a click that will never come.
+    # Nothing here is worth more than a few minutes of a runner.
+    timeout-minutes: 12
     outputs:
       cv: ${{ steps.read.outputs.cv }}
       hash: ${{ steps.read.outputs.hash }}
@@ -110,18 +113,57 @@ jobs:
           "downloaded {0:N1} MB" -f ((Get-Item setup.exe).Length / 1MB)
 
           $dir = Join-Path $env:RUNNER_TEMP 'ggm'
+          $log = Join-Path $env:RUNNER_TEMP 'install.log'
           $switches = @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/SP-', "/DIR=$dir"
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/SP-',
+            "/DIR=$dir", "/LOG=$log"
           )
-          $p = Start-Process -FilePath .\setup.exe -Wait -PassThru -ArgumentList $switches
-          "installer exit code: $($p.ExitCode)"
+
+          # Not `-Wait`. This installer finishes in about thirty seconds and then
+          # puts up "installation succeeded" and waits for someone to click OK —
+          # which, on a runner with no desktop, is forever. So wait for the file
+          # instead of for the process: the file is the only thing wanted here,
+          # and it exists well before the box appears.
+          $p = Start-Process -FilePath .\setup.exe -PassThru -ArgumentList $switches
+          $deadline = (Get-Date).AddMinutes(4)
+          $dll = $null
+          while ((Get-Date) -lt $deadline) {
+            $dll = Get-ChildItem $dir -Recurse -Filter GGMWebStart.dll -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            # Written, and no longer being written to.
+            if ($dll -and $dll.Length -gt 0) {
+              Start-Sleep -Seconds 2
+              break
+            }
+            if ($p.HasExited) { break }
+            Start-Sleep -Seconds 2
+          }
+
+          if ($p.HasExited) {
+            "installer exit code: $($p.ExitCode)"
+          } else {
+            "installer still running (it waits on a message box); stopping it"
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
 
           # It may start itself when it finishes; nothing here wants it running.
           Get-Process -Name GGMWebStart, GamaniaGameDownloader -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
 
-          $dll = Get-ChildItem $dir -Recurse -Filter GGMWebStart.dll -ErrorAction SilentlyContinue |
-            Select-Object -First 1
+          # Its own log says what it was doing, which is the one thing the last
+          # attempt could not tell us.
+          if (Test-Path $log) {
+            "--- installer log (last 40 lines) ---"
+            Get-Content $log -Tail 40
+          } else {
+            "no installer log at $log"
+          }
+
+          # Re-read, in case the wait above ended before it appeared.
+          if (-not $dll) {
+            $dll = Get-ChildItem $dir -Recurse -Filter GGMWebStart.dll -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
           if (-not $dll) {
             Write-Host "::error::GGMWebStart.dll not found under $dir"
             Get-ChildItem $dir -Recurse -File -ErrorAction SilentlyContinue |
