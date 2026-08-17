@@ -33,12 +33,10 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 const SEC_CH_UA: &str =
     "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"";
 
-/// How long to hold the game-start long poll open before moving on. It is a
-/// long poll — the server may keep it open indefinitely — and nothing reads its
-/// answer, so this only has to be long enough to let the request register.
-const POLL_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// Magic constant used in the OTP retrieval request.
+/// beanfun TW.
+const TW_HOST: &str = "tw.beanfun.com";
+
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
 
 /// Default service code for MapleStory.
@@ -379,19 +377,22 @@ pub async fn get_game_credentials(
         // TW's endpoint now answers only the Gamania Games Manager, so the
         // credentials come back through it. `tw_get_otp` is kept as the
         // fallback: if beanfun ever serves them to us again, it still works.
-        Region::TW => {
-            match crate::services::ggm_launch::credentials_via_ggm(
-                client, session, account_id, cookie_jar,
-            )
-            .await
-            {
-                Ok(creds) => Ok(creds),
-                Err(e) => {
-                    tracing::warn!("TW: the game manager route failed ({e}); trying directly");
-                    tw_get_otp(client, session, account_id, cookie_jar).await
-                }
+        // Two routes. The first is what the game manager does, done here: one
+        // page and one POST, and the code comes back to the window that asked.
+        // The second hands the launch to the manager itself and catches what it
+        // produces — slower, and it needs the manager installed, but it
+        // survives beanfun changing this API again, because the manager updates
+        // itself.
+        Region::TW => match tw_get_otp_v2(client, session, account_id, cookie_jar).await {
+            Ok(creds) => Ok(creds),
+            Err(e) => {
+                tracing::warn!("TW: the v2 route failed ({e}); handing the launch to the manager");
+                crate::services::ggm_launch::credentials_via_ggm(
+                    client, session, account_id, cookie_jar,
+                )
+                .await
             }
-        }
+        },
     }
 }
 /// Ping the beanfun server to keep the session alive.
@@ -2041,120 +2042,6 @@ async fn tw_get_accounts(
     Ok(accounts)
 }
 
-/// Retrieve OTP for TW region (same flow as HK but different host).
-async fn tw_get_otp(
-    client: &Client,
-    session: &Session,
-    account_id: &str,
-    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-) -> Result<GameCredentials, LoginError> {
-    let host = "tw.beanfun.com";
-    let login_host = "tw.newlogin.beanfun.com";
-    let sc = DEFAULT_SERVICE_CODE;
-    let sr = DEFAULT_SERVICE_REGION;
-
-    let web_token = read_bf_web_token(cookie_jar, host);
-
-    let accounts = tw_get_accounts(client, session, cookie_jar).await?;
-    let account = accounts
-        .iter()
-        .find(|a| a.id == account_id)
-        .ok_or_else(|| {
-            LoginError::Auth(AuthError::InvalidCredentials {
-                reason: format!("account {account_id} not found"),
-            })
-        })?;
-
-    let ssn = &account.sn;
-
-    // Step 1: game_start_step2
-    let timestamp = get_current_time_method2();
-    let step2_url = format!(
-        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
-         ?service_code={sc}&service_region={sr}&sotp={ssn}&dt={timestamp}"
-    );
-    let step2_html = http_get_text(client, &step2_url).await?;
-
-    // Step 2: Long polling key
-    let lp_re = Regex::new(r#"GetResultByLongPolling&key=(.*)""#)
-        .map_err(|_| parse_error_str("failed to compile long polling regex"))?;
-    let long_polling_key = lp_re
-        .captures(&step2_html)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .ok_or_else(|| parse_error_str("no long polling key found"))?;
-
-    // Step 3: Create time
-    let create_time = create_time_from(&step2_html, account);
-
-    // Step 4: Secret code
-    let cookies_url = format!("https://{login_host}/generic_handlers/get_cookies.ashx");
-    let cookies_html = http_get_text(client, &cookies_url).await?;
-    let sc_re = Regex::new(r"var m_strSecretCode = '(.*)';")
-        .map_err(|_| parse_error_str("failed to compile secret code regex"))?;
-    let secret_code = sc_re
-        .captures(&cookies_html)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .ok_or_else(|| parse_error_str("no secret code found"))?;
-
-    // Step 5: Record service start
-    tw_start_service(
-        client,
-        &step2_html,
-        &step2_url,
-        host,
-        account,
-        account_id,
-        &create_time,
-    )
-    .await;
-
-    // Step 6: Long polling
-    let now_ts = get_current_time_default();
-    let poll_url = format!(
-        "https://{host}/generic_handlers/get_result.ashx\
-         ?meth=GetResultByLongPolling&key={long_polling_key}&_={now_ts}"
-    );
-    // A long poll: it holds the connection until the server has something to
-    // say, which may be never. The page fires it from JavaScript and carries
-    // on, and nothing downstream reads the answer, so waiting it out would only
-    // hang the app.
-    let _ = tokio::time::timeout(
-        POLL_WAIT,
-        http_get_text_from(client, &poll_url, Some(&step2_url)),
-    )
-    .await;
-
-    // Step 7: Get OTP
-    let create_time_encoded = create_time.replace(' ', "%20");
-    let tick_count = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let otp_url = format!(
-        "https://{host}/beanfun_block/generic_handlers/get_webstart_otp.ashx\
-         ?SN={long_polling_key}&WebToken={web_token}&SecretCode={secret_code}\
-         &ppppp={OTP_PPPPP}&ServiceCode={sc}&ServiceRegion={sr}\
-         &ServiceAccount={account_id}&CreateTime={create_time_encoded}\
-         &d={tick_count}"
-    );
-    let otp_response = http_get_text_from(client, &otp_url, Some(&step2_url)).await?;
-
-    // Step 8: Parse "{status};{payload}"
-    let parts: Vec<&str> = otp_response.splitn(2, ';').collect();
-    if parts.len() < 2 {
-        return Err(parse_error_str("OTP response format invalid"));
-    }
-    if parts[0] != "1" {
-        return Err(otp_failure_error(parts.get(1).unwrap_or(&"")));
-    }
-
-    let otp = decrypt_otp_payload(parts[1])?;
-    tracing::info!(account_id = %account_id, "TW OTP retrieved via get_webstart_otp");
-    Ok(tw_credentials(account_id, otp))
-}
-
 /// Fetch the TW game-start page for `account_id` and read its GGM launch
 /// ticket.
 ///
@@ -2779,6 +2666,192 @@ fn game_start_step2_url(host: &str, sotp: &str, timestamp: &str) -> String {
     )
 }
 
+/// The substitution tables the game manager's payload decoder uses.
+///
+/// The first character of the payload is a hex digit that picks one of these
+/// and also says where in the result the DES key sits. Every other character
+/// maps to its index in the chosen table, which turns the payload into ordinary
+/// hex.
+const TICKET_TABLES: [&str; 8] = [
+    "bac987d65e432f10",
+    "3bc4d5e6f2a79108",
+    "cdbeaf9012456378",
+    "4e6fb81a3c5d7092",
+    "bdef1246789ac530",
+    "5f82cb4093e71d6a",
+    "df1468ace0357b92",
+    "b50c61a4f93e82d7",
+];
+
+/// What the game-start page's payload carries once decoded.
+///
+/// Not credentials — a ticket that stands in for them, which the credential
+/// endpoint trades for the real thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchTicket {
+    pub launch_ticket: String,
+    pub service_account: String,
+}
+
+/// Decode the game-start payload into its launch ticket.
+///
+/// It looks encrypted to a key we don't have, and isn't: the key travels with
+/// the payload, eight characters at an offset the payload's first character
+/// names, and the rest is DES-ECB with no padding — the same cipher the
+/// credential response has always used.
+///
+/// Which table that first character selects is not settled. `n % 4` decodes
+/// every payload seen so far, but there are eight tables, and a payload whose
+/// selector is 12 rules out `n % 8` while another selector might rule out
+/// `n % 4`. Rather than pick a rule and be wrong for some accounts, each table
+/// is tried until one yields a plaintext holding a `LaunchTicket` — an answer
+/// that can't be reached by accident, since a wrong table gives noise. Eight
+/// DES passes over 272 bytes costs nothing measurable, and it keeps working if
+/// beanfun adds a ninth table.
+pub fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
+    let selector = usize::from_str_radix(data.get(..1)?, 16).ok()?;
+    let body = data.get(1..)?;
+
+    // Most likely first, so the log usually names the same one.
+    let mut order: Vec<usize> = vec![selector % 4, selector % TICKET_TABLES.len()];
+    order.extend(0..TICKET_TABLES.len());
+    order.dedup();
+
+    let mut tried = Vec::new();
+    for index in order {
+        if tried.contains(&index) {
+            continue;
+        }
+        tried.push(index);
+        if let Some(ticket) = decode_with_table(body, selector, TICKET_TABLES[index]) {
+            tracing::debug!(selector, table = index, "TW: launch ticket table");
+            return Some(ticket);
+        }
+    }
+    None
+}
+
+/// One attempt at decoding, with a table already chosen.
+fn decode_with_table(body: &str, selector: usize, table: &str) -> Option<LaunchTicket> {
+    let mut normalized = String::with_capacity(body.len());
+    for c in body.chars() {
+        normalized.push(std::char::from_digit(table.find(c)? as u32, 16)?);
+    }
+
+    let key_at = selector + 1;
+    let key = normalized.get(key_at..key_at + 8)?;
+    let ciphertext = format!(
+        "{}{}",
+        normalized.get(..key_at)?,
+        normalized.get(key_at + 8..)?
+    );
+
+    let plaintext = des_ecb_decrypt_hex(&ciphertext, key)?;
+    let field = |name: &str| -> Option<String> {
+        plaintext
+            .split(['&', ';'])
+            .find_map(|kv| kv.trim().strip_prefix(&format!("{name}=")))
+            .map(str::to_string)
+    };
+
+    // The field that says this decoded rather than merely decrypted.
+    Some(LaunchTicket {
+        launch_ticket: field("LaunchTicket")?,
+        service_account: field("ServiceAccount").unwrap_or_default(),
+    })
+}
+
+/// Trade a launch ticket for the game credentials.
+///
+/// The endpoint the game manager uses. It states which build is asking — a
+/// version and the hash of one of the manager's files — and beanfun refuses
+/// anything that doesn't. The answer is JSON, but the payload inside it is the
+/// same eight characters of DES key followed by ciphertext that the older
+/// endpoint returned, so only the wrapper is new.
+async fn tw_otp_from_launch_ticket(
+    client: &Client,
+    sn: &str,
+    ticket: &LaunchTicket,
+) -> Result<GameCredentials, LoginError> {
+    let integrity = crate::services::ggm_hotfix::client_integrity(client).await;
+    let url = format!("https://{TW_HOST}/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx");
+    let body = serde_json::json!({
+        "SN": sn,
+        "LaunchTicket": ticket.launch_ticket,
+        "CV": integrity.cv,
+        "Hash": integrity.hash,
+        "arch": integrity.arch,
+    });
+
+    let response = client
+        .post(&url)
+        .header("User-Agent", USER_AGENT)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+    if !status.is_success() {
+        tracing::error!(%status, head = %preview_text(&text, 200), "TW: v2 OTP request failed");
+        return Err(LoginError::Network(NetworkError::HttpError {
+            status: status.as_u16(),
+            url,
+        }));
+    }
+
+    let body: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+        tracing::error!(
+            bytes = text.len(),
+            head = %preview_text(&text, 300),
+            "TW: v2 OTP response is not JSON"
+        );
+        parse_error_str("OTP response format invalid")
+    })?;
+
+    if body["result"].as_i64() != Some(1) {
+        let message = body["message"].as_str().unwrap_or_default();
+        tracing::error!(result = ?body["result"], message, "TW: v2 OTP request refused");
+        return Err(otp_failure_error(message));
+    }
+
+    let payload = body["data"]
+        .as_str()
+        .ok_or_else(|| parse_error_str("OTP response carried no data"))?;
+    let otp = decrypt_otp_payload(payload)?;
+    Ok(tw_credentials(&ticket.service_account, otp))
+}
+
+/// Fetch TW credentials the way the game manager does.
+///
+/// One page, one POST. The game-start page carries a payload that decodes —
+/// with no secret of beanfun's — into a launch ticket, and the credential
+/// endpoint trades that ticket for the real credentials. Nothing is launched,
+/// no registry key is touched, and the one-time password comes back here rather
+/// than through a second process.
+async fn tw_get_otp_v2(
+    client: &Client,
+    session: &Session,
+    account_id: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<GameCredentials, LoginError> {
+    let ticket = tw_ggm_ticket(client, session, account_id, cookie_jar).await?;
+    let launch = decode_launch_ticket(&ticket.data)
+        .ok_or_else(|| parse_error_str("could not read the launch ticket"))?;
+    tracing::info!(account_id, sn = %ticket.sn, "TW: launch ticket decoded, requesting credentials");
+
+    let mut credentials = tw_otp_from_launch_ticket(client, &ticket.sn, &launch).await?;
+    // The page reports the account it issued the ticket for; keep the caller's
+    // id, which is what the rest of the app keys on.
+    credentials.account_id = account_id.to_string();
+    tracing::info!(account_id, "TW OTP retrieved");
+    Ok(credentials)
+}
+
 /// The launch ticket beanfun's game-start page hands to the Gamania Games
 /// Manager.
 ///
@@ -2986,6 +3059,111 @@ mod tests {
                 "?service_code=610074&service_region=T9&sotp=1845983&dt=2026717141832357",
             )
         );
+    }
+
+    /// Build a payload the way beanfun does, so the decoder is tested against
+    /// the encoding rather than against a recorded secret.
+    fn encode_launch_payload(plaintext: &str, key: &str, selector: usize) -> String {
+        encode_launch_payload_with(plaintext, key, selector, TICKET_TABLES[selector % 4])
+    }
+
+    /// As above, with the table stated rather than derived.
+    fn encode_launch_payload_with(
+        plaintext: &str,
+        key: &str,
+        selector: usize,
+        table: &str,
+    ) -> String {
+        use des::cipher::{BlockCipherEncrypt, KeyInit};
+
+        let cipher = des::Des::new_from_slice(key.as_bytes()).unwrap();
+        let mut padded = plaintext.as_bytes().to_vec();
+        padded.resize(padded.len().div_ceil(8) * 8, 0);
+        for chunk in padded.chunks_exact_mut(8) {
+            let block: &mut des::cipher::Array<u8, _> = chunk.try_into().unwrap();
+            cipher.encrypt_block(block);
+        }
+        let cipher_hex: String = padded.iter().map(|b| format!("{b:02x}")).collect();
+
+        // The key sits at `selector + 1` in the normalized hex.
+        let key_at = selector + 1;
+        let normalized = format!("{}{key}{}", &cipher_hex[..key_at], &cipher_hex[key_at..]);
+
+        let body: String = normalized
+            .chars()
+            .map(|c| table.chars().nth(c.to_digit(16).unwrap() as usize).unwrap())
+            .collect();
+        format!("{:x}{body}", selector % 16)
+    }
+
+    #[test]
+    fn decodes_a_launch_ticket() {
+        // A ticket of the real width, built rather than typed out, so the test
+        // can't disagree with itself about how long 64 characters is.
+        let ticket_value: String = std::iter::repeat_n('a', 64).collect();
+        let account = "T96581594b9840873995";
+        let plaintext = format!(
+            "LaunchTicket={ticket_value}&ServiceCode=610074&ServiceRegion=T9&ServiceAccount={account}"
+        );
+        // The key is eight characters cut out of the normalized hex, so it is
+        // always hex itself — a non-hex key could never occur.
+        let data = encode_launch_payload(&plaintext, "eec50e43", 12);
+
+        let ticket = decode_launch_ticket(&data).expect("decodes");
+        assert_eq!(ticket.launch_ticket, ticket_value);
+        assert_eq!(ticket.service_account, account);
+    }
+
+    #[test]
+    fn any_table_decodes_whatever_the_selector() {
+        // Which table a selector picks is not settled — `n % 4` fits every
+        // payload seen, but there are eight tables. The decoder answers that by
+        // trying them, so encode with each table in turn, against selectors
+        // that agree with neither rule, and require every one to come back.
+        for (index, table) in TICKET_TABLES.iter().enumerate() {
+            for selector in [index, index + 8, index + 3] {
+                let data = encode_launch_payload_with(
+                    "LaunchTicket=abc&ServiceAccount=acct",
+                    "abcdef12",
+                    selector,
+                    table,
+                );
+                let ticket = decode_launch_ticket(&data).unwrap_or_else(|| {
+                    panic!("table {index} with selector {selector} failed to decode")
+                });
+                assert_eq!(ticket.launch_ticket, "abc");
+                assert_eq!(ticket.service_account, "acct");
+            }
+        }
+    }
+
+    #[test]
+    fn a_payload_that_decrypts_to_nothing_useful_is_rejected() {
+        // A wrong table still produces bytes; only the absence of a ticket in
+        // them says the attempt failed. Without that check the first table
+        // tried would always "succeed".
+        let data = encode_launch_payload("NotATicket=abc", "abcdef12", 3);
+        assert!(decode_launch_ticket(&data).is_none());
+    }
+
+    #[test]
+    fn rubbish_decodes_to_nothing_rather_than_panicking() {
+        assert!(decode_launch_ticket("").is_none());
+        assert!(decode_launch_ticket("z").is_none());
+        // Characters outside the chosen table can't be mapped.
+        assert!(decode_launch_ticket("0zzzz").is_none());
+    }
+
+    #[test]
+    fn the_v2_payload_splits_into_a_key_and_whole_blocks() {
+        // A real reply's payload, values replaced: 40 hex characters, the first
+        // eight being the DES key and the rest one 16-byte ciphertext — the
+        // same shape the older endpoint returned after its `1;`.
+        let data = "18103D179B09C6BEB8A4A37B9037A44E599760D8";
+        let (key, cipher) = data.split_at(8);
+        assert_eq!(key.len(), 8);
+        assert_eq!(cipher.len() % 16, 0, "ciphertext is whole DES blocks");
+        assert!(decrypt_otp_payload("short").is_err());
     }
 
     #[test]

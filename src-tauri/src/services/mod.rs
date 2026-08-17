@@ -13,6 +13,7 @@ pub mod exe_rename_service;
 pub mod game_download;
 pub mod game_env_service;
 pub mod game_launch_service;
+pub mod ggm_hotfix;
 pub mod ggm_launch;
 pub mod github_hosts;
 pub mod local_proxy;

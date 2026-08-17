@@ -69,6 +69,16 @@ pub async fn credentials_via_ggm(
         // Someone else's, or too old to still be good: let it go and fetch.
     }
 
+    // Nothing here works without the game manager, and opening its URL when it
+    // isn't installed puts a Windows dialog on screen — "your device needs a
+    // new app to open this link" — that says nothing about what MapleLink was
+    // doing or what went wrong before it. Stop short of that.
+    if !process_service::ggm_installed() {
+        return Err(beanfun_service::launch_handoff_error(
+            "the Gamania Games Manager is not installed",
+        ));
+    }
+
     let ticket = beanfun_service::tw_ggm_ticket(client, session, account_id, cookie_jar).await?;
 
     // Without the interception the game manager starts the game directly and we
