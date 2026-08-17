@@ -85,16 +85,24 @@ $item = Get-Item $Dll
 $cv = $item.VersionInfo.FileVersion
 $hash = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLower()
 
-# The installer beanfun currently advertises. Recorded so the watcher workflow
-# has something to compare against; it is how a new manager is noticed at all.
+# The build beanfun currently announces. Recorded so the watcher has something
+# to compare against, and worth printing: if it disagrees with the DLL on this
+# machine, the manager here is out of date and these values are the wrong ones
+# to publish.
 $installer = ''
+$announced = ''
 try {
-    $params = Invoke-RestMethod -Uri 'https://tw.beanfun.com/beanfun_block/scripts/BeanFunBlockParams.ashx' -TimeoutSec 20
-    if ($params -match 'InstallFileDowloadUrl\s*:\s*"([^"]+)"') {
-        $installer = Split-Path $matches[1] -Leaf
-    }
+    $check = Invoke-RestMethod -Uri 'https://tw.beanfun.com/generic_handlers/CheckVersion.ashx' -TimeoutSec 20
+    $announced = $check.version
+    if ($check.url) { $installer = Split-Path $check.url -Leaf }
 } catch {
-    Write-Host "Could not reach beanfun to read the installer name; leaving it blank." -ForegroundColor Yellow
+    Write-Host "Could not reach beanfun to read the announced version." -ForegroundColor Yellow
+}
+
+if ($announced -and $announced -ne $cv) {
+    Write-Host "beanfun announces $announced but this machine has $cv." -ForegroundColor Yellow
+    Write-Host "Update the Gamania Games Manager before publishing these values." -ForegroundColor Yellow
+    Write-Host ""
 }
 
 $fields = @()
@@ -108,6 +116,7 @@ Write-Host "GGMWebStart.dll : $Dll"
 Write-Host "version         : $cv"
 Write-Host "sha256          : $hash"
 Write-Host "installer       : $(if ($installer) { $installer } else { '(unknown)' })"
+Write-Host "beanfun says    : $(if ($announced) { $announced } else { '(unknown)' })"
 Write-Host ""
 
 if ($Pin) {
