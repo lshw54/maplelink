@@ -14,6 +14,23 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 ///
 /// Fetches beanfun's service INI to learn the registry location, reads the
 /// path from HKCU/HKLM, and falls back to a few well-known registry keys.
+/// Whether a registry path points at MapleLink rather than at a game.
+fn is_this_app(path: &str) -> bool {
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    // Matched by file name, not full path: the exe is renamed to `Beanfun.exe`
+    // by some users, and a build can live anywhere.
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.file_name()
+                .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        })
+        .is_some_and(|ours| !name.is_empty() && name == ours)
+}
+
 pub async fn detect_game_path(state: &AppState) -> Result<Option<String>, ErrorDto> {
     #[cfg(target_os = "windows")]
     {
@@ -62,7 +79,11 @@ pub async fn detect_game_path(state: &AppState) -> Result<Option<String>, ErrorD
 
                     if let Ok(key) = hkcu.open_subkey(&reg_path) {
                         if let Ok(dir) = key.get_value::<String, _>(&val_name) {
-                            if !dir.is_empty() {
+                            // The web-launch interception points this very key
+                            // at MapleLink so beanfun's launches route through
+                            // us. Reading it back as "the game" would make the
+                            // app try to launch itself.
+                            if !dir.is_empty() && !is_this_app(&dir) {
                                 let full_str = if dir.to_lowercase().ends_with(".exe") {
                                     dir
                                 } else {

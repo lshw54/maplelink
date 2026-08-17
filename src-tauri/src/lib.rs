@@ -316,6 +316,7 @@ pub fn run() {
             commands::system::detect_game_path,
             commands::system::toggle_debug_window,
             commands::system::open_log_folder,
+            commands::system::open_data_folder,
             commands::system::open_external,
             commands::system::get_recent_logs,
             commands::system::open_web_popup,

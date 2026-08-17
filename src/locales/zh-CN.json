@@ -224,6 +224,8 @@
   "toolbox.tools.section_client": "游戏客户端",
   "toolbox.tools.download_client": "下载／修复客户端",
   "toolbox.tools.download_client_desc": "获取官方游戏主程序与更新档链接",
+  "toolbox.tools.data_folder": "数据文件夹",
+  "toolbox.tools.data_folder_desc": "存放设置与账号的位置。台服启动若因游戏管理员改版而失效，可把新的 GGMWebStart.dll 放进这里。",
   "toolbox.download.title": "下载游戏客户端",
   "toolbox.download.intro": "以下为 beanfun 官方下载链接。MapleLink 不会自动下载或替换任何游戏文件，请自行复制链接或在浏览器下载，并从官方来源安装，以确保文件安全。",
   "toolbox.download.group_game": "游戏主程序",

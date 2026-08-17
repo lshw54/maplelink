@@ -224,6 +224,8 @@
   "toolbox.tools.section_client": "Game Client",
   "toolbox.tools.download_client": "Download / Repair Client",
   "toolbox.tools.download_client_desc": "Get official game client & update patch links",
+  "toolbox.tools.data_folder": "Data folder",
+  "toolbox.tools.data_folder_desc": "Where settings and accounts live. If a TW launch stops working after the game manager updates, drop a newer GGMWebStart.dll in here.",
   "toolbox.download.title": "Download Game Client",
   "toolbox.download.intro": "These are beanfun's official download links. MapleLink never downloads or replaces any game file itself — copy the link or open it in your browser and install from the official source, so you know the files are safe.",
   "toolbox.download.group_game": "Full Client",

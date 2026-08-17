@@ -1,0 +1,124 @@
+# Watch for a new Gamania Games Manager, so `ggm-client.json` can be updated
+# before users notice.
+#
+# TW launches state which build of the game manager is asking — a version and
+# the SHA-256 of `GGMWebStart.dll` — and beanfun refuses a pair it doesn't
+# accept. The pair lives in `ggm-client.json`, which the app fetches, so a new
+# manager needs a commit here rather than a release. The hard part is noticing
+# beanfun shipped one.
+#
+# Every run downloads the installer, unpacks it, and hashes the DLL inside.
+# Nothing cheaper is trustworthy: the installer is versioned separately from the
+# file that matters (`..._2_2_2_1.exe` carrying a DLL at 1.5.0.2), so its name
+# can stay put while the DLL changes, and headers can stay put too if the CDN
+# serves them from an index rather than the file. The hash is the value beanfun
+# actually checks, so it is the value to watch.
+#
+# Public repositories don't consume Actions minutes, so hourly costs nothing but
+# the bandwidth. GitHub runs scheduled jobs late when it's busy, so "hourly"
+# means "roughly hourly".
+
+name: Watch GGM version
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ggm-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check for a new game manager
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Ask beanfun which installer it ships
+        id: upstream
+        run: |
+          params=$(curl -fsS --max-time 30 \
+            "https://tw.beanfun.com/beanfun_block/scripts/BeanFunBlockParams.ashx")
+          url=$(printf '%s' "$params" | grep -oP 'InstallFileDowloadUrl\s*:\s*"\K[^"]+')
+          if [ -z "$url" ]; then
+            echo "::error::could not read InstallFileDowloadUrl"
+            printf '%s\n' "$params"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "installer=$(basename "$url")" >> "$GITHUB_OUTPUT"
+          echo "beanfun ships $(basename "$url")"
+
+      - name: Read the DLL's hash out of the installer
+        id: values
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq innoextract
+          curl -fsSL --max-time 600 --retry 2 -o installer.exe '${{ steps.upstream.outputs.url }}'
+          ls -l installer.exe
+          innoextract -s -d extracted installer.exe
+          dll=$(find extracted -name GGMWebStart.dll | head -1)
+          if [ -z "$dll" ]; then
+            echo "::error::GGMWebStart.dll not found inside the installer"
+            find extracted -maxdepth 2 -type f | head -40
+            exit 1
+          fi
+          echo "hash=$(sha256sum "$dll" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "read $dll"
+
+      - name: Compare it with what we publish
+        id: compare
+        run: |
+          published=$(jq -r '.hash // ""' ggm-client.json)
+          found='${{ steps.values.outputs.hash }}'
+          echo "published=$published"
+          echo "found=${found:-<unreadable>}"
+
+          if [ -z "$found" ]; then
+            # Gamania's patch host may not answer a runner outside Taiwan, and
+            # the installer format may change. Either way this is a warning, not
+            # an alarm: a watcher that can't see is not the same as a manager
+            # that changed, and turning it into an hourly issue would bury the
+            # one that matters.
+            echo "::warning::could not read the installer; see the step above"
+            echo "state=unreadable" >> "$GITHUB_OUTPUT"
+          elif [ "$found" = "$published" ]; then
+            echo "state=same" >> "$GITHUB_OUTPUT"
+            echo "unchanged"
+          else
+            echo "state=changed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an issue
+        if: steps.compare.outputs.state == 'changed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALLER: ${{ steps.upstream.outputs.installer }}
+          URL: ${{ steps.upstream.outputs.url }}
+          HASH: ${{ steps.values.outputs.hash }}
+        run: |
+          # The label has to exist before it can be filtered on or applied, and
+          # it won't on the first run.
+          gh label create ggm-version \
+            --description "beanfun shipped a new Gamania Games Manager" \
+            --color FBCA04 2>/dev/null || true
+
+          # One open issue at a time — this runs hourly.
+          existing=$(gh issue list --state open --label ggm-version --json number \
+            --jq '.[0].number // ""' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            echo "issue #$existing is already open"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Gamania Games Manager: new build in $INSTALLER" \
+            --label ggm-version \
+            --body "$(printf 'beanfun is shipping a new `GGMWebStart.dll` in `%s`.\n\nUpdate `ggm-client.json` at the repo root:\n\n```json\n{\n  "installer": "%s",\n  "cv": "<file version — see below>",\n  "hash": "%s"\n}\n```\n\n`cv` is the DLL'"'"'s file version, which needs a Windows machine to read;\n`scripts/ggm-client.ps1` prints it and the hash together from an installed\nmanager.\n\nInstaller: %s\n\nA commit is enough — the app fetches this file, so no release is needed.\nUntil then TW launches keep working for anyone with the manager installed\n(their own copy is read first) and for anyone whose current values still pass.\n' "$INSTALLER" "$INSTALLER" "$HASH" "$URL")"

@@ -848,3 +848,26 @@ pub async fn apply_beanfun_rename(app: tauri::AppHandle) -> Result<(), ErrorDto>
     app.exit(0);
     Ok(())
 }
+
+/// Open MapleLink's data folder.
+///
+/// It holds config, saved accounts, and the optional `GGMWebStart.dll` a user
+/// can drop in to update what TW launches tell beanfun about the client asking.
+/// Having a button for it makes that instruction "press this, put the file
+/// here" rather than a path to be typed out.
+#[tauri::command]
+pub async fn open_data_folder(app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    let dir = app.path().app_config_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get data dir: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+
+    crate::utils::shell_open::shell_open(&dir.to_string_lossy()).map_err(|e| ErrorDto {
+        code: "SYS_OPEN_FOLDER_FAILED".to_string(),
+        message: format!("Failed to open folder: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })
+}

@@ -34,6 +34,9 @@ const SEC_CH_UA: &str =
     "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"";
 
 /// Magic constant used in the OTP retrieval request.
+/// beanfun TW.
+const TW_HOST: &str = "tw.beanfun.com";
+
 const OTP_PPPPP: &str = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA";
 
 /// Default service code for MapleStory.
@@ -371,7 +374,25 @@ pub async fn get_game_credentials(
 ) -> Result<GameCredentials, LoginError> {
     match session.region {
         Region::HK => hk_get_otp(client, session, account_id, cookie_jar).await,
-        Region::TW => tw_get_otp(client, session, account_id, cookie_jar).await,
+        // TW's endpoint now answers only the Gamania Games Manager, so the
+        // credentials come back through it. `tw_get_otp` is kept as the
+        // fallback: if beanfun ever serves them to us again, it still works.
+        // Two routes. The first is what the game manager does, done here: one
+        // page and one POST, and the code comes back to the window that asked.
+        // The second hands the launch to the manager itself and catches what it
+        // produces — slower, and it needs the manager installed, but it
+        // survives beanfun changing this API again, because the manager updates
+        // itself.
+        Region::TW => match tw_get_otp_v2(client, session, account_id, cookie_jar).await {
+            Ok(creds) => Ok(creds),
+            Err(e) => {
+                tracing::warn!("TW: the v2 route failed ({e}); handing the launch to the manager");
+                crate::services::ggm_launch::credentials_via_ggm(
+                    client, session, account_id, cookie_jar,
+                )
+                .await
+            }
+        },
     }
 }
 /// Ping the beanfun server to keep the session alive.
@@ -511,6 +532,13 @@ pub enum LoginError {
     Auth(#[from] AuthError),
     #[error(transparent)]
     Network(#[from] NetworkError),
+}
+
+/// A failure in the hand-off to the Gamania Games Manager.
+pub fn launch_handoff_error(reason: &str) -> LoginError {
+    LoginError::Auth(AuthError::InvalidCredentials {
+        reason: reason.to_string(),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -2014,20 +2042,19 @@ async fn tw_get_accounts(
     Ok(accounts)
 }
 
-/// Retrieve OTP for TW region (same flow as HK but different host).
-async fn tw_get_otp(
+/// Fetch the TW game-start page for `account_id` and read its GGM launch
+/// ticket.
+///
+/// This is the path beanfun's own site now takes. It replaces nothing yet —
+/// [`tw_get_otp`] still exists for the direct route — but it is the only route
+/// that does not depend on impersonating GGM's integrity check.
+pub async fn tw_ggm_ticket(
     client: &Client,
     session: &Session,
     account_id: &str,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-) -> Result<GameCredentials, LoginError> {
+) -> Result<GgmTicket, LoginError> {
     let host = "tw.beanfun.com";
-    let login_host = "tw.newlogin.beanfun.com";
-    let sc = DEFAULT_SERVICE_CODE;
-    let sr = DEFAULT_SERVICE_REGION;
-
-    let web_token = read_bf_web_token(cookie_jar, host);
-
     let accounts = tw_get_accounts(client, session, cookie_jar).await?;
     let account = accounts
         .iter()
@@ -2038,125 +2065,94 @@ async fn tw_get_otp(
             })
         })?;
 
-    let ssn = &account.sn;
-    let sname = &account.display_name;
-
-    // Step 1: game_start_step2
     let timestamp = get_current_time_method2();
-    let step2_url = format!(
-        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
-         ?service_code={sc}&service_region={sr}&sotp={ssn}&dt={timestamp}"
+    let url = game_start_step2_url(host, &account.sn, &timestamp);
+    let html = http_get_text(client, &url).await?;
+
+    let ticket = extract_ggm_ticket(&html)
+        .ok_or_else(|| parse_error_str("no GGM launch ticket in the game-start page"))?;
+    tracing::info!(
+        region = %ticket.region,
+        sn = %ticket.sn,
+        data_len = ticket.data.len(),
+        "TW: GGM launch ticket read"
     );
-    let step2_html = http_get_text(client, &step2_url).await?;
 
-    // Step 2: Long polling key
-    let lp_re = Regex::new(r#"GetResultByLongPolling&key=(.*)""#)
-        .map_err(|_| parse_error_str("failed to compile long polling regex"))?;
-    let long_polling_key = lp_re
-        .captures(&step2_html)
+    // The page records the start alongside handing off to GGM.
+    let create_time = create_time_from(&html, account);
+    tw_start_service(client, &html, &url, host, account, account_id, &create_time).await;
+
+    Ok(ticket)
+}
+
+/// The create time to report for `account`, preferring what the account already
+/// knows and falling back to what the page says.
+fn create_time_from(html: &str, account: &GameAccount) -> String {
+    if !account.created_at.is_empty() {
+        return account.created_at.clone();
+    }
+    Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#)
+        .ok()
+        .and_then(|re| re.captures(html))
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
-        .ok_or_else(|| parse_error_str("no long polling key found"))?;
+        .unwrap_or_default()
+}
 
-    // Step 3: Create time
-    let create_time = if account.created_at.is_empty() {
-        let ct_re = Regex::new(r#"ServiceAccountCreateTime: "([^"]+)""#)
-            .map_err(|_| parse_error_str("failed to compile create time regex"))?;
-        ct_re
-            .captures(&step2_html)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
-            .unwrap_or_default()
-    } else {
-        account.created_at.clone()
-    };
-
-    // Step 4: Secret code
-    let cookies_url = format!("https://{login_host}/generic_handlers/get_cookies.ashx");
-    let cookies_html = http_get_text(client, &cookies_url).await?;
-    let sc_re = Regex::new(r"var m_strSecretCode = '(.*)';")
-        .map_err(|_| parse_error_str("failed to compile secret code regex"))?;
-    let secret_code = sc_re
-        .captures(&cookies_html)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .ok_or_else(|| parse_error_str("no secret code found"))?;
-
-    // Step 5: Record service start
-    let record_url =
-        format!("https://{host}/beanfun_block/generic_handlers/record_service_start.ashx");
-    let record_form = [
-        ("service_code", sc),
-        ("service_region", sr),
+/// Tell beanfun the service is starting, the way the page does.
+///
+/// Best-effort: it is beanfun's own bookkeeping ("last played"), not something
+/// the credentials depend on, so a failure here must not cost the user a launch.
+/// The page appends a random-named anti-forgery field to this form, so we carry
+/// whichever one this page load produced.
+async fn tw_start_service(
+    client: &Client,
+    step2_html: &str,
+    step2_url: &str,
+    host: &str,
+    account: &GameAccount,
+    account_id: &str,
+    create_time: &str,
+) {
+    let url = format!("https://{host}/beanfun_block/generic_handlers/record_service_start.ashx");
+    let mut form: Vec<(&str, &str)> = vec![
+        ("service_code", DEFAULT_SERVICE_CODE),
+        ("service_region", DEFAULT_SERVICE_REGION),
         ("service_account_id", account_id),
-        ("sotp", ssn),
-        ("service_account_display_name", sname),
-        ("service_account_create_time", &create_time),
+        ("sotp", &account.sn),
+        ("service_account_display_name", &account.display_name),
+        ("service_account_create_time", create_time),
     ];
-    let _ = client
-        .post(&record_url)
+
+    let token = extract_service_start_token(step2_html);
+    match &token {
+        Some((name, value)) => form.push((name.as_str(), value.as_str())),
+        None => tracing::warn!("TW: no service-start token in the game-start page"),
+    }
+
+    match client
+        .post(&url)
         .header("User-Agent", USER_AGENT)
-        .form(&record_form)
+        .header(reqwest::header::REFERER, step2_url)
+        .form(&form)
         .send()
         .await
-        .map_err(|e| map_reqwest_error(&record_url, e))?;
-
-    // Step 6: Long polling
-    let now_ts = get_current_time_default();
-    let poll_url = format!(
-        "https://{host}/generic_handlers/get_result.ashx\
-         ?meth=GetResultByLongPolling&key={long_polling_key}&_={now_ts}"
-    );
-    let _ = http_get_text(client, &poll_url).await?;
-
-    // Step 7: Get OTP
-    let create_time_encoded = create_time.replace(' ', "%20");
-    let tick_count = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let otp_url = format!(
-        "https://{host}/beanfun_block/generic_handlers/get_webstart_otp.ashx\
-         ?SN={long_polling_key}&WebToken={web_token}&SecretCode={secret_code}\
-         &ppppp={OTP_PPPPP}&ServiceCode={sc}&ServiceRegion={sr}\
-         &ServiceAccount={account_id}&CreateTime={create_time_encoded}\
-         &d={tick_count}"
-    );
-    let otp_response = http_get_text(client, &otp_url).await?;
-
-    // Step 8: Parse
-    let parts: Vec<&str> = otp_response.splitn(2, ';').collect();
-    if parts.len() < 2 {
-        return Err(parse_error_str("OTP response format invalid"));
+    {
+        Ok(response) => tracing::info!(status = %response.status(), "TW: service start recorded"),
+        Err(e) => tracing::warn!("TW: could not record service start: {e}"),
     }
-    if parts[0] != "1" {
-        return Err(otp_failure_error(parts.get(1).unwrap_or(&"")));
-    }
+}
 
-    let data = parts[1];
-    if data.len() < 8 {
-        return Err(parse_error_str("OTP data too short for DES key"));
-    }
-
-    // Step 9: DES decrypt
-    let des_key = &data[..8];
-    let encrypted = &data[8..];
-    let otp = des_ecb_decrypt_hex(encrypted, des_key).ok_or_else(|| {
-        LoginError::Auth(AuthError::InvalidCredentials {
-            reason: "OTP decryption failed".into(),
-        })
-    })?;
-
-    tracing::info!(account_id = %account_id, "TW OTP retrieved successfully");
-
-    Ok(GameCredentials {
+/// Game credentials in the shape the TW launcher expects.
+fn tw_credentials(account_id: &str, otp: String) -> GameCredentials {
+    GameCredentials {
         account_id: account_id.to_string(),
         otp,
         retrieved_at: chrono::Utc::now(),
         command_line_template: Some(
             "tw.login.maplestory.beanfun.com 8484 BeanFun %s %s".to_string(),
         ),
-    })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2507,15 +2503,33 @@ fn normalize_registered_device_callback_url(raw: &str) -> String {
 
 /// Perform a GET request and return the response body as text.
 async fn http_get_text(client: &Client, url: &str) -> Result<String, LoginError> {
+    http_get_text_from(client, url, None).await
+}
+
+/// [`http_get_text`], sent as though it came from the page at `referer`.
+///
+/// beanfun's `generic_handlers` now reject a request whose `Referer` is absent
+/// or off-domain ("The URL referrer is null or from a different domain!"), so
+/// the handlers a game-start page would call have to say which page they came
+/// from. A browser fills this in on its own; we never did, which is why a flow
+/// that had not otherwise changed started failing.
+async fn http_get_text_from(
+    client: &Client,
+    url: &str,
+    referer: Option<&str>,
+) -> Result<String, LoginError> {
     assert_https(url)?;
 
     if is_auth_url(url) {
         tracing::info!(url, "HTTP GET start");
     }
 
-    let resp = client
-        .get(url)
-        .header("User-Agent", USER_AGENT)
+    let mut request = client.get(url).header("User-Agent", USER_AGENT);
+    if let Some(referer) = referer {
+        request = request.header(reqwest::header::REFERER, referer);
+    }
+
+    let resp = request
         .send()
         .await
         .map_err(|e| map_reqwest_error(url, e))?;
@@ -2638,6 +2652,286 @@ fn read_bf_web_token(cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>, host: &s
         .unwrap_or_default()
 }
 
+/// The game-start page URL for one service account.
+///
+/// Built in one place because it is easy to get wrong in a way nothing catches:
+/// a line-continued format string that loses its backslash leaves literal
+/// spaces in the middle of the query, and beanfun answers that with its generic
+/// error page rather than anything that says what was wrong.
+fn game_start_step2_url(host: &str, sotp: &str, timestamp: &str) -> String {
+    format!(
+        "https://{host}/beanfun_block/game_zone/game_start_step2.aspx\
+         ?service_code={DEFAULT_SERVICE_CODE}&service_region={DEFAULT_SERVICE_REGION}\
+         &sotp={sotp}&dt={timestamp}"
+    )
+}
+
+/// The substitution tables the game manager's payload decoder uses.
+///
+/// The first character of the payload is a hex digit that picks one of these
+/// and also says where in the result the DES key sits. Every other character
+/// maps to its index in the chosen table, which turns the payload into ordinary
+/// hex.
+const TICKET_TABLES: [&str; 8] = [
+    "bac987d65e432f10",
+    "3bc4d5e6f2a79108",
+    "cdbeaf9012456378",
+    "4e6fb81a3c5d7092",
+    "bdef1246789ac530",
+    "5f82cb4093e71d6a",
+    "df1468ace0357b92",
+    "b50c61a4f93e82d7",
+];
+
+/// What the game-start page's payload carries once decoded.
+///
+/// Not credentials — a ticket that stands in for them, which the credential
+/// endpoint trades for the real thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchTicket {
+    pub launch_ticket: String,
+    pub service_account: String,
+}
+
+/// Decode the game-start payload into its launch ticket.
+///
+/// It looks encrypted to a key we don't have, and isn't: the key travels with
+/// the payload, eight characters at an offset the payload's first character
+/// names, and the rest is DES-ECB with no padding — the same cipher the
+/// credential response has always used.
+///
+/// Which table that first character selects is not settled. `n % 4` decodes
+/// every payload seen so far, but there are eight tables, and a payload whose
+/// selector is 12 rules out `n % 8` while another selector might rule out
+/// `n % 4`. Rather than pick a rule and be wrong for some accounts, each table
+/// is tried until one yields a plaintext holding a `LaunchTicket` — an answer
+/// that can't be reached by accident, since a wrong table gives noise. Eight
+/// DES passes over 272 bytes costs nothing measurable, and it keeps working if
+/// beanfun adds a ninth table.
+pub fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
+    let selector = usize::from_str_radix(data.get(..1)?, 16).ok()?;
+    let body = data.get(1..)?;
+
+    // Most likely first, so the log usually names the same one.
+    let mut order: Vec<usize> = vec![selector % 4, selector % TICKET_TABLES.len()];
+    order.extend(0..TICKET_TABLES.len());
+    order.dedup();
+
+    let mut tried = Vec::new();
+    for index in order {
+        if tried.contains(&index) {
+            continue;
+        }
+        tried.push(index);
+        if let Some(ticket) = decode_with_table(body, selector, TICKET_TABLES[index]) {
+            tracing::debug!(selector, table = index, "TW: launch ticket table");
+            return Some(ticket);
+        }
+    }
+    None
+}
+
+/// One attempt at decoding, with a table already chosen.
+fn decode_with_table(body: &str, selector: usize, table: &str) -> Option<LaunchTicket> {
+    let mut normalized = String::with_capacity(body.len());
+    for c in body.chars() {
+        normalized.push(std::char::from_digit(table.find(c)? as u32, 16)?);
+    }
+
+    let key_at = selector + 1;
+    let key = normalized.get(key_at..key_at + 8)?;
+    let ciphertext = format!(
+        "{}{}",
+        normalized.get(..key_at)?,
+        normalized.get(key_at + 8..)?
+    );
+
+    let plaintext = des_ecb_decrypt_hex(&ciphertext, key)?;
+    let field = |name: &str| -> Option<String> {
+        plaintext
+            .split(['&', ';'])
+            .find_map(|kv| kv.trim().strip_prefix(&format!("{name}=")))
+            .map(str::to_string)
+    };
+
+    // The field that says this decoded rather than merely decrypted.
+    Some(LaunchTicket {
+        launch_ticket: field("LaunchTicket")?,
+        service_account: field("ServiceAccount").unwrap_or_default(),
+    })
+}
+
+/// Trade a launch ticket for the game credentials.
+///
+/// The endpoint the game manager uses. It states which build is asking — a
+/// version and the hash of one of the manager's files — and beanfun refuses
+/// anything that doesn't. The answer is JSON, but the payload inside it is the
+/// same eight characters of DES key followed by ciphertext that the older
+/// endpoint returned, so only the wrapper is new.
+async fn tw_otp_from_launch_ticket(
+    client: &Client,
+    sn: &str,
+    ticket: &LaunchTicket,
+) -> Result<GameCredentials, LoginError> {
+    let integrity = crate::services::ggm_hotfix::client_integrity(client).await;
+    let url = format!("https://{TW_HOST}/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx");
+    let body = serde_json::json!({
+        "SN": sn,
+        "LaunchTicket": ticket.launch_ticket,
+        "CV": integrity.cv,
+        "Hash": integrity.hash,
+        "arch": integrity.arch,
+    });
+
+    let response = client
+        .post(&url)
+        .header("User-Agent", USER_AGENT)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+    if !status.is_success() {
+        tracing::error!(%status, head = %preview_text(&text, 200), "TW: v2 OTP request failed");
+        return Err(LoginError::Network(NetworkError::HttpError {
+            status: status.as_u16(),
+            url,
+        }));
+    }
+
+    let body: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+        tracing::error!(
+            bytes = text.len(),
+            head = %preview_text(&text, 300),
+            "TW: v2 OTP response is not JSON"
+        );
+        parse_error_str("OTP response format invalid")
+    })?;
+
+    if body["result"].as_i64() != Some(1) {
+        let message = body["message"].as_str().unwrap_or_default();
+        tracing::error!(result = ?body["result"], message, "TW: v2 OTP request refused");
+        return Err(otp_failure_error(message));
+    }
+
+    let payload = body["data"]
+        .as_str()
+        .ok_or_else(|| parse_error_str("OTP response carried no data"))?;
+    let otp = decrypt_otp_payload(payload)?;
+    Ok(tw_credentials(&ticket.service_account, otp))
+}
+
+/// Fetch TW credentials the way the game manager does.
+///
+/// One page, one POST. The game-start page carries a payload that decodes —
+/// with no secret of beanfun's — into a launch ticket, and the credential
+/// endpoint trades that ticket for the real credentials. Nothing is launched,
+/// no registry key is touched, and the one-time password comes back here rather
+/// than through a second process.
+async fn tw_get_otp_v2(
+    client: &Client,
+    session: &Session,
+    account_id: &str,
+    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<GameCredentials, LoginError> {
+    let ticket = tw_ggm_ticket(client, session, account_id, cookie_jar).await?;
+    let launch = decode_launch_ticket(&ticket.data)
+        .ok_or_else(|| parse_error_str("could not read the launch ticket"))?;
+    tracing::info!(account_id, sn = %ticket.sn, "TW: launch ticket decoded, requesting credentials");
+
+    let mut credentials = tw_otp_from_launch_ticket(client, &ticket.sn, &launch).await?;
+    // The page reports the account it issued the ticket for; keep the caller's
+    // id, which is what the rest of the app keys on.
+    credentials.account_id = account_id.to_string();
+    tracing::info!(account_id, "TW OTP retrieved");
+    Ok(credentials)
+}
+
+/// The launch ticket beanfun's game-start page hands to the Gamania Games
+/// Manager.
+///
+/// TW no longer fetches credentials from the web at all: the page emits an
+/// `m_objData` object and passes it to GGM over a `gamaniagames://` URL, and
+/// GGM — which can prove its own identity to beanfun's integrity check — does
+/// the credential fetch and starts the game. `data` is opaque here; only GGM
+/// holds the key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GgmTicket {
+    pub region: String,
+    pub sn: String,
+    pub data: String,
+}
+
+impl GgmTicket {
+    /// The URL the page itself opens, byte-for-byte.
+    ///
+    /// `Cmd=06006` is SmartLaunch — install if needed, then start. The odd
+    /// `&&&&` separator is GGM's, not a typo. The page omits `WebToken` and
+    /// `SecretCode` (it takes `ggm.js`'s no-token branch), so this does too.
+    pub fn launch_uri(&self) -> String {
+        format!(
+            "gamaniagames://Region={}&&&&SN={}&&&&Cmd=06006&&&&Data={}",
+            self.region, self.sn, self.data
+        )
+    }
+}
+
+/// Read the launch ticket out of a game-start page.
+fn extract_ggm_ticket(html: &str) -> Option<GgmTicket> {
+    let field = |name: &str| -> Option<String> {
+        let re = Regex::new(&format!(
+            r#"(?s)m_objData\s*=\s*\{{.*?"{name}"\s*:\s*"([^"]*)""#
+        ))
+        .ok()?;
+        Some(re.captures(html)?.get(1)?.as_str().to_string())
+    };
+    let ticket = GgmTicket {
+        region: field("region")?,
+        sn: field("sn")?,
+        data: field("data")?,
+    };
+    (!ticket.sn.is_empty() && !ticket.data.is_empty()).then_some(ticket)
+}
+
+/// Turn an encrypted credential payload into game credentials.
+///
+/// The first eight characters are the DES key for the rest.
+fn decrypt_otp_payload(payload: &str) -> Result<String, LoginError> {
+    if payload.len() < 8 {
+        return Err(parse_error_str("OTP data too short for DES key"));
+    }
+    des_ecb_decrypt_hex(&payload[8..], &payload[..8]).ok_or_else(|| {
+        LoginError::Auth(AuthError::InvalidCredentials {
+            reason: "OTP decryption failed".into(),
+        })
+    })
+}
+
+/// The anti-forgery pair the game-start page appends to its `record_service_start`
+/// form, as (field name, value).
+///
+/// It is neither a hidden input nor a fixed name — the page builds the form body
+/// in JavaScript and ends it with a random-named field, a different name on
+/// every load (`et2eylbcup3aztj4xuayb4fn`, `0hiwgz55odgekffwp5x5yt55`, …). What
+/// pins it down is its position: the last parameter of that string, right after
+/// `service_account_create_time`.
+fn extract_service_start_token(html: &str) -> Option<(String, String)> {
+    let re = Regex::new(
+        r#"service_account_create_time=["'\s+]*\+?\s*MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([A-Za-z0-9_]+)=([^"]+)""#,
+    )
+    .ok()?;
+    let caps = re.captures(html)?;
+    Some((
+        caps.get(1)?.as_str().to_string(),
+        caps.get(2)?.as_str().to_string(),
+    ))
+}
+
 /// Map a `reqwest::Error` into our domain [`NetworkError`].
 fn map_reqwest_error(url: &str, err: reqwest::Error) -> LoginError {
     tracing::error!(
@@ -2735,6 +3029,193 @@ fn get_current_time_default() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The parts of `game_start_step2.aspx` this module reads, copied from a
+    /// real page (payload and token shortened, shape kept).
+    const GAME_START_PAGE: &str = r#"
+        var MyAccountData = {ServiceCode: "610074", ServiceRegion: "T9",
+            ServiceAccountCreateTime: "2012-02-16 18:30:07" };
+        var m_objData = {
+            "region": "TW;Production",
+            "sn": "e612ef7c-dba7-414d-b789-1be5f784c334",
+            "data": "ccb8f7e5f917451127b189251d22ea8c7f2d6a0ffc9e69ab"
+        };
+        var strFormData = "service_code=" + MyAccountData.ServiceCode +
+        "&service_account_display_name=" + MyAccountData.ServiceAccountDisplayName + "&service_account_create_time=" + MyAccountData.ServiceAccountCreateTime + "&et2eylbcup3aztj4xuayb4fn=pbrVfA6GULglvDfgMk%2fUlZmF8BgO34hi5hAYAeNjQx4%3d";
+    "#;
+
+    #[test]
+    fn the_game_start_url_has_no_stray_whitespace() {
+        let url = game_start_step2_url("tw.beanfun.com", "1845983", "2026717141832357");
+        // The bug this guards: a line-continued literal that lost its backslash
+        // put spaces inside the query, and beanfun answered with its generic
+        // error page — 2 KB of "程式發生錯誤" that parses as a page holding
+        // nothing, so the failure surfaced nowhere near its cause.
+        assert!(!url.contains(' '), "stray whitespace in {url}");
+        assert_eq!(
+            url,
+            concat!(
+                "https://tw.beanfun.com/beanfun_block/game_zone/game_start_step2.aspx",
+                "?service_code=610074&service_region=T9&sotp=1845983&dt=2026717141832357",
+            )
+        );
+    }
+
+    /// Build a payload the way beanfun does, so the decoder is tested against
+    /// the encoding rather than against a recorded secret.
+    fn encode_launch_payload(plaintext: &str, key: &str, selector: usize) -> String {
+        encode_launch_payload_with(plaintext, key, selector, TICKET_TABLES[selector % 4])
+    }
+
+    /// As above, with the table stated rather than derived.
+    fn encode_launch_payload_with(
+        plaintext: &str,
+        key: &str,
+        selector: usize,
+        table: &str,
+    ) -> String {
+        use des::cipher::{BlockCipherEncrypt, KeyInit};
+
+        let cipher = des::Des::new_from_slice(key.as_bytes()).unwrap();
+        let mut padded = plaintext.as_bytes().to_vec();
+        padded.resize(padded.len().div_ceil(8) * 8, 0);
+        for chunk in padded.chunks_exact_mut(8) {
+            let block: &mut des::cipher::Array<u8, _> = chunk.try_into().unwrap();
+            cipher.encrypt_block(block);
+        }
+        let cipher_hex: String = padded.iter().map(|b| format!("{b:02x}")).collect();
+
+        // The key sits at `selector + 1` in the normalized hex.
+        let key_at = selector + 1;
+        let normalized = format!("{}{key}{}", &cipher_hex[..key_at], &cipher_hex[key_at..]);
+
+        let body: String = normalized
+            .chars()
+            .map(|c| table.chars().nth(c.to_digit(16).unwrap() as usize).unwrap())
+            .collect();
+        format!("{:x}{body}", selector % 16)
+    }
+
+    #[test]
+    fn decodes_a_launch_ticket() {
+        // A ticket of the real width, built rather than typed out, so the test
+        // can't disagree with itself about how long 64 characters is.
+        let ticket_value: String = std::iter::repeat_n('a', 64).collect();
+        let account = "T96581594b9840873995";
+        let plaintext = format!(
+            "LaunchTicket={ticket_value}&ServiceCode=610074&ServiceRegion=T9&ServiceAccount={account}"
+        );
+        // The key is eight characters cut out of the normalized hex, so it is
+        // always hex itself — a non-hex key could never occur.
+        let data = encode_launch_payload(&plaintext, "eec50e43", 12);
+
+        let ticket = decode_launch_ticket(&data).expect("decodes");
+        assert_eq!(ticket.launch_ticket, ticket_value);
+        assert_eq!(ticket.service_account, account);
+    }
+
+    #[test]
+    fn any_table_decodes_whatever_the_selector() {
+        // Which table a selector picks is not settled — `n % 4` fits every
+        // payload seen, but there are eight tables. The decoder answers that by
+        // trying them, so encode with each table in turn, against selectors
+        // that agree with neither rule, and require every one to come back.
+        for (index, table) in TICKET_TABLES.iter().enumerate() {
+            for selector in [index, index + 8, index + 3] {
+                let data = encode_launch_payload_with(
+                    "LaunchTicket=abc&ServiceAccount=acct",
+                    "abcdef12",
+                    selector,
+                    table,
+                );
+                let ticket = decode_launch_ticket(&data).unwrap_or_else(|| {
+                    panic!("table {index} with selector {selector} failed to decode")
+                });
+                assert_eq!(ticket.launch_ticket, "abc");
+                assert_eq!(ticket.service_account, "acct");
+            }
+        }
+    }
+
+    #[test]
+    fn a_payload_that_decrypts_to_nothing_useful_is_rejected() {
+        // A wrong table still produces bytes; only the absence of a ticket in
+        // them says the attempt failed. Without that check the first table
+        // tried would always "succeed".
+        let data = encode_launch_payload("NotATicket=abc", "abcdef12", 3);
+        assert!(decode_launch_ticket(&data).is_none());
+    }
+
+    #[test]
+    fn rubbish_decodes_to_nothing_rather_than_panicking() {
+        assert!(decode_launch_ticket("").is_none());
+        assert!(decode_launch_ticket("z").is_none());
+        // Characters outside the chosen table can't be mapped.
+        assert!(decode_launch_ticket("0zzzz").is_none());
+    }
+
+    #[test]
+    fn the_v2_payload_splits_into_a_key_and_whole_blocks() {
+        // A real reply's payload, values replaced: 40 hex characters, the first
+        // eight being the DES key and the rest one 16-byte ciphertext — the
+        // same shape the older endpoint returned after its `1;`.
+        let data = "18103D179B09C6BEB8A4A37B9037A44E599760D8";
+        let (key, cipher) = data.split_at(8);
+        assert_eq!(key.len(), 8);
+        assert_eq!(cipher.len() % 16, 0, "ciphertext is whole DES blocks");
+        assert!(decrypt_otp_payload("short").is_err());
+    }
+
+    #[test]
+    fn reads_the_ggm_launch_ticket() {
+        let ticket = extract_ggm_ticket(GAME_START_PAGE).unwrap();
+        assert_eq!(ticket.region, "TW;Production");
+        assert_eq!(ticket.sn, "e612ef7c-dba7-414d-b789-1be5f784c334");
+        assert_eq!(
+            ticket.data,
+            "ccb8f7e5f917451127b189251d22ea8c7f2d6a0ffc9e69ab"
+        );
+    }
+
+    #[test]
+    fn the_launch_uri_matches_what_the_page_opens() {
+        // Byte-for-byte the URL beanfun's own page hands to GGM, `&&&&`
+        // separators and all — captured from a live launch.
+        let ticket = extract_ggm_ticket(GAME_START_PAGE).unwrap();
+        assert_eq!(
+            ticket.launch_uri(),
+            concat!(
+                "gamaniagames://Region=TW;Production",
+                "&&&&SN=e612ef7c-dba7-414d-b789-1be5f784c334",
+                "&&&&Cmd=06006",
+                "&&&&Data=ccb8f7e5f917451127b189251d22ea8c7f2d6a0ffc9e69ab",
+            )
+        );
+    }
+
+    #[test]
+    fn a_page_without_a_ticket_yields_none() {
+        assert!(extract_ggm_ticket("<html>no launch data</html>").is_none());
+    }
+
+    #[test]
+    fn reads_the_service_start_token_despite_its_random_name() {
+        let (name, value) = extract_service_start_token(GAME_START_PAGE).unwrap();
+        // The name differs on every page load, so it can only be found by
+        // position — the field the form body ends with.
+        assert_eq!(name, "et2eylbcup3aztj4xuayb4fn");
+        assert_eq!(value, "pbrVfA6GULglvDfgMk%2fUlZmF8BgO34hi5hAYAeNjQx4%3d");
+    }
+
+    #[test]
+    fn a_page_without_the_token_yields_none() {
+        assert!(extract_service_start_token("<html>nothing here</html>").is_none());
+    }
+
+    #[test]
+    fn a_payload_too_short_to_hold_a_key_is_rejected() {
+        assert!(decrypt_otp_payload("abc").is_err());
+    }
 
     #[test]
     fn assert_https_accepts_valid_urls() {
