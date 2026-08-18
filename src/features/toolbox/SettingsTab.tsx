@@ -5,6 +5,7 @@ import { useSetConfig } from "../../lib/hooks/use-config";
 import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
+import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
 import type { ThemeMode, Language } from "../../lib/stores/ui-store";
 
 const THEMES: { value: ThemeMode; labelKey: string }[] = [
@@ -39,7 +40,6 @@ export function SettingsTab() {
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
-  const compact = config?.compactUi ?? false;
 
   // Auto-detect game path from registry if not set
   useEffect(() => {
@@ -98,206 +98,115 @@ export function SettingsTab() {
   }
 
   return (
-    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"}`}>
-      {/* Game path */}
-      <SettingRow label={t("settings.game_path")}>
-        <div className="flex items-center gap-2">
-          <span className="max-w-[280px] truncate text-xs text-[var(--text)]">
-            {config?.gamePath || "—"}
-          </span>
-          <button
-            onClick={handleBrowseGamePath}
-            className="shrink-0 rounded-[var(--radius)] border border-border px-3 py-1 text-xs text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-          >
-            {t("settings.browse")}
-          </button>
-        </div>
-      </SettingRow>
-
-      {/* Classic — Nexon Game Manager path (empty = auto-detect) */}
-      {/* Route webview traffic through this process — for accelerator users,
-          switched on by itself when the IP says mainland China. */}
-      <SettingRow label={t("settings.webview_via_proxy")}>
-        <Toggle
-          checked={config?.webviewViaProxy ?? false}
-          onChange={() => {
-            if (!config) return;
-            setConfig.mutate({
-              key: "webview_via_proxy",
-              value: String(!config.webviewViaProxy),
-            });
-          }}
-        />
-      </SettingRow>
-      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
-        {t("settings.webview_via_proxy_desc")}
-      </p>
-
-      <SettingRow label={t("settings.classic_ngm_path")}>
-        <div className="flex items-center gap-2">
-          <span className="max-w-[240px] truncate text-xs text-[var(--text)]">
-            {config?.classicNgmPath || t("settings.classic_ngm_auto")}
-          </span>
-          <button
-            onClick={handleBrowseNgmPath}
-            className="shrink-0 rounded-[var(--radius)] border border-border px-3 py-1 text-xs text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-          >
-            {t("settings.browse")}
-          </button>
+    <div className="flex flex-col gap-4">
+      {/* Game */}
+      <Section title={t("settings.section.game")}>
+        <Row label={t("settings.game_path")}>
+          <RowValue mono>{config?.gamePath || "—"}</RowValue>
+          <RowButton onClick={handleBrowseGamePath}>{t("settings.browse")}</RowButton>
+        </Row>
+        <Row label={t("settings.classic_ngm_path")}>
+          <RowValue mono>{config?.classicNgmPath || t("settings.classic_ngm_auto")}</RowValue>
+          <RowButton onClick={handleBrowseNgmPath}>{t("settings.browse")}</RowButton>
           {config?.classicNgmPath && (
-            <button
-              onClick={() => setConfig.mutate({ key: "classicNgmPath", value: "" })}
-              className="shrink-0 rounded-[var(--radius)] border border-border px-2 py-1 text-xs text-text-dim transition-colors hover:border-[var(--danger)] hover:text-[var(--danger)]"
+            <RowButton
+              danger
               title={t("common.close")}
+              onClick={() => setConfig.mutate({ key: "classicNgmPath", value: "" })}
             >
               ✕
-            </button>
+            </RowButton>
           )}
-        </div>
-      </SettingRow>
+        </Row>
+      </Section>
 
-      {/* Theme picker — segmented control */}
-      <SettingRow label={t("settings.theme")}>
-        <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-          {THEMES.map((theme, i) => (
-            <button
-              key={theme.value}
-              onClick={() => handleThemeChange(theme.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-all outline-none active:scale-95 ${
-                i < THEMES.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-              } ${
-                config?.theme === theme.value
-                  ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white shadow-[0_2px_8px_var(--accent-glow)]"
-                  : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-              }`}
-            >
-              {t(theme.labelKey)}
-            </button>
-          ))}
-        </div>
-      </SettingRow>
+      {/* Appearance */}
+      <Section title={t("settings.section.appearance")}>
+        <Row label={t("settings.theme")}>
+          <Segmented
+            options={THEMES.map((th) => ({ value: th.value, label: t(th.labelKey) }))}
+            value={config?.theme ?? "system"}
+            onChange={handleThemeChange}
+          />
+        </Row>
+        <Row label={t("settings.language")}>
+          <Segmented
+            options={LANGUAGES}
+            value={config?.language ?? "zh-TW"}
+            onChange={handleLanguageChange}
+          />
+        </Row>
+        <Row label={t("settings.compact_ui")} hint={t("settings.compact_ui_desc")}>
+          <Toggle
+            checked={config?.compactUi ?? false}
+            onChange={async () => {
+              if (!config) return;
+              useConfigStore.getState().updateConfigField("compactUi", !config.compactUi);
+              await setConfig
+                .mutateAsync({ key: "compactUi", value: String(!config.compactUi) })
+                .catch(() => {});
+              // This page is open right now — take the new size at once.
+              commands.resizeWindow("toolbox", announcementBarShown()).catch(() => {});
+            }}
+          />
+        </Row>
+      </Section>
 
-      {/* Language picker — segmented control */}
-      <SettingRow label={t("settings.language")}>
-        <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-          {LANGUAGES.map((lang, i) => (
-            <button
-              key={lang.value}
-              onClick={() => handleLanguageChange(lang.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-all outline-none active:scale-95 ${
-                i < LANGUAGES.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-              } ${
-                config?.language === lang.value
-                  ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white shadow-[0_2px_8px_var(--accent-glow)]"
-                  : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-              }`}
-            >
-              {lang.label}
-            </button>
-          ))}
-        </div>
-      </SettingRow>
+      {/* Updates */}
+      <Section title={t("settings.section.updates")}>
+        <Row label={t("settings.auto_update")}>
+          <Toggle checked={config?.autoUpdate ?? true} onChange={handleToggleAutoUpdate} />
+        </Row>
+        <Row label={t("settings.update_channel")}>
+          <Segmented
+            options={UPDATE_CHANNELS.map((ch) => ({ value: ch.value, label: t(ch.labelKey) }))}
+            value={config?.updateChannel ?? "release"}
+            onChange={handleUpdateChannelChange}
+          />
+        </Row>
+        {/* GitHub hosts override — only consulted when a direct connection to
+            GitHub fails, i.e. in practice only for mainland-China users. */}
+        <Row label={t("settings.github_hosts")} hint={t("settings.github_hosts_desc")}>
+          <Toggle
+            checked={config?.githubHosts ?? true}
+            onChange={() => {
+              if (!config) return;
+              setConfig.mutate({ key: "githubHosts", value: String(!config.githubHosts) });
+            }}
+          />
+        </Row>
+      </Section>
 
-      {/* Compact launcher — the main page as one narrow column. The window
-          takes the new size on the way back to it (goBack resizes). */}
-      <SettingRow label={t("settings.compact_ui")}>
-        <Toggle
-          checked={config?.compactUi ?? false}
-          onChange={async () => {
-            if (!config) return;
-            useConfigStore.getState().updateConfigField("compactUi", !config.compactUi);
-            await setConfig
-              .mutateAsync({ key: "compactUi", value: String(!config.compactUi) })
-              .catch(() => {});
-            // This page is open right now — take the new size at once.
-            commands.resizeWindow("toolbox", announcementBarShown()).catch(() => {});
-          }}
-        />
-      </SettingRow>
-      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
-        {t("settings.compact_ui_desc")}
-      </p>
+      {/* Connection */}
+      <Section title={t("settings.section.network")}>
+        {/* Route webview traffic through this process — for accelerator users,
+            switched on by itself when the IP says mainland China. */}
+        <Row label={t("settings.webview_via_proxy")} hint={t("settings.webview_via_proxy_desc")}>
+          <Toggle
+            checked={config?.webviewViaProxy ?? false}
+            onChange={() => {
+              if (!config) return;
+              setConfig.mutate({
+                key: "webview_via_proxy",
+                value: String(!config.webviewViaProxy),
+              });
+            }}
+          />
+        </Row>
+      </Section>
 
-      {/* Auto-update toggle */}
-      <SettingRow label={t("settings.auto_update")}>
-        <Toggle checked={config?.autoUpdate ?? true} onChange={handleToggleAutoUpdate} />
-      </SettingRow>
-
-      {/* Update channel */}
-      <SettingRow label={t("settings.update_channel")}>
-        <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-          {UPDATE_CHANNELS.map((ch, i) => (
-            <button
-              key={ch.value}
-              onClick={() => handleUpdateChannelChange(ch.value)}
-              className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-colors outline-none ${
-                i < UPDATE_CHANNELS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-              } ${
-                (config?.updateChannel ?? "release") === ch.value
-                  ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white shadow-[0_2px_8px_var(--accent-glow)]"
-                  : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-              }`}
-            >
-              {t(ch.labelKey)}
-            </button>
-          ))}
-        </div>
-      </SettingRow>
-
-      {/* GitHub hosts override — only consulted when a direct connection to
-          GitHub fails, i.e. in practice only for mainland-China users. */}
-      <SettingRow label={t("settings.github_hosts")}>
-        <Toggle
-          checked={config?.githubHosts ?? true}
-          onChange={() => {
-            if (!config) return;
-            setConfig.mutate({
-              key: "githubHosts",
-              value: String(!config.githubHosts),
-            });
-          }}
-        />
-      </SettingRow>
-      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
-        {t("settings.github_hosts_desc")}
-      </p>
-
-      {/* Default login view — TW only; HK has no QR login */}
+      {/* Login — default view is TW only; HK has no QR login */}
       {config?.region === "TW" && (
-        <SettingRow label={t("settings.default_login_view")}>
-          <div className="flex overflow-hidden rounded-lg border border-[var(--tb-border)]">
-            {DEFAULT_LOGIN_VIEWS.map((v, i) => (
-              <button
-                key={v.value}
-                onClick={() => handleDefaultLoginViewChange(v.value)}
-                className={`px-3.5 py-1.5 text-[12px] font-semibold tracking-[0.5px] transition-colors outline-none ${
-                  i < DEFAULT_LOGIN_VIEWS.length - 1 ? "border-r border-[var(--tb-border)]" : ""
-                } ${
-                  (config?.defaultLoginView ?? "normal") === v.value
-                    ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white shadow-[0_2px_8px_var(--accent-glow)]"
-                    : "bg-[var(--tb-card)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-                }`}
-              >
-                {t(v.labelKey)}
-              </button>
-            ))}
-          </div>
-        </SettingRow>
+        <Section title={t("settings.section.login")}>
+          <Row label={t("settings.default_login_view")}>
+            <Segmented
+              options={DEFAULT_LOGIN_VIEWS.map((v) => ({ value: v.value, label: t(v.labelKey) }))}
+              value={config?.defaultLoginView ?? "normal"}
+              onChange={handleDefaultLoginViewChange}
+            />
+          </Row>
+        </Section>
       )}
-    </div>
-  );
-}
-
-function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
-  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
-  return (
-    <div
-      className={`flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] transition-all hover:translate-y-[-1px] hover:border-[var(--tb-border)] ${
-        compact ? "px-3.5 py-2.5" : "px-4 py-3"
-      }`}
-    >
-      <span className="text-xs font-semibold text-[var(--text)]">{label}</span>
-      {children}
     </div>
   );
 }

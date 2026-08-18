@@ -462,5 +462,14 @@
   "settings.github_hosts": "GitHub direct connection",
   "settings.github_hosts_desc": "When an update can't reach GitHub directly, fetch the community-maintained GitHub hosts list and connect straight to those IPs instead of going through a ghproxy mirror. The mapping applies inside this app only — your system hosts file is never touched. It kicks in only after a direct connection fails, so it changes nothing if GitHub already works for you.",
   "settings.compact_ui": "Compact launcher",
-  "settings.compact_ui_desc": "Shrink the launcher to a small single-column window — accounts, OTP and Play only — so it can sit next to the game. Other pages keep their size."
+  "settings.compact_ui_desc": "Shrink the launcher to a small single-column window — accounts, OTP and Play only — so it can sit next to the game. Other pages keep their size.",
+  "settings.section.game": "Game",
+  "settings.section.appearance": "Appearance",
+  "settings.section.updates": "Updates",
+  "settings.section.network": "Connection",
+  "settings.section.login": "Login",
+  "settings.section.launch": "Launch",
+  "settings.section.privacy": "Privacy",
+  "settings.section.window": "Window",
+  "settings.section.debug": "Debugging"
 }

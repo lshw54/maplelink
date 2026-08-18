@@ -462,5 +462,14 @@
   "settings.github_hosts": "GitHub 直連加速",
   "settings.github_hosts_desc": "更新時若無法直接連上 GitHub，會先取得社群維護的 GitHub hosts 清單，改用當中的 IP 直接連線，不必再繞道 ghproxy 鏡像。清單只在本程式內生效，不會改動系統 hosts 檔。只有直連失敗時才會啟用，本來就連得上 GitHub 的使用者不受影響。",
   "settings.compact_ui": "精簡啟動器",
-  "settings.compact_ui_desc": "把啟動器縮成小巧的單欄視窗，只保留帳號、OTP 與開始遊戲，方便放在遊戲旁邊。其他頁面維持原本大小。"
+  "settings.compact_ui_desc": "把啟動器縮成小巧的單欄視窗，只保留帳號、OTP 與開始遊戲，方便放在遊戲旁邊。其他頁面維持原本大小。",
+  "settings.section.game": "遊戲",
+  "settings.section.appearance": "外觀",
+  "settings.section.updates": "更新",
+  "settings.section.network": "連線",
+  "settings.section.login": "登入",
+  "settings.section.launch": "啟動",
+  "settings.section.privacy": "隱私",
+  "settings.section.window": "視窗",
+  "settings.section.debug": "除錯"
 }
