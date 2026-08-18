@@ -55,11 +55,11 @@ export function CompactMain(p: CompactMainProps) {
     <div className="relative flex flex-1 flex-col overflow-hidden">
       {/* Line 1: beans · running · Play · more. The session strip above
           already names the account, so there is no identity line. */}
-      <div className="flex shrink-0 items-center gap-2 px-3 pt-2 pb-1.5">
+      <div className="flex shrink-0 items-center gap-1.5 px-3 pt-1.5 pb-1">
         <div className="relative min-w-0 flex-1">
           <button
             onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-            className="group flex max-w-full items-center gap-1 rounded-md py-1 pr-1.5 pl-1 text-[11.5px] whitespace-nowrap text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            className="group flex max-w-full items-center gap-1 rounded-md py-0.5 pr-1.5 pl-1 text-[11px] whitespace-nowrap text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
             title={`${t("launcher.beans")}: ${p.remainPoint}${
               gamePoints !== null ? ` · ${t("launcher.game_points")}: ${gamePoints}` : ""
             }`}
@@ -111,9 +111,9 @@ export function CompactMain(p: CompactMainProps) {
               ? ` · ${t("launcher.running")}${p.gamePid !== null ? ` (PID ${p.gamePid})` : ""}`
               : ""
           }`}
-          className="relative flex h-[26px] shrink-0 items-center justify-center gap-1.5 rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
+          className="relative flex h-[22px] shrink-0 items-center justify-center gap-1 rounded-[6px] bg-gradient-to-br from-[#c46a00] to-accent px-2.5 text-[10.5px] font-extrabold tracking-[0.5px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
         >
-          <span className="pointer-events-none absolute inset-0 rounded-[7px] bg-gradient-to-b from-white/15 to-transparent" />
+          <span className="pointer-events-none absolute inset-0 rounded-[6px] bg-gradient-to-b from-white/15 to-transparent" />
           <span className="relative text-[10px]">{p.showClassic ? "🍁" : "▶"}</span>
           <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
           {/* Game is running — a small live badge; the words are in the tooltip
@@ -152,21 +152,21 @@ export function CompactMain(p: CompactMainProps) {
 
       {/* Line 2 (HK only): which game Play opens — a full-width switch */}
       {p.canClassic && (
-        <div className="shrink-0 px-3 pb-2">
-          <div className="grid grid-cols-2 rounded-[7px] border border-border bg-[var(--surface)] p-[2px]">
+        <div className="shrink-0 px-3 pb-1.5">
+          <div className="grid grid-cols-2 rounded-[6px] border border-border bg-[var(--surface)] p-[2px]">
             {[false, true].map((classic) => {
               const active = p.classicGame === classic;
               return (
                 <button
                   key={String(classic)}
                   onClick={() => p.onClassicGame(classic)}
-                  className={`flex h-[22px] items-center justify-center gap-1.5 rounded-[5px] text-[11px] font-bold transition-all ${
+                  className={`flex h-[18px] items-center justify-center gap-1 rounded-[4px] text-[10.5px] font-bold transition-all ${
                     active
                       ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_1px_6px_var(--accent-glow)]"
                       : "text-text-dim hover:text-[var(--text)]"
                   }`}
                 >
-                  <span className={`text-[11px] ${active ? "" : "opacity-50 grayscale"}`}>
+                  <span className={`text-[10px] ${active ? "" : "opacity-50 grayscale"}`}>
                     {classic ? "🍁" : "🍄"}
                   </span>
                   {t(classic ? "launcher.game_classic" : "launcher.game_regular")}
