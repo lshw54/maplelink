@@ -31,10 +31,14 @@ function MenuItem({
   icon: string;
   children: ReactNode;
 }) {
+  // Compact UI: the menu shouldn't dwarf the little window it pops over.
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
+      className={`flex w-full items-center gap-2 text-left text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent ${
+        compact ? "px-3 py-[5px] text-[11.5px]" : "gap-2.5 px-4 py-2 text-[12px]"
+      }`}
     >
       <span className="w-4 text-center text-xs">{icon}</span>
       <span>{children}</span>
@@ -43,7 +47,8 @@ function MenuItem({
 }
 
 function Separator() {
-  return <div className="mx-2.5 my-1 h-px bg-border" />;
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  return <div className={`mx-2.5 h-px bg-border ${compact ? "my-0.5" : "my-1"}`} />;
 }
 
 function AccountDetailView({
@@ -440,6 +445,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     }
   }
 
+  const compactUi = useConfigStore((s) => s.config?.compactUi ?? false);
   const modalTitle =
     modalView?.kind === "detail"
       ? t("launcher.context.detail")
@@ -455,7 +461,9 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 min-w-[170px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
+          className={`fixed z-50 animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px] ${
+            compactUi ? "min-w-[150px] py-1" : "min-w-[170px] py-1.5"
+          }`}
           style={
             clampedPos ? { left: clampedPos.x, top: clampedPos.y } : { left: -9999, top: -9999 }
           }

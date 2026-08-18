@@ -363,6 +363,8 @@ function ListItem({
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
   const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
+  const { t } = useTranslation();
+  const banned = account.status === "banned";
   return (
     <button
       data-acct-idx={idx}
@@ -405,10 +407,23 @@ function ListItem({
         {initial}
       </div>
       <div className="min-w-0 flex-1">
-        <div
-          className={`truncate font-medium text-[var(--text)] ${compact ? "text-[11px]" : "text-xs"} ${mask}`}
-        >
-          {account.displayName}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            className={`truncate font-medium text-[var(--text)] ${compact ? "text-[11px]" : "text-xs"} ${mask}`}
+          >
+            {account.displayName}
+          </span>
+          {/* Account standing, straight from beanfun's list — a glance is enough
+              to tell a banned account from a healthy one. */}
+          <span
+            className={`shrink-0 rounded px-1 py-px text-[9px] font-semibold tracking-[0.5px] ${
+              banned
+                ? "bg-[rgba(239,68,68,0.12)] text-red-400"
+                : "bg-[rgba(74,222,128,0.1)] text-green-500"
+            }`}
+          >
+            {t(banned ? "launcher.context.detail_banned" : "launcher.context.detail_normal")}
+          </span>
         </div>
       </div>
       <CopyIcon isCopied={isCopied} onClick={onCopy} title={copyTitle} position="" />
