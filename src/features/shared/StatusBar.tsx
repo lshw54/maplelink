@@ -3,7 +3,9 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useUpdateStore } from "../../lib/stores/update-store";
 
-export function StatusBar() {
+/** Beanfun reachability, probed every 5s. Shared by the full status bar and
+ *  the compact launcher's little dot. */
+function useHeartbeat() {
   const [online, setOnline] = useState(false);
   const [ms, setMs] = useState<number | null>(null);
   const [beat, setBeat] = useState(false);
@@ -43,6 +45,12 @@ export function StatusBar() {
         ? "bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]"
         : "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]";
 
+  return { online, ms, beat, dotColor };
+}
+
+export function StatusBar() {
+  const { online, ms, beat, dotColor } = useHeartbeat();
+
   return (
     <div className="flex shrink-0 flex-col">
       <DownloadProgressBar />
@@ -57,13 +65,29 @@ export function StatusBar() {
   );
 }
 
+/** Just the dot, for places with no room for the words — the state and
+ *  latency are in the tooltip. */
+export function ConnectionDot() {
+  const { online, ms, beat, dotColor } = useHeartbeat();
+  return (
+    <span
+      title={`${online ? "ONLINE" : "OFFLINE"}${ms !== null ? ` · ${ms}ms` : ""}`}
+      className="flex h-6 w-4 shrink-0 items-center justify-center"
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full transition-colors ${dotColor} ${beat ? "animate-[hbeat_0.4s_ease]" : ""}`}
+      />
+    </span>
+  );
+}
+
 function formatSpeed(bps: number): string {
   if (bps < 1024) return `${bps} B/s`;
   if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 }
 
-function DownloadProgressBar() {
+export function DownloadProgressBar() {
   const { t } = useTranslation();
   const status = useUpdateStore((s) => s.status);
   const downloaded = useUpdateStore((s) => s.downloaded);

@@ -4,7 +4,7 @@ import { useTranslation } from "../../lib/i18n";
 import { useOtp } from "../../lib/hooks/use-otp";
 import { AccountGrid } from "./AccountGrid";
 import { BeansPopupMenu, MorePopupMenu, OtpMoreMenu } from "./PopupMenus";
-import { StatusBar } from "../shared/StatusBar";
+import { ConnectionDot, DownloadProgressBar } from "../shared/StatusBar";
 import type { SessionDto, GameAccountDto, ClassicCheckDto } from "../../lib/types";
 
 /**
@@ -122,6 +122,7 @@ export function CompactMain(p: CompactMainProps) {
           <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
         </button>
 
+        <ConnectionDot />
         <div className="relative">
           <button
             onClick={() => setMoreMenuOpen(!moreMenuOpen)}
@@ -318,7 +319,7 @@ export function CompactMain(p: CompactMainProps) {
         </div>
       </div>
 
-      <StatusBar />
+      <DownloadProgressBar />
     </div>
   );
 }

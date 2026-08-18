@@ -166,7 +166,7 @@ pub async fn resize_window(
         "login-classic" if compact => (350.0, 570.0 + bar),
         "login" | "login-classic" => (350.0, 620.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
-        "main" if compact => (340.0, 358.0 + bar),
+        "main" if compact => (340.0, 340.0 + bar),
         "main" => (760.0, 530.0 + bar),
         "toolbox" if compact => (620.0, 450.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),
