@@ -201,118 +201,122 @@ export function CompactMain(p: CompactMainProps) {
         />
       </div>
 
-      {/* OTP row: readout (copy) · Get OTP with a ▾ for the rarer copy-credentials · auto-input */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
-        <button
-          type="button"
-          onClick={otp.copyOtp}
-          disabled={!otp.credentials}
-          title={t("launcher.context.copy_otp")}
-          className={`relative flex h-7 min-w-0 flex-1 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
-            otp.copied
-              ? "bg-[rgba(74,222,128,0.08)] text-green-400"
-              : otp.credentials
-                ? "bg-[rgba(232,162,58,0.08)] text-accent hover:bg-[rgba(232,162,58,0.13)]"
-                : "cursor-default bg-[var(--surface)] text-text-faint"
-          }`}
-        >
-          <span className="truncate">{otp.credentials?.otp ?? "••••••••"}</span>
-          <span
-            className={`absolute top-1/2 right-2 -translate-y-1/2 ${otp.copied ? "text-green-400" : "text-text-faint"}`}
+      {/* OTP block: auto-input on its own line, then readout (copy) · Get OTP
+          with a ▾ for the rarer copy-credentials */}
+      <div className="flex shrink-0 flex-col gap-1 border-t border-border px-3 pt-1.5 pb-2">
+        <div className="flex justify-end">
+          <label
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-text-faint"
+            title={t("launcher.auto_input")}
           >
-            {otp.copied ? (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            )}
-          </span>
-        </button>
-
-        {/* Split button: Get OTP, and a ▾ with the less common actions */}
-        <div className="relative flex shrink-0">
-          <button
-            onClick={otp.getOtp}
-            disabled={!p.selectedAccountId || otp.busy}
-            className="flex h-7 items-center gap-1 rounded-l-[7px] bg-[rgba(232,162,58,0.14)] px-2 text-[11px] font-semibold text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ↻ {t("launcher.get_otp")}
-          </button>
-          <button
-            onClick={() => setOtpMenuOpen(!otpMenuOpen)}
-            disabled={!p.selectedAccountId}
-            aria-label="More"
-            className="flex h-7 w-5 items-center justify-center rounded-r-[7px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <svg
-              width="8"
-              height="8"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
+            {t("launcher.auto_input")}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={otp.autoInput}
+              onClick={() => otp.setAutoInput(!otp.autoInput)}
+              className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
+                otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
+              }`}
             >
-              <path d="M2 4l3 3 3-3" />
-            </svg>
-          </button>
-          {otpMenuOpen && (
-            <OtpMoreMenu
-              onClose={() => setOtpMenuOpen(false)}
-              items={[
-                {
-                  icon: "🔑",
-                  label: t("launcher.context.copy_credentials"),
-                  onClick: () => void otp.copyCredentials(),
-                  disabled: otp.busy,
-                },
-              ]}
-            />
-          )}
+              <span
+                className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
+                  otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
+                }`}
+              />
+            </button>
+          </label>
         </div>
-
-        <label
-          className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-text-faint"
-          title={t("launcher.auto_input")}
-        >
-          {t("launcher.auto_input")}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            role="switch"
-            aria-checked={otp.autoInput}
-            onClick={() => otp.setAutoInput(!otp.autoInput)}
-            className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
-              otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
+            onClick={otp.copyOtp}
+            disabled={!otp.credentials}
+            title={t("launcher.context.copy_otp")}
+            className={`relative flex h-7 min-w-0 flex-1 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
+              otp.copied
+                ? "bg-[rgba(74,222,128,0.08)] text-green-400"
+                : otp.credentials
+                  ? "bg-[rgba(232,162,58,0.08)] text-accent hover:bg-[rgba(232,162,58,0.13)]"
+                  : "cursor-default bg-[var(--surface)] text-text-faint"
             }`}
           >
+            <span className="truncate">{otp.credentials?.otp ?? "••••••••"}</span>
             <span
-              className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
-                otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
-              }`}
-            />
+              className={`absolute top-1/2 right-2 -translate-y-1/2 ${otp.copied ? "text-green-400" : "text-text-faint"}`}
+            >
+              {otp.copied ? (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
+            </span>
           </button>
-        </label>
+
+          {/* Split button: Get OTP, and a ▾ with the less common actions */}
+          <div className="relative flex shrink-0">
+            <button
+              onClick={otp.getOtp}
+              disabled={!p.selectedAccountId || otp.busy}
+              className="flex h-7 items-center gap-1 rounded-l-[7px] bg-[rgba(232,162,58,0.14)] px-2 text-[11px] font-semibold text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ↻ {t("launcher.get_otp")}
+            </button>
+            <button
+              onClick={() => setOtpMenuOpen(!otpMenuOpen)}
+              disabled={!p.selectedAccountId}
+              aria-label="More"
+              className="flex h-7 w-5 items-center justify-center rounded-r-[7px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M2 4l3 3 3-3" />
+              </svg>
+            </button>
+            {otpMenuOpen && (
+              <OtpMoreMenu
+                onClose={() => setOtpMenuOpen(false)}
+                items={[
+                  {
+                    icon: "🔑",
+                    label: t("launcher.context.copy_credentials"),
+                    onClick: () => void otp.copyCredentials(),
+                    disabled: otp.busy,
+                  },
+                ]}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       <StatusBar />
