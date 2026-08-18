@@ -201,15 +201,15 @@ export function CompactMain(p: CompactMainProps) {
         />
       </div>
 
-      {/* OTP block: the readout on its own line, then auto-input on the left
-          and Get OTP (its ▾ holds copy-credentials) on the right */}
-      <div className="flex shrink-0 flex-col gap-1.5 border-t border-border px-3 py-2">
+      {/* OTP block: a tall readout on the left; auto-input over Get OTP (its ▾
+          holds copy-credentials) stacked on the right */}
+      <div className="flex shrink-0 items-stretch gap-2.5 border-t border-border px-3 py-2">
         <button
           type="button"
           onClick={otp.copyOtp}
           disabled={!otp.credentials}
           title={t("launcher.context.copy_otp")}
-          className={`relative flex h-7 w-full min-w-0 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
+          className={`relative flex min-w-0 flex-1 items-center justify-center self-stretch rounded-[8px] pr-7 pl-2 font-mono text-[15px] font-bold tracking-[2.5px] transition-all ${
             otp.copied
               ? "bg-[rgba(74,222,128,0.08)] text-green-400"
               : otp.credentials
@@ -252,7 +252,7 @@ export function CompactMain(p: CompactMainProps) {
           </span>
         </button>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex shrink-0 flex-col items-end justify-between gap-1">
           <label
             className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-text-faint"
             title={t("launcher.auto_input")}
