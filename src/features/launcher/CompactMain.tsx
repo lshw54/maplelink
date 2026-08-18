@@ -210,7 +210,7 @@ export function CompactMain(p: CompactMainProps) {
           onClick={otp.copyOtp}
           disabled={!otp.credentials}
           title={t("launcher.context.copy_otp")}
-          className={`relative flex min-w-0 flex-1 items-center justify-center self-stretch rounded-[8px] pr-7 pl-2 font-mono text-[15px] font-bold tracking-[2.5px] transition-all ${
+          className={`relative flex min-w-0 flex-1 items-center justify-center self-stretch rounded-[8px] pr-7 pl-2 font-mono text-[14px] font-bold tracking-[2.5px] transition-all ${
             otp.copied
               ? "bg-[rgba(74,222,128,0.08)] text-green-400"
               : otp.credentials
@@ -253,7 +253,7 @@ export function CompactMain(p: CompactMainProps) {
           </span>
         </button>
 
-        <div className="flex shrink-0 flex-col items-end justify-between gap-1">
+        <div className="flex shrink-0 flex-col items-end justify-between gap-1.5">
           <label
             className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-text-faint"
             title={t("launcher.auto_input")}
@@ -281,7 +281,7 @@ export function CompactMain(p: CompactMainProps) {
             <button
               onClick={otp.getOtp}
               disabled={!p.selectedAccountId || otp.busy}
-              className="flex h-7 items-center gap-1 rounded-l-[7px] bg-[rgba(232,162,58,0.14)] px-2.5 text-[11px] font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[22px] items-center gap-1 rounded-l-[6px] bg-[rgba(232,162,58,0.14)] px-2 text-[10.5px] font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↻ {t("launcher.get_otp")}
             </button>
@@ -289,7 +289,7 @@ export function CompactMain(p: CompactMainProps) {
               onClick={() => setOtpMenuOpen(!otpMenuOpen)}
               disabled={!p.selectedAccountId}
               aria-label="More"
-              className="flex h-7 w-5 items-center justify-center rounded-r-[7px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[22px] w-4 items-center justify-center rounded-r-[6px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <svg
                 width="8"
