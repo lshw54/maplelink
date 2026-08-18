@@ -103,6 +103,37 @@ export function useOtp(
     fetchAndShow();
   }
 
+  /** Fetch a fresh OTP and put "account⏎otp" on the clipboard — the same
+   *  thing the account context menu's "copy one-time credentials" does. The
+   *  OTP is shown too, so the readout never disagrees with the clipboard. */
+  async function copyCredentials() {
+    if (!selectedAccountId) return;
+    const loadingId = addToast({
+      message: t("launcher.context.credentials_loading"),
+      category: "loading",
+      critical: false,
+    });
+    try {
+      const data = await commands.getGameCredentials(
+        useAuthStore.getState().sessionIdForAccount(selectedAccountId) ?? "",
+        selectedAccountId,
+      );
+      setCredentials(data);
+      onOtpFetched?.(selectedAccountId, data.otp);
+      await commands.copyToClipboard(`${data.accountId}
+${data.otp}`);
+      useErrorToastStore.getState().removeToast(loadingId);
+      addToast({
+        message: t("launcher.context.credentials_copied"),
+        category: "success",
+        critical: false,
+      });
+    } catch (err) {
+      useErrorToastStore.getState().removeToast(loadingId);
+      handleOtpError(err as Error);
+    }
+  }
+
   async function copyOtp() {
     if (!credentials) return;
     const ok = await commands.copyToClipboard(credentials.otp).catch(() => false);
@@ -119,5 +150,6 @@ export function useOtp(
     busy: credentialsMutation.isPending || pasting,
     getOtp,
     copyOtp,
+    copyCredentials,
   };
 }

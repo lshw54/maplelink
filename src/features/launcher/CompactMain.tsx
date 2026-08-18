@@ -191,48 +191,43 @@ export function CompactMain(p: CompactMainProps) {
         </div>
       )}
 
-      {/* Accounts (auto-input toggle lives in the header line) */}
+      {/* Accounts */}
       <div className="scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border px-2 pt-1.5 pb-1">
         <AccountGrid
           compact
           selectedAccountId={p.selectedAccountId}
           onSelectAccount={p.onSelectAccount}
-          headerExtra={
-            <label
-              className="flex cursor-pointer items-center gap-1 text-[10px] text-text-faint"
-              title={t("launcher.auto_input")}
-            >
-              {t("launcher.auto_input")}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={otp.autoInput}
-                onClick={() => otp.setAutoInput(!otp.autoInput)}
-                className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
-                  otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
-                }`}
-              >
-                <span
-                  className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
-                    otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
-                  }`}
-                />
-              </button>
-            </label>
-          }
         />
       </div>
 
-      {/* OTP row */}
+      {/* OTP row: auto-input · readout (copy) · copy credentials · fetch */}
       <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-3 py-1.5">
-        <span className="shrink-0 text-[10px] font-semibold tracking-[1px] text-text-faint uppercase">
-          OTP
-        </span>
+        <label
+          className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-text-faint"
+          title={t("launcher.auto_input")}
+        >
+          {t("launcher.auto_input")}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={otp.autoInput}
+            onClick={() => otp.setAutoInput(!otp.autoInput)}
+            className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
+              otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
+            }`}
+          >
+            <span
+              className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
+                otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
+              }`}
+            />
+          </button>
+        </label>
         <button
           type="button"
           onClick={otp.copyOtp}
           disabled={!otp.credentials}
-          title={t("launcher.otp")}
+          title={t("launcher.context.copy_otp")}
           className={`relative flex h-7 min-w-0 flex-1 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
             otp.copied
               ? "bg-[rgba(74,222,128,0.08)] text-green-400"
@@ -274,6 +269,16 @@ export function CompactMain(p: CompactMainProps) {
               </svg>
             )}
           </span>
+        </button>
+        {/* Copy one-time credentials (account + OTP) — same as the context
+            menu entry, one click away from the OTP itself. */}
+        <button
+          onClick={otp.copyCredentials}
+          disabled={!p.selectedAccountId || otp.busy}
+          title={t("launcher.context.copy_credentials")}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-[var(--surface)] text-[12px] text-text-dim transition-all hover:bg-[rgba(232,162,58,0.12)] hover:text-accent active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          🔑
         </button>
         <button
           onClick={otp.getOtp}
