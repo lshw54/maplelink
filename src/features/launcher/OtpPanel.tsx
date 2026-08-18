@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useOtp } from "../../lib/hooks/use-otp";
+import { OtpMoreMenu } from "./PopupMenus";
 
 interface OtpPanelProps {
   selectedAccountId: string | null;
@@ -8,10 +10,9 @@ interface OtpPanelProps {
 
 export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   const { t } = useTranslation();
-  const { credentials, copied, autoInput, setAutoInput, busy, getOtp, copyOtp } = useOtp(
-    selectedAccountId,
-    onOtpFetched,
-  );
+  const { credentials, copied, autoInput, setAutoInput, busy, getOtp, copyOtp, copyCredentials } =
+    useOtp(selectedAccountId, onOtpFetched);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <div className="mx-3 mb-3 shrink-0 rounded-xl border border-border bg-[var(--surface)] p-3.5 shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm">
@@ -94,14 +95,47 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           </span>
         </button>
 
-        <button
-          onClick={getOtp}
-          disabled={!selectedAccountId || busy}
-          title={t("launcher.get_otp")}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_16px_var(--accent-glow)] active:scale-[0.92] disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ↻
-        </button>
+        {/* Split button: fetch, and a ▾ with copy one-time credentials */}
+        <div className="relative flex shrink-0 shadow-[0_2px_10px_var(--accent-glow)] transition-shadow hover:shadow-[0_4px_16px_var(--accent-glow)]">
+          <button
+            onClick={getOtp}
+            disabled={!selectedAccountId || busy}
+            title={t("launcher.get_otp")}
+            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ↻
+          </button>
+          <button
+            onClick={() => setMoreOpen(!moreOpen)}
+            disabled={!selectedAccountId}
+            aria-label="More"
+            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[#c47a1a] text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M2 4l3 3 3-3" />
+            </svg>
+          </button>
+          {moreOpen && (
+            <OtpMoreMenu
+              onClose={() => setMoreOpen(false)}
+              items={[
+                {
+                  icon: "🔑",
+                  label: t("launcher.context.copy_credentials"),
+                  onClick: () => void copyCredentials(),
+                  disabled: busy,
+                },
+              ]}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
