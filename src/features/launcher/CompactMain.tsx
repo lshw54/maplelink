@@ -65,11 +65,13 @@ export function CompactMain(p: CompactMainProps) {
             }`}
           >
             <span className="truncate">
-              {t("launcher.beans")} <b className="text-accent">{p.remainPoint}</b>
+              <span className="font-semibold text-accent">
+                {t("launcher.beans")} <b>{p.remainPoint}</b>
+              </span>
               {gamePoints !== null && (
-                <span className="text-text-faint">
-                  {" · "}
-                  {t("launcher.game_points")} <b className="text-text-dim">{gamePoints}</b>
+                <span className="text-text-dim">
+                  <span className="text-text-faint"> · </span>
+                  {t("launcher.game_points")} <b>{gamePoints}</b>
                 </span>
               )}
             </span>

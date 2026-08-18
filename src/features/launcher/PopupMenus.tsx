@@ -1,11 +1,22 @@
 import { useEffect, useRef } from "react";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 
-const MENU_CLASS =
-  "absolute top-full z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]";
-const ITEM_CLASS =
-  "flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent";
+const MENU_BASE =
+  "z-50 animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]";
+const ITEM_BASE =
+  "flex w-full items-center text-left text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent";
+
+/** Menu / item classes; the compact launcher gets a tighter menu so it doesn't
+ *  dwarf the little window it pops over. */
+function useMenuClasses() {
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  return {
+    menu: `${MENU_BASE} ${compact ? "min-w-[140px] py-1" : "min-w-[160px] py-1.5"}`,
+    item: `${ITEM_BASE} ${compact ? "gap-2 px-3 py-[5px] text-[11.5px]" : "gap-2.5 px-4 py-2 text-[12px]"}`,
+  };
+}
 
 /** Close the menu on any mousedown outside it. Registered a tick late so the
  *  click that opened the menu doesn't immediately close it. */
@@ -42,6 +53,7 @@ export function BeansPopupMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   useClickOutside(menuRef, onClose);
+  const cls = useMenuClasses();
 
   async function handleTopup() {
     try {
@@ -66,17 +78,20 @@ export function BeansPopupMenu({
   }
 
   return (
-    <div ref={menuRef} className={`${MENU_CLASS} ${alignLeft ? "left-0" : "right-0"}`}>
-      <button onClick={onRefresh} className={ITEM_CLASS}>
+    <div
+      ref={menuRef}
+      className={`absolute top-full mt-1 ${cls.menu} ${alignLeft ? "left-0" : "right-0"}`}
+    >
+      <button onClick={onRefresh} className={cls.item}>
         <span className="w-4 text-center text-xs">🔄</span>
         {t("launcher.beans_refresh")}
       </button>
-      <button onClick={handleTopup} className={ITEM_CLASS}>
+      <button onClick={handleTopup} className={cls.item}>
         <span className="w-4 text-center text-xs">💳</span>
         {t("launcher.beans_topup")}
       </button>
       {region === "TW" && (
-        <button onClick={handleExchange} className={ITEM_CLASS}>
+        <button onClick={handleExchange} className={cls.item}>
           <span className="w-4 text-center text-xs">🎁</span>
           {t("launcher.beans_exchange")}
         </button>
@@ -99,15 +114,16 @@ export function MorePopupMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   useClickOutside(menuRef, onClose);
+  const cls = useMenuClasses();
 
   return (
-    <div ref={menuRef} className={`${MENU_CLASS} right-0`}>
+    <div ref={menuRef} className={`absolute top-full right-0 mt-1 ${cls.menu}`}>
       <button
         onClick={() => {
           commands.openMemberPopup(sessionId).catch(() => {});
           onClose();
         }}
-        className={ITEM_CLASS}
+        className={cls.item}
       >
         <span className="w-4 text-center text-xs">👤</span>
         {t("launcher.member_center")}
@@ -119,7 +135,7 @@ export function MorePopupMenu({
             .catch(() => {});
           onClose();
         }}
-        className={ITEM_CLASS}
+        className={cls.item}
       >
         <span className="w-4 text-center text-xs">💬</span>
         {t("launcher.support")}
@@ -132,7 +148,7 @@ export function MorePopupMenu({
               onClose();
               onLogout();
             }}
-            className={`${ITEM_CLASS} hover:text-[var(--danger)]`}
+            className={`${cls.item} hover:text-[var(--danger)]`}
           >
             <span className="w-4 text-center text-xs">⏏</span>
             {t("launcher.logout")}
@@ -154,12 +170,10 @@ export function OtpMoreMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   useClickOutside(menuRef, onClose);
+  const cls = useMenuClasses();
 
   return (
-    <div
-      ref={menuRef}
-      className="absolute right-0 bottom-full z-50 mb-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-    >
+    <div ref={menuRef} className={`absolute right-0 bottom-full mb-1 ${cls.menu}`}>
       {items.map((it) => (
         <button
           key={it.label}
@@ -168,7 +182,7 @@ export function OtpMoreMenu({
             onClose();
             it.onClick();
           }}
-          className={`${ITEM_CLASS} disabled:opacity-40`}
+          className={`${cls.item} disabled:opacity-40`}
         >
           <span className="w-4 text-center text-xs">{it.icon}</span>
           {it.label}
