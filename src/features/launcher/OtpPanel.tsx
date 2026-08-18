@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
@@ -11,9 +11,13 @@ import type { ErrorDto, GameCredentialsDto } from "../../lib/types";
 interface OtpPanelProps {
   selectedAccountId: string | null;
   onOtpFetched?: (accountId: string, otp: string) => void;
+  /** Compact launcher: tighter paddings and a smaller OTP readout. */
+  compact?: boolean;
+  /** Rendered at the end of the OTP row (the compact layout puts Play there). */
+  actions?: ReactNode;
 }
 
-export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
+export function OtpPanel({ selectedAccountId, onOtpFetched, compact, actions }: OtpPanelProps) {
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
   const [copied, setCopied] = useState(false);
@@ -116,9 +120,13 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   }
 
   return (
-    <div className="mx-3 mb-3 shrink-0 rounded-xl border border-border bg-[var(--surface)] p-3.5 shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm">
+    <div
+      className={`shrink-0 rounded-xl border border-border bg-[var(--surface)] shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm ${
+        compact ? "mx-2 mb-2 p-2.5" : "mx-3 mb-3 p-3.5"
+      }`}
+    >
       {/* Header */}
-      <div className="mb-2.5 flex items-center justify-between">
+      <div className={`flex items-center justify-between ${compact ? "mb-1.5" : "mb-2.5"}`}>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold tracking-[2.5px] text-text-dim uppercase">
             🔐 {t("launcher.otp")}
@@ -145,12 +153,16 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       </div>
 
       {/* OTP display row */}
-      <div className="flex items-center gap-2.5">
+      <div className={`flex items-center ${compact ? "gap-2" : "gap-2.5"}`}>
         <button
           type="button"
           onClick={handleCopyOtp}
           disabled={!credentials}
-          className={`relative flex flex-1 items-center justify-center rounded-[10px] border px-4 py-2.5 font-mono text-[22px] font-bold tracking-[4px] transition-all ${
+          className={`relative flex flex-1 items-center justify-center rounded-[10px] border font-mono font-bold transition-all ${
+            compact
+              ? "min-w-0 px-2 py-2 text-[17px] tracking-[2px]"
+              : "px-4 py-2.5 text-[22px] tracking-[4px]"
+          } ${
             copied
               ? "border-[rgba(74,222,128,0.4)] bg-[rgba(74,222,128,0.04)] text-green-400"
               : credentials
@@ -200,10 +212,13 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           onClick={handleGetOtp}
           disabled={!selectedAccountId || credentialsMutation.isPending || pasting}
           title={t("launcher.get_otp")}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_16px_var(--accent-glow)] active:scale-[0.92] disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
+          className={`flex shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_16px_var(--accent-glow)] active:scale-[0.92] disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40 ${
+            compact ? "h-9 w-9" : "h-10 w-10"
+          }`}
         >
           ↻
         </button>
+        {actions}
       </div>
     </div>
   );

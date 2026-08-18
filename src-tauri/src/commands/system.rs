@@ -143,6 +143,7 @@ pub async fn resize_window(
     page: String,
     announcement_bar: Option<bool>,
     window: tauri::Window,
+    state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     // The announcement banner's height is part of every page's base size, so it
     // never fights the update banner's dynamic ±height adjustment in the
@@ -154,9 +155,13 @@ pub async fn resize_window(
     } else {
         0.0
     };
+    // The compact launcher is a single narrow column; the size is read here
+    // rather than passed in so every caller of resize_window("main") gets it.
+    let compact = state.config.read().await.compact_ui;
     let (width, height): (f64, f64) = match page.as_str() {
         "login" => (350.0, 620.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
+        "main" if compact => (360.0, 460.0 + bar),
         "main" => (760.0, 530.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),
         "web_launch" => (560.0, 640.0 + bar),

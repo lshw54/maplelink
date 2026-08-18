@@ -460,5 +460,7 @@
   "settings.webview_via_proxy": "VPN／加速器连接修复",
   "settings.webview_via_proxy_desc": "登录窗口等网页内容默认不经本程序连接，加速器与分流 VPN 只认本程序，所以加速不到。开启后改由本程序代为连接。检测到中国大陆 IP 会自动开启；若登录异常请关闭。",
   "settings.github_hosts": "GitHub 直连加速",
-  "settings.github_hosts_desc": "更新时若无法直接连上 GitHub，会先获取社区维护的 GitHub hosts 列表，改用其中的 IP 直接连接，不必再绕道 ghproxy 镜像。列表只在本程序内生效，不会改动系统 hosts 文件。只有直连失败时才会启用，本来就连得上 GitHub 的用户不受影响。"
+  "settings.github_hosts_desc": "更新时若无法直接连上 GitHub，会先获取社区维护的 GitHub hosts 列表，改用其中的 IP 直接连接，不必再绕道 ghproxy 镜像。列表只在本程序内生效，不会改动系统 hosts 文件。只有直连失败时才会启用，本来就连得上 GitHub 的用户不受影响。",
+  "settings.compact_ui": "精简启动器",
+  "settings.compact_ui_desc": "把启动器缩成小巧的单栏窗口，只保留账号、OTP 与开始游戏，方便放在游戏旁边。其他页面保持原有大小。"
 }

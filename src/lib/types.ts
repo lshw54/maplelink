@@ -81,6 +81,7 @@ export interface AppConfigDto {
   otpAutoInput: boolean;
   defaultLoginView: "normal" | "qr";
   githubHosts: boolean;
+  compactUi: boolean;
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */

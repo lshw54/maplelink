@@ -127,6 +127,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 otp_auto_input: true,
                 default_login_view: maplelink_lib::models::config::DefaultLoginView::Normal,
                 github_hosts: true,
+                compact_ui: false,
             }
         },
     )

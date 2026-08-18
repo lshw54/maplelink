@@ -197,6 +197,22 @@ export function SettingsTab() {
         </div>
       </SettingRow>
 
+      {/* Compact launcher — the main page as one narrow column. The window
+          takes the new size on the way back to it (goBack resizes). */}
+      <SettingRow label={t("settings.compact_ui")}>
+        <Toggle
+          checked={config?.compactUi ?? false}
+          onChange={() => {
+            if (!config) return;
+            useConfigStore.getState().updateConfigField("compactUi", !config.compactUi);
+            setConfig.mutate({ key: "compactUi", value: String(!config.compactUi) });
+          }}
+        />
+      </SettingRow>
+      <p className="px-1 text-[11px] leading-relaxed text-text-faint">
+        {t("settings.compact_ui_desc")}
+      </p>
+
       {/* Auto-update toggle */}
       <SettingRow label={t("settings.auto_update")}>
         <Toggle checked={config?.autoUpdate ?? true} onChange={handleToggleAutoUpdate} />
