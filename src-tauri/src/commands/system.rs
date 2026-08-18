@@ -173,6 +173,7 @@ pub async fn resize_window(
         "web_launch" => (560.0, 640.0 + bar),
         // Temporarily enlarged while the announcement overlay is open so the
         // wide notice card has room (restored to the page size on close).
+        "announcement" if compact => (600.0, 560.0),
         "announcement" => (640.0, 700.0),
         _ => {
             return Err(ErrorDto {
