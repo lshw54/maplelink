@@ -369,14 +369,14 @@ function ListItem({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={`group flex items-center text-left transition-all duration-150 ${
-        compact ? "gap-2 rounded-md px-2 py-[5px]" : "gap-2.5 rounded-lg border px-3 py-2"
+        compact ? "gap-2 rounded-md border px-2 py-[5px]" : "gap-2.5 rounded-lg border px-3 py-2"
       } ${isDragging ? "opacity-50" : ""} ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
           ? compact
-            ? "bg-[rgba(232,162,58,0.1)] shadow-[inset_2px_0_0_var(--accent)]"
+            ? "border-[rgba(232,162,58,0.55)] bg-[rgba(232,162,58,0.08)]"
             : "border-accent bg-[rgba(232,162,58,0.05)]"
           : compact
-            ? "hover:bg-[var(--surface-hover)]"
+            ? "border-transparent hover:bg-[var(--surface-hover)]"
             : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
       }`}
     >
