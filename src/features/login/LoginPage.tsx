@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
@@ -30,8 +30,13 @@ export function LoginPage() {
   // sized to the form (classic mode adds notice boxes, so it gets a taller
   // window) so nothing ever needs to scroll.
   const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  const classicSizedRef = useRef(classicMode);
   useEffect(() => {
-    if (!compact) return;
+    // Only when classic mode actually flips — the page's normal size is set by
+    // setPage / the app's mount resize, and repeating it here just adds a
+    // redundant resize while the window is coming up.
+    if (!compact || classicSizedRef.current === classicMode) return;
+    classicSizedRef.current = classicMode;
     commands
       .resizeWindow(classicMode ? "login-classic" : "login", announcementBarShown())
       .catch(() => {});
