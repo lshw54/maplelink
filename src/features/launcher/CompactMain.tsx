@@ -103,20 +103,14 @@ export function CompactMain(p: CompactMainProps) {
           )}
         </div>
 
-        {running && (
-          <span
-            className="flex shrink-0 items-center gap-1 text-[10px] text-accent"
-            title={`PID ${p.gamePid ?? ""}`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_6px_var(--accent-glow)]" />
-            {t("launcher.running")}
-          </span>
-        )}
-
         <button
           onClick={p.onPlay}
           disabled={p.launching}
-          title={p.showClassic ? t("launcher.game_classic_title") : t("launcher.play")}
+          title={`${p.showClassic ? t("launcher.game_classic_title") : t("launcher.play")}${
+            running
+              ? ` · ${t("launcher.running")}${p.gamePid !== null ? ` (PID ${p.gamePid})` : ""}`
+              : ""
+          }`}
           className="relative flex h-[26px] shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
         >
           <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent" />

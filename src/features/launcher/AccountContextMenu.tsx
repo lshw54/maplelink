@@ -462,7 +462,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
         <div
           ref={menuRef}
           role="menu"
-          className={`fixed z-50 animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px] ${
+          className={`fixed z-50 animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--tb-card)] shadow-[0_8px_32px_rgba(0,0,0,0.3)] ${
             compactUi ? "min-w-[150px] py-1" : "min-w-[170px] py-1.5"
           }`}
           style={
