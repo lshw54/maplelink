@@ -197,40 +197,6 @@ export function ToolsTab() {
         />
       </Section>
 
-      {/* Calculators */}
-      <Section title={t("toolbox.tools.section_calc")}>
-        <ToolRow
-          card={{
-            icon: "⭐",
-            iconBg: "bg-[rgba(234,179,8,0.1)]",
-            name: t("toolbox.tools.starforce"),
-            desc: t("toolbox.tools.starforce_desc"),
-            onClick: () =>
-              commands
-                .openWebPopup(
-                  "https://brendonmay.github.io/starforceCalculator/",
-                  t("toolbox.tools.starforce"),
-                )
-                .catch(() => {}),
-          }}
-        />
-        <ToolRow
-          card={{
-            icon: "💎",
-            iconBg: "bg-[rgba(59,130,246,0.1)]",
-            name: t("toolbox.tools.core_calc"),
-            desc: t("toolbox.tools.core_calc_desc"),
-            onClick: () =>
-              commands
-                .openWebPopup(
-                  "https://phantasmicsky.github.io/NodestoneBuilder/",
-                  t("toolbox.tools.core_calc"),
-                )
-                .catch(() => {}),
-          }}
-        />
-      </Section>
-
       {/* Official client download list */}
       <GameDownloadModal isOpen={showDownload} onClose={() => setShowDownload(false)} />
 
