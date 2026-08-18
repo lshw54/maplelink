@@ -268,13 +268,13 @@ export function CompactMain(p: CompactMainProps) {
               role="switch"
               aria-checked={otp.autoInput}
               onClick={() => otp.setAutoInput(!otp.autoInput)}
-              className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
+              className={`relative h-[18px] w-[32px] shrink-0 rounded-full transition-colors ${
                 otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
               }`}
             >
               <span
-                className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
-                  otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
+                className={`absolute top-[2px] h-[14px] w-[14px] rounded-full transition-all ${
+                  otp.autoInput ? "left-[16px] bg-accent" : "left-[2px] bg-text-dim"
                 }`}
               />
             </button>
@@ -285,7 +285,7 @@ export function CompactMain(p: CompactMainProps) {
             <button
               onClick={otp.getOtp}
               disabled={!p.selectedAccountId || otp.busy}
-              className="flex h-[22px] items-center gap-1 rounded-l-[6px] bg-[rgba(232,162,58,0.14)] px-2 text-[10.5px] font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[18px] items-center gap-1 rounded-l-[5px] bg-[rgba(232,162,58,0.14)] px-1.5 text-[10.5px] leading-none font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↻ {t("launcher.get_otp")}
             </button>
@@ -293,7 +293,7 @@ export function CompactMain(p: CompactMainProps) {
               onClick={() => setOtpMenuOpen(!otpMenuOpen)}
               disabled={!p.selectedAccountId}
               aria-label="More"
-              className="flex h-[22px] w-4 items-center justify-center rounded-r-[6px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[18px] w-4 items-center justify-center rounded-r-[5px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <svg
                 width="8"
