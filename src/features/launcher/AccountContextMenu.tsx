@@ -262,6 +262,8 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   const [editError, setEditError] = useState(false);
   const modalViewRef = useRef<ModalView | null>(null);
   const [clampedPos, setClampedPos] = useState<{ x: number; y: number } | null>(null);
+  // Must sit with the other hooks — there are early returns below.
+  const compactUi = useConfigStore((s) => s.config?.compactUi ?? false);
 
   // Clamp menu position to stay within window bounds.
   // Uses rAF to ensure the menu is fully painted before measuring.
@@ -445,7 +447,6 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     }
   }
 
-  const compactUi = useConfigStore((s) => s.config?.compactUi ?? false);
   const modalTitle =
     modalView?.kind === "detail"
       ? t("launcher.context.detail")
