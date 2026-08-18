@@ -39,6 +39,7 @@ export function SettingsTab() {
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
+  const compact = config?.compactUi ?? false;
 
   // Auto-detect game path from registry if not set
   useEffect(() => {
@@ -97,7 +98,7 @@ export function SettingsTab() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col ${compact ? "gap-2.5" : "gap-4"}`}>
       {/* Game path */}
       <SettingRow label={t("settings.game_path")}>
         <div className="flex items-center gap-2">
@@ -288,8 +289,13 @@ export function SettingsTab() {
 }
 
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   return (
-    <div className="flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-3 transition-all hover:translate-y-[-1px] hover:border-[var(--tb-border)]">
+    <div
+      className={`flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] transition-all hover:translate-y-[-1px] hover:border-[var(--tb-border)] ${
+        compact ? "px-3 py-2" : "px-4 py-3"
+      }`}
+    >
       <span className="text-xs font-semibold text-[var(--text)]">{label}</span>
       {children}
     </div>

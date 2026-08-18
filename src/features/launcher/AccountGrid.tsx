@@ -14,8 +14,11 @@ import type { GameAccountDto } from "../../lib/types";
 interface AccountGridProps {
   selectedAccountId: string | null;
   onSelectAccount: (account: GameAccountDto) => void;
-  /** Compact launcher: always the list view, no view toggle, tighter header. */
+  /** Compact launcher: always the list view, no view toggle, tighter rows. */
   compact?: boolean;
+  /** Extra controls in the header line (the compact launcher puts the OTP
+   *  auto-input toggle here, next to refresh). */
+  headerExtra?: React.ReactNode;
 }
 
 interface ContextState {
@@ -25,7 +28,12 @@ interface ContextState {
 
 type ViewMode = "card" | "list";
 
-export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: AccountGridProps) {
+export function AccountGrid({
+  selectedAccountId,
+  onSelectAccount,
+  compact,
+  headerExtra,
+}: AccountGridProps) {
   const { t } = useTranslation();
   const { data: accounts, isLoading } = useGameAccounts();
   const refreshAccounts = useRefreshAccounts();
@@ -182,12 +190,15 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
             </button>
           )}
         </div>
-        <button
-          onClick={refreshAccounts}
-          className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
-        >
-          {t("launcher.refresh")}
-        </button>
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          <button
+            onClick={refreshAccounts}
+            className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
+          >
+            {t("launcher.refresh")}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -215,7 +226,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className={`flex flex-col ${compact ? "gap-[3px]" : "gap-1"}`}>
             {displayAccounts.map((account, idx) => (
               <ListItem
                 key={account.id}
@@ -358,7 +369,7 @@ function ListItem({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={`group flex items-center rounded-lg border text-left transition-all duration-150 ${
-        compact ? "gap-2 px-2.5 py-1.5" : "gap-2.5 px-3 py-2"
+        compact ? "gap-2 px-2 py-1" : "gap-2.5 px-3 py-2"
       } ${isDragging ? "opacity-50" : ""} ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
           ? `border-accent bg-[rgba(232,162,58,0.05)] ${compact ? "shadow-[0_0_14px_rgba(232,162,58,0.12)]" : ""}`
@@ -380,7 +391,7 @@ function ListItem({
       </span>
       <div
         className={`flex shrink-0 items-center justify-center rounded-full border-[1.5px] font-bold ${
-          compact ? "h-6 w-6 text-[11px]" : "h-7 w-7 text-xs"
+          compact ? "h-5 w-5 text-[10px]" : "h-7 w-7 text-xs"
         } ${
           isSelected
             ? "border-accent text-accent"
@@ -390,7 +401,9 @@ function ListItem({
         {initial}
       </div>
       <div className="min-w-0 flex-1">
-        <div className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
+        <div
+          className={`truncate font-medium text-[var(--text)] ${compact ? "text-[11px]" : "text-xs"} ${mask}`}
+        >
           {account.displayName}
         </div>
       </div>

@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { commands } from "../../lib/tauri";
 import { useTranslation } from "../../lib/i18n";
+import { useOtp } from "../../lib/hooks/use-otp";
 import { AccountGrid } from "./AccountGrid";
-import { OtpPanel } from "./OtpPanel";
 import { BeansPopupMenu, MorePopupMenu } from "./PopupMenus";
 import { StatusBar } from "../shared/StatusBar";
 import type { SessionDto, GameAccountDto, ClassicCheckDto } from "../../lib/types";
 
 /**
- * The compact launcher: one narrow column — header · game switch · accounts ·
- * OTP · Play · status — so the window can sit beside the game. Pure layout:
- * every handler and piece of state comes from MainPage, which owns the launch
- * logic and the confirmation modals for both layouts.
+ * The compact launcher — sized like the old beanfun launcher: header · game
+ * switch · accounts · one OTP + Play row · status. Pure layout: every handler
+ * and piece of state comes from MainPage, which owns the launch logic and the
+ * confirmation modals for both layouts.
  */
 export interface CompactMainProps {
   session: SessionDto | null;
@@ -43,32 +43,25 @@ export function CompactMain(p: CompactMainProps) {
   const { t } = useTranslation();
   const [beansMenuOpen, setBeansMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const otp = useOtp(p.selectedAccountId, p.onOtpFetched);
   const sessionRegion = p.session?.region ?? p.region;
   const running = !p.showClassic && (p.gameRunning || p.gamePid !== null);
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
-      {/* Soft accent wash behind the header so the column has some depth */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[rgba(232,162,58,0.07)] to-transparent" />
-
       {/* Header: who's signed in · beans · more */}
-      <div className="relative flex shrink-0 items-center gap-2 px-3 pt-2.5 pb-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white shadow-[0_2px_8px_var(--accent-glow)]">
+      <div className="flex shrink-0 items-center gap-1.5 px-2.5 py-1.5">
+        <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[11px] font-bold text-white shadow-[0_1px_6px_var(--accent-glow)]">
           {p.session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span className={`truncate text-[12px] font-semibold text-[var(--text)] ${p.nameMask}`}>
-            {p.session?.accountName ?? ""}
-          </span>
-          <span className="text-[9.5px] font-medium tracking-[1.5px] text-text-faint uppercase">
-            beanfun · {sessionRegion}
-          </span>
-        </div>
+        <span className={`min-w-0 flex-1 truncate text-[12px] font-semibold ${p.nameMask}`}>
+          {p.session?.accountName ?? ""}
+        </span>
 
         <div className="relative">
           <button
             onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-            className="inline-flex items-center gap-1 rounded-full border border-[rgba(232,162,58,0.18)] bg-[rgba(232,162,58,0.08)] px-2.5 py-1 text-[11px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.16)]"
+            className="inline-flex items-center gap-1 rounded-full border border-[rgba(232,162,58,0.18)] bg-[rgba(232,162,58,0.08)] px-2 py-[2px] text-[11px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.16)]"
             title={`${t("launcher.beans")}: ${p.remainPoint}${
               sessionRegion === "HK" && p.remainPoint > 0
                 ? ` · ${t("launcher.game_points")}: ${Math.floor(p.remainPoint / 2.5)}`
@@ -96,7 +89,7 @@ export function CompactMain(p: CompactMainProps) {
         <div className="relative">
           <button
             onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
             title="More"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -116,24 +109,24 @@ export function CompactMain(p: CompactMainProps) {
         </div>
       </div>
 
-      {/* Regular ↔ Classic — a full-width segmented switch so the choice is
-          unmistakable (it decides what Play launches). */}
+      {/* Regular ↔ Classic — a segmented switch so what Play launches is
+          unmistakable. Readiness only shows when something needs attention. */}
       {p.canClassic && (
-        <div className="relative shrink-0 px-3 pb-2">
-          <div className="grid grid-cols-2 rounded-[10px] border border-border bg-[var(--surface)] p-[3px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]">
+        <div className="shrink-0 px-2.5 pb-1.5">
+          <div className="grid grid-cols-2 rounded-[8px] border border-border bg-[var(--surface)] p-[2px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]">
             {[false, true].map((classic) => {
               const active = p.classicGame === classic;
               return (
                 <button
                   key={String(classic)}
                   onClick={() => p.onClassicGame(classic)}
-                  className={`flex items-center justify-center gap-1.5 rounded-[8px] py-1.5 text-[11.5px] font-bold tracking-[0.5px] transition-all ${
+                  className={`flex items-center justify-center gap-1 rounded-[6px] py-[3px] text-[11px] font-bold transition-all ${
                     active
-                      ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_2px_10px_var(--accent-glow)]"
+                      ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_1px_8px_var(--accent-glow)]"
                       : "text-text-dim hover:text-[var(--text)]"
                   }`}
                 >
-                  <span className={active ? "" : "opacity-60 grayscale"}>
+                  <span className={`text-[12px] ${active ? "" : "opacity-60 grayscale"}`}>
                     {classic ? "🍁" : "🍄"}
                   </span>
                   {t(classic ? "launcher.game_classic" : "launcher.game_regular")}
@@ -141,13 +134,10 @@ export function CompactMain(p: CompactMainProps) {
               );
             })}
           </div>
-          {/* Classic readiness — one slim line, only while Classic is selected */}
-          {p.showClassic && (
-            <div className="mt-1.5 flex items-center justify-center text-[10px]">
+          {p.showClassic && !p.ngmReady && (
+            <div className="mt-1 flex items-center justify-center text-[10px]">
               {p.classicCheck === null ? (
                 <span className="text-text-faint">{t("login.classic_checking")}</span>
-              ) : p.ngmReady ? (
-                <span className="text-green-500">✓ {t("login.classic_ready")}</span>
               ) : (
                 <button
                   onClick={() =>
@@ -165,41 +155,112 @@ export function CompactMain(p: CompactMainProps) {
         </div>
       )}
 
-      {/* Accounts */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border px-3 pt-2 pb-1.5">
+      {/* Accounts (auto-input toggle lives in its header line) */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border px-2.5 pt-1.5 pb-1">
         <AccountGrid
           compact
           selectedAccountId={p.selectedAccountId}
           onSelectAccount={p.onSelectAccount}
+          headerExtra={
+            <label
+              className="flex cursor-pointer items-center gap-1 text-[10px] text-text-faint"
+              title={t("launcher.auto_input")}
+            >
+              {t("launcher.auto_input")}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={otp.autoInput}
+                onClick={() => otp.setAutoInput(!otp.autoInput)}
+                className={`relative h-[14px] w-[26px] shrink-0 rounded-full transition-colors ${
+                  otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
+                }`}
+              >
+                <span
+                  className={`absolute top-[2px] h-[10px] w-[10px] rounded-full transition-all ${
+                    otp.autoInput ? "left-[14px] bg-accent" : "left-[2px] bg-text-dim"
+                  }`}
+                />
+              </button>
+            </label>
+          }
         />
       </div>
 
-      {/* OTP card, then the hero Play bar */}
-      <div className="shrink-0 px-3 pb-2">
-        <OtpPanel compact selectedAccountId={p.selectedAccountId} onOtpFetched={p.onOtpFetched} />
+      {/* One row: OTP readout · fetch · Play */}
+      <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-2.5 py-2">
+        <button
+          type="button"
+          onClick={otp.copyOtp}
+          disabled={!otp.credentials}
+          title={t("launcher.otp")}
+          className={`relative flex h-8 min-w-0 flex-1 items-center justify-center rounded-[8px] border pr-6 pl-2 font-mono text-[14px] font-bold tracking-[2px] transition-all ${
+            otp.copied
+              ? "border-[rgba(74,222,128,0.4)] bg-[rgba(74,222,128,0.04)] text-green-400"
+              : otp.credentials
+                ? "border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.05)] text-accent hover:bg-[rgba(232,162,58,0.09)]"
+                : "cursor-default border-border bg-[var(--surface)] text-text-faint"
+          }`}
+        >
+          <span className="truncate">{otp.credentials?.otp ?? "••••••••"}</span>
+          <span
+            className={`absolute top-1/2 right-2 -translate-y-1/2 ${otp.copied ? "text-green-400" : "text-text-faint"}`}
+          >
+            {otp.copied ? (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </span>
+        </button>
+        <button
+          onClick={otp.getOtp}
+          disabled={!p.selectedAccountId || otp.busy}
+          title={t("launcher.get_otp")}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.1)] text-[14px] text-accent transition-all hover:bg-[rgba(232,162,58,0.18)] active:scale-[0.92] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ↻
+        </button>
         <button
           onClick={p.onPlay}
           disabled={p.launching}
-          className="group relative mt-2 flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-[12px] bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold tracking-[3px] text-white uppercase shadow-[0_4px_18px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.08)] transition-all hover:translate-y-[-1px] hover:shadow-[0_6px_24px_rgba(232,162,58,0.5)] active:scale-[0.98] disabled:transform-none disabled:opacity-40"
+          className="relative flex h-8 shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-[8px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11.5px] font-extrabold tracking-[1.5px] text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_16px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
         >
-          {/* sheen */}
-          <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent opacity-70" />
-          <span className="relative text-[13px]">{p.showClassic ? "🍁" : "▶"}</span>
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent" />
+          <span className="relative text-[11px]">{p.showClassic ? "🍁" : "▶"}</span>
           <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
-          {p.showClassic && (
-            <span className="relative rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] tracking-[1px] normal-case">
-              {t("launcher.game_classic")}
-            </span>
-          )}
         </button>
-        {running && (
-          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[10px] text-accent">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_6px_var(--accent-glow)]" />
-            {t("launcher.running")}
-            {p.gamePid !== null ? ` · PID ${p.gamePid}` : ""}
-          </div>
-        )}
       </div>
+      {running && (
+        <div className="-mt-1 flex shrink-0 items-center justify-center gap-1.5 pb-1 text-[10px] text-accent">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_6px_var(--accent-glow)]" />
+          {t("launcher.running")}
+          {p.gamePid !== null ? ` · PID ${p.gamePid}` : ""}
+        </div>
+      )}
 
       <StatusBar />
     </div>

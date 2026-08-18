@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useUiStore } from "../../lib/stores/ui-store";
 
 const MENU_CLASS =
   "absolute top-full right-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]";
@@ -91,9 +92,11 @@ export function MorePopupMenu({
   t: (key: string) => string;
   sessionId: string;
   onClose: () => void;
-  /** Present in the compact layout, where there is no room for a logout button. */
+  /** Present in the compact layout, where there is no room for a logout button
+   *  and the session strip is hidden while there is only one session. */
   onLogout?: () => void;
 }) {
+  const compact = !!onLogout;
   const menuRef = useRef<HTMLDivElement>(null);
   useClickOutside(menuRef, onClose);
 
@@ -121,9 +124,20 @@ export function MorePopupMenu({
         <span className="w-4 text-center text-xs">💬</span>
         {t("launcher.support")}
       </button>
-      {onLogout && (
+      {compact && (
         <>
           <div className="mx-3 my-1 border-t border-border" />
+          <button
+            onClick={() => {
+              onClose();
+              useUiStore.setState({ addingSession: true });
+              useUiStore.getState().setPage("login");
+            }}
+            className={ITEM_CLASS}
+          >
+            <span className="w-4 text-center text-xs">＋</span>
+            {t("launcher.add_session")}
+          </button>
           <button
             onClick={() => {
               onClose();
