@@ -84,7 +84,7 @@ export function ToolboxPage() {
       </nav>
 
       {/* Right content area */}
-      <div className={`flex-1 overflow-y-auto ${compact ? "p-3" : "p-4"}`}>
+      <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "tools" && <ToolsTab />}
         {activeTab === "account_manager" && <AccountManagerTab />}
         {activeTab === "settings" && <SettingsTab />}

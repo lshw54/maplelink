@@ -160,12 +160,12 @@ pub async fn resize_window(
     // passed in so every caller of resize_window(page) gets the right size.
     let compact = state.config.read().await.compact_ui;
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" if compact => (350.0, 450.0 + bar),
+        "login" if compact => (350.0, 480.0 + bar),
         "login" => (350.0, 620.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
-        "main" if compact => (340.0, 340.0 + bar),
+        "main" if compact => (340.0, 330.0 + bar),
         "main" => (760.0, 530.0 + bar),
-        "toolbox" if compact => (560.0, 420.0 + bar),
+        "toolbox" if compact => (620.0, 450.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),
         "web_launch" => (560.0, 640.0 + bar),
         // Temporarily enlarged while the announcement overlay is open so the

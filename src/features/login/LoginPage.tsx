@@ -136,7 +136,7 @@ export function LoginPage() {
       <div
         className={`flex flex-1 flex-col items-center px-9 ${
           compact
-            ? "min-h-0 [justify-content:safe_center] overflow-y-auto pt-2 pb-1"
+            ? "scroll-quiet min-h-0 [justify-content:safe_center] overflow-y-auto pt-2 pb-1"
             : "justify-center"
         }`}
       >

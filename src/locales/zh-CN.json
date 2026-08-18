@@ -364,6 +364,8 @@
   "launcher.game_info": "MapleStory",
   "launcher.game_regular": "正式服",
   "launcher.game_classic": "怀旧服",
+  "launcher.game_regular_short": "正式",
+  "launcher.game_classic_short": "怀旧",
   "launcher.game_classic_title": "新枫之谷经典版",
   "launcher.game_subtitle": "Gamania · MMORPG",
   "launcher.select_account": "选择账号",

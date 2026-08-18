@@ -98,7 +98,7 @@ export function SettingsTab() {
   }
 
   return (
-    <div className={`flex flex-col ${compact ? "gap-2.5" : "gap-4"}`}>
+    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"}`}>
       {/* Game path */}
       <SettingRow label={t("settings.game_path")}>
         <div className="flex items-center gap-2">
@@ -293,7 +293,7 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
   return (
     <div
       className={`flex items-center justify-between rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] transition-all hover:translate-y-[-1px] hover:border-[var(--tb-border)] ${
-        compact ? "px-3 py-2" : "px-4 py-3"
+        compact ? "px-3.5 py-2.5" : "px-4 py-3"
       }`}
     >
       <span className="text-xs font-semibold text-[var(--text)]">{label}</span>
