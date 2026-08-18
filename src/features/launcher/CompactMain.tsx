@@ -111,11 +111,19 @@ export function CompactMain(p: CompactMainProps) {
               ? ` · ${t("launcher.running")}${p.gamePid !== null ? ` (PID ${p.gamePid})` : ""}`
               : ""
           }`}
-          className="relative flex h-[26px] shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
+          className="relative flex h-[26px] shrink-0 items-center justify-center gap-1.5 rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
         >
-          <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent" />
+          <span className="pointer-events-none absolute inset-0 rounded-[7px] bg-gradient-to-b from-white/15 to-transparent" />
           <span className="relative text-[10px]">{p.showClassic ? "🍁" : "▶"}</span>
           <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
+          {/* Game is running — a small live badge; the words are in the tooltip
+              so the beans line keeps its room. */}
+          {running && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-[var(--bg)] bg-green-400" />
+            </span>
+          )}
         </button>
 
         <ConnectionDot />
