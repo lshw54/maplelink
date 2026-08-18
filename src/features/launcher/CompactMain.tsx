@@ -201,10 +201,58 @@ export function CompactMain(p: CompactMainProps) {
         />
       </div>
 
-      {/* OTP block: auto-input on its own line, then readout (copy) · Get OTP
-          with a ▾ for the rarer copy-credentials */}
-      <div className="flex shrink-0 flex-col gap-1 border-t border-border px-3 pt-1.5 pb-2">
-        <div className="flex justify-end">
+      {/* OTP block: the readout on its own line, then auto-input on the left
+          and Get OTP (its ▾ holds copy-credentials) on the right */}
+      <div className="flex shrink-0 flex-col gap-1.5 border-t border-border px-3 py-2">
+        <button
+          type="button"
+          onClick={otp.copyOtp}
+          disabled={!otp.credentials}
+          title={t("launcher.context.copy_otp")}
+          className={`relative flex h-7 w-full min-w-0 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
+            otp.copied
+              ? "bg-[rgba(74,222,128,0.08)] text-green-400"
+              : otp.credentials
+                ? "bg-[rgba(232,162,58,0.08)] text-accent hover:bg-[rgba(232,162,58,0.13)]"
+                : "cursor-default bg-[var(--surface)] text-text-faint"
+          }`}
+        >
+          <span className="truncate">{otp.credentials?.otp ?? "••••••••"}</span>
+          <span
+            className={`absolute top-1/2 right-2 -translate-y-1/2 ${otp.copied ? "text-green-400" : "text-text-faint"}`}
+          >
+            {otp.copied ? (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </span>
+        </button>
+
+        <div className="flex items-center justify-between gap-2">
           <label
             className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-text-faint"
             title={t("launcher.auto_input")}
@@ -226,62 +274,13 @@ export function CompactMain(p: CompactMainProps) {
               />
             </button>
           </label>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={otp.copyOtp}
-            disabled={!otp.credentials}
-            title={t("launcher.context.copy_otp")}
-            className={`relative flex h-7 min-w-0 flex-1 items-center justify-center rounded-[7px] pr-6 pl-2 font-mono text-[13px] font-bold tracking-[2px] transition-all ${
-              otp.copied
-                ? "bg-[rgba(74,222,128,0.08)] text-green-400"
-                : otp.credentials
-                  ? "bg-[rgba(232,162,58,0.08)] text-accent hover:bg-[rgba(232,162,58,0.13)]"
-                  : "cursor-default bg-[var(--surface)] text-text-faint"
-            }`}
-          >
-            <span className="truncate">{otp.credentials?.otp ?? "••••••••"}</span>
-            <span
-              className={`absolute top-1/2 right-2 -translate-y-1/2 ${otp.copied ? "text-green-400" : "text-text-faint"}`}
-            >
-              {otp.copied ? (
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              )}
-            </span>
-          </button>
 
           {/* Split button: Get OTP, and a ▾ with the less common actions */}
           <div className="relative flex shrink-0">
             <button
               onClick={otp.getOtp}
               disabled={!p.selectedAccountId || otp.busy}
-              className="flex h-7 items-center gap-1 rounded-l-[7px] bg-[rgba(232,162,58,0.14)] px-2 text-[11px] font-semibold text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 items-center gap-1 rounded-l-[7px] bg-[rgba(232,162,58,0.14)] px-2.5 text-[11px] font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↻ {t("launcher.get_otp")}
             </button>
