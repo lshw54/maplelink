@@ -361,7 +361,7 @@ function ListItem({
         compact ? "gap-2 px-2.5 py-1.5" : "gap-2.5 px-3 py-2"
       } ${isDragging ? "opacity-50" : ""} ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
-          ? "border-accent bg-[rgba(232,162,58,0.05)]"
+          ? `border-accent bg-[rgba(232,162,58,0.05)] ${compact ? "shadow-[0_0_14px_rgba(232,162,58,0.12)]" : ""}`
           : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
       }`}
     >

@@ -26,6 +26,9 @@ export function LoginPage() {
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
   const addingSession = useUiStore((s) => s.addingSession);
+  // Compact UI: the window is 80px shorter, so the logo block loses its slack
+  // and the centre column scrolls rather than clipping a taller form.
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   const [view, setViewLocal] = useState<LoginView>(() => {
     if (persistedView) return persistedView as LoginView;
     // First mount this session — fall back to the user's configured default.
@@ -130,14 +133,22 @@ export function LoginPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center px-9">
+      <div
+        className={`flex flex-1 flex-col items-center px-9 ${
+          compact
+            ? "min-h-0 [justify-content:safe_center] overflow-y-auto pt-3 pb-2"
+            : "justify-center"
+        }`}
+      >
         {view === "normal" && (
           <>
-            <div className="mb-6 flex flex-col items-center">
+            <div className={`flex flex-col items-center ${compact ? "mb-3" : "mb-6"}`}>
               <img
                 src="/app-logo.png"
                 alt="MapleLink"
-                className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+                className={`rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)] ${
+                  compact ? "mb-1.5 h-8 w-8" : "mb-2.5 h-10 w-10"
+                }`}
               />
               <div className="text-[11px] font-bold tracking-[5px] text-text-dim uppercase">
                 {t("app.name")}

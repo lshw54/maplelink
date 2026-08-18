@@ -155,14 +155,17 @@ pub async fn resize_window(
     } else {
         0.0
     };
-    // The compact launcher is a single narrow column; the size is read here
-    // rather than passed in so every caller of resize_window("main") gets it.
+    // Compact UI: the launcher is a single narrow column, the toolbox an icon
+    // rail, the login page loses its vertical slack. Read here rather than
+    // passed in so every caller of resize_window(page) gets the right size.
     let compact = state.config.read().await.compact_ui;
     let (width, height): (f64, f64) = match page.as_str() {
+        "login" if compact => (350.0, 540.0 + bar),
         "login" => (350.0, 620.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
-        "main" if compact => (360.0, 460.0 + bar),
+        "main" if compact => (360.0, 500.0 + bar),
         "main" => (760.0, 530.0 + bar),
+        "toolbox" if compact => (600.0, 470.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),
         "web_launch" => (560.0, 640.0 + bar),
         // Temporarily enlarged while the announcement overlay is open so the

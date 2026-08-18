@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
-import { useUiStore } from "../../lib/stores/ui-store";
+import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
 import type { ThemeMode, Language } from "../../lib/stores/ui-store";
@@ -202,10 +202,14 @@ export function SettingsTab() {
       <SettingRow label={t("settings.compact_ui")}>
         <Toggle
           checked={config?.compactUi ?? false}
-          onChange={() => {
+          onChange={async () => {
             if (!config) return;
             useConfigStore.getState().updateConfigField("compactUi", !config.compactUi);
-            setConfig.mutate({ key: "compactUi", value: String(!config.compactUi) });
+            await setConfig
+              .mutateAsync({ key: "compactUi", value: String(!config.compactUi) })
+              .catch(() => {});
+            // This page is open right now — take the new size at once.
+            commands.resizeWindow("toolbox", announcementBarShown()).catch(() => {});
           }}
         />
       </SettingRow>

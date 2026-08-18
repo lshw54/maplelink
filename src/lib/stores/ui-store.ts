@@ -5,7 +5,7 @@ import { useConfigStore } from "./config-store";
 import { ANNOUNCEMENT_ID } from "../announcement";
 
 /** The announcement banner is chrome the backend sizes pages around. */
-function announcementBarShown(): boolean {
+export function announcementBarShown(): boolean {
   return useConfigStore.getState().config?.announcementDismissedId !== ANNOUNCEMENT_ID;
 }
 

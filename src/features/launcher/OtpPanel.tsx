@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
@@ -11,13 +11,12 @@ import type { ErrorDto, GameCredentialsDto } from "../../lib/types";
 interface OtpPanelProps {
   selectedAccountId: string | null;
   onOtpFetched?: (accountId: string, otp: string) => void;
-  /** Compact launcher: tighter paddings and a smaller OTP readout. */
+  /** Compact launcher: no outer margin (the parent lays it out), tighter
+   *  paddings and a smaller OTP readout. */
   compact?: boolean;
-  /** Rendered at the end of the OTP row (the compact layout puts Play there). */
-  actions?: ReactNode;
 }
 
-export function OtpPanel({ selectedAccountId, onOtpFetched, compact, actions }: OtpPanelProps) {
+export function OtpPanel({ selectedAccountId, onOtpFetched, compact }: OtpPanelProps) {
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
   const [copied, setCopied] = useState(false);
@@ -122,7 +121,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched, compact, actions }: 
   return (
     <div
       className={`shrink-0 rounded-xl border border-border bg-[var(--surface)] shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm ${
-        compact ? "mx-2 mb-2 p-2.5" : "mx-3 mb-3 p-3.5"
+        compact ? "p-2.5" : "mx-3 mb-3 p-3.5"
       }`}
     >
       {/* Header */}
@@ -218,7 +217,6 @@ export function OtpPanel({ selectedAccountId, onOtpFetched, compact, actions }: 
         >
           ↻
         </button>
-        {actions}
       </div>
     </div>
   );
