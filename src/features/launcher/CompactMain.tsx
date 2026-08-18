@@ -8,9 +8,9 @@ import { StatusBar } from "../shared/StatusBar";
 import type { SessionDto, GameAccountDto, ClassicCheckDto } from "../../lib/types";
 
 /**
- * The compact launcher, laid out like the old beanfun one: identity line ·
- * an action line (beans · regular/classic · Play) · the account list · one
- * OTP row · status. Flat by design — few borders, small type. Pure layout:
+ * The compact launcher, laid out like the old beanfun one: an action line
+ * (beans · Play · more), the regular/classic switch, the account list, one
+ * OTP row, status. Flat by design — few borders, small type. Pure layout:
  * every handler and piece of state comes from MainPage, which owns the launch
  * logic and the confirmation modals for both layouts.
  */
@@ -52,58 +52,25 @@ export function CompactMain(p: CompactMainProps) {
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
-      {/* Identity line */}
-      <div className="flex shrink-0 items-center gap-2 px-3 pt-2 pb-1">
-        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[10px] font-bold text-white">
-          {p.session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
-        </div>
-        <span className={`min-w-0 flex-1 truncate text-[12px] font-semibold ${p.nameMask}`}>
-          {p.session?.accountName ?? ""}
-        </span>
-        {running && (
-          <span
-            className="flex items-center gap-1 text-[10px] text-accent"
-            title={`PID ${p.gamePid ?? ""}`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_6px_var(--accent-glow)]" />
-            {t("launcher.running")}
-          </span>
-        )}
-        <div className="relative">
-          <button
-            onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
-            title="More"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <circle cx="3" cy="8" r="1.5" />
-              <circle cx="8" cy="8" r="1.5" />
-              <circle cx="13" cy="8" r="1.5" />
-            </svg>
-          </button>
-          {moreMenuOpen && (
-            <MorePopupMenu
-              t={t}
-              sessionId={p.activeSessionId ?? ""}
-              onClose={() => setMoreMenuOpen(false)}
-              onLogout={p.onLogout}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Action line: beans · which game · Play */}
-      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
+      {/* Line 1: beans · running · Play · more. The session strip above
+          already names the account, so there is no identity line. */}
+      <div className="flex shrink-0 items-center gap-2 px-3 pt-2 pb-1.5">
         <div className="relative min-w-0 flex-1">
           <button
             onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-            className="group flex max-w-full items-center gap-1 rounded-md py-1 pr-1.5 pl-1 text-[11px] whitespace-nowrap text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            className="group flex max-w-full items-center gap-1 rounded-md py-1 pr-1.5 pl-1 text-[11.5px] whitespace-nowrap text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
             title={`${t("launcher.beans")}: ${p.remainPoint}${
               gamePoints !== null ? ` · ${t("launcher.game_points")}: ${gamePoints}` : ""
             }`}
           >
             <span className="truncate">
               {t("launcher.beans")} <b className="text-accent">{p.remainPoint}</b>
+              {gamePoints !== null && (
+                <span className="text-text-faint">
+                  {" · "}
+                  {t("launcher.game_points")} <b className="text-text-dim">{gamePoints}</b>
+                </span>
+              )}
             </span>
             <svg
               width="8"
@@ -133,18 +100,61 @@ export function CompactMain(p: CompactMainProps) {
           )}
         </div>
 
-        {/* Regular ↔ Classic, right where Play is — the two decide together
-            what gets launched. */}
-        {p.canClassic && (
-          <div className="flex shrink-0 rounded-[7px] border border-border bg-[var(--surface)] p-[2px]">
+        {running && (
+          <span
+            className="flex shrink-0 items-center gap-1 text-[10px] text-accent"
+            title={`PID ${p.gamePid ?? ""}`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_6px_var(--accent-glow)]" />
+            {t("launcher.running")}
+          </span>
+        )}
+
+        <button
+          onClick={p.onPlay}
+          disabled={p.launching}
+          title={p.showClassic ? t("launcher.game_classic_title") : t("launcher.play")}
+          className="relative flex h-[26px] shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-3 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
+        >
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent" />
+          <span className="relative text-[10px]">{p.showClassic ? "🍁" : "▶"}</span>
+          <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+            title="More"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="3" cy="8" r="1.5" />
+              <circle cx="8" cy="8" r="1.5" />
+              <circle cx="13" cy="8" r="1.5" />
+            </svg>
+          </button>
+          {moreMenuOpen && (
+            <MorePopupMenu
+              t={t}
+              sessionId={p.activeSessionId ?? ""}
+              onClose={() => setMoreMenuOpen(false)}
+              onLogout={p.onLogout}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Line 2 (HK only): which game Play opens — a full-width switch */}
+      {p.canClassic && (
+        <div className="shrink-0 px-3 pb-2">
+          <div className="grid grid-cols-2 rounded-[7px] border border-border bg-[var(--surface)] p-[2px]">
             {[false, true].map((classic) => {
               const active = p.classicGame === classic;
               return (
                 <button
                   key={String(classic)}
                   onClick={() => p.onClassicGame(classic)}
-                  title={t(classic ? "launcher.game_classic" : "launcher.game_regular")}
-                  className={`flex h-[22px] items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-bold transition-all ${
+                  className={`flex h-[22px] items-center justify-center gap-1.5 rounded-[5px] text-[11px] font-bold transition-all ${
                     active
                       ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_1px_6px_var(--accent-glow)]"
                       : "text-text-dim hover:text-[var(--text)]"
@@ -153,24 +163,13 @@ export function CompactMain(p: CompactMainProps) {
                   <span className={`text-[11px] ${active ? "" : "opacity-50 grayscale"}`}>
                     {classic ? "🍁" : "🍄"}
                   </span>
-                  {t(classic ? "launcher.game_classic_short" : "launcher.game_regular_short")}
+                  {t(classic ? "launcher.game_classic" : "launcher.game_regular")}
                 </button>
               );
             })}
           </div>
-        )}
-
-        <button
-          onClick={p.onPlay}
-          disabled={p.launching}
-          title={p.showClassic ? t("launcher.game_classic_title") : t("launcher.play")}
-          className="relative flex h-[26px] shrink-0 items-center justify-center gap-1 overflow-hidden rounded-[7px] bg-gradient-to-br from-[#c46a00] to-accent px-2.5 text-[11px] font-extrabold tracking-[1px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
-        >
-          <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 to-transparent" />
-          <span className="relative text-[10px]">{p.showClassic ? "🍁" : "▶"}</span>
-          <span className="relative">{p.launching ? "…" : t("launcher.play")}</span>
-        </button>
-      </div>
+        </div>
+      )}
 
       {/* Classic needs attention (NGM missing / still checking) */}
       {p.showClassic && !p.ngmReady && (

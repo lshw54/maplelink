@@ -7,9 +7,7 @@ import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
 
-/** Compact launcher: a lone session is already named in the header, so the
- *  strip only appears once there is something to switch between. */
-export function SessionTabs({ hideSingle = false }: { hideSingle?: boolean } = {}) {
+export function SessionTabs() {
   const { t } = useTranslation();
   const sessions = useAuthStore((s) => s.sessions);
   const activeSessionId = useAuthStore((s) => s.activeSessionId);
@@ -33,7 +31,7 @@ export function SessionTabs({ hideSingle = false }: { hideSingle?: boolean } = {
   const [isDragging, setIsDragging] = useState(false);
 
   const entries = Array.from(sessions.values());
-  if (entries.length === 0 || (hideSingle && entries.length < 2)) return null;
+  if (entries.length === 0) return null;
 
   async function handleClose(sessionId: string) {
     try {

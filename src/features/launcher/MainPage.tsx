@@ -393,7 +393,7 @@ export function MainPage() {
   if (compact) {
     return (
       <div className="flex h-full flex-col">
-        <SessionTabs hideSingle />
+        <SessionTabs />
         <CompactMain
           session={session}
           activeSessionId={activeSessionId}

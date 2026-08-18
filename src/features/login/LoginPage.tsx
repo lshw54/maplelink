@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
-import { useUiStore } from "../../lib/stores/ui-store";
+import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
@@ -26,9 +26,16 @@ export function LoginPage() {
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
   const addingSession = useUiStore((s) => s.addingSession);
-  // Compact UI: a much shorter window — the logo block goes and the centre
-  // column scrolls rather than clipping a taller form.
+  // Compact UI: a much shorter window — the logo block goes. The height is
+  // sized to the form (classic mode adds notice boxes, so it gets a taller
+  // window) so nothing ever needs to scroll.
   const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  useEffect(() => {
+    if (!compact) return;
+    commands
+      .resizeWindow(classicMode ? "login-classic" : "login", announcementBarShown())
+      .catch(() => {});
+  }, [compact, classicMode]);
   const [view, setViewLocal] = useState<LoginView>(() => {
     if (persistedView) return persistedView as LoginView;
     // First mount this session — fall back to the user's configured default.
