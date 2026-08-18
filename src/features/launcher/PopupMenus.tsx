@@ -142,3 +142,38 @@ export function MorePopupMenu({
     </div>
   );
 }
+
+/** The ▾ next to "Get OTP" in the compact launcher. Opens upward — it sits at
+ *  the bottom of a small window. */
+export function OtpMoreMenu({
+  items,
+  onClose,
+}: {
+  items: { icon: string; label: string; onClick: () => void; disabled?: boolean }[];
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  useClickOutside(menuRef, onClose);
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute right-0 bottom-full z-50 mb-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
+    >
+      {items.map((it) => (
+        <button
+          key={it.label}
+          disabled={it.disabled}
+          onClick={() => {
+            onClose();
+            it.onClick();
+          }}
+          className={`${ITEM_CLASS} disabled:opacity-40`}
+        >
+          <span className="w-4 text-center text-xs">{it.icon}</span>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
