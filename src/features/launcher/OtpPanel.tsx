@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { useConfigStore } from "../../lib/stores/config-store";
-import { useSetConfig } from "../../lib/hooks/use-config";
-import { useGameCredentials } from "../../lib/hooks/use-accounts";
-import { useAuthStore } from "../../lib/stores/auth-store";
-import { useErrorToastStore } from "../../lib/stores/error-toast-store";
-import { commands } from "../../lib/tauri";
-import type { ErrorDto, GameCredentialsDto } from "../../lib/types";
+import { useOtp } from "../../lib/hooks/use-otp";
+import { OtpMoreMenu } from "./PopupMenus";
 
 interface OtpPanelProps {
   selectedAccountId: string | null;
@@ -14,106 +9,10 @@ interface OtpPanelProps {
 }
 
 export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
-  const credentialsMutation = useGameCredentials();
-  const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
-  const [copied, setCopied] = useState(false);
-  // Persisted: as component state this reset to on every time the panel
-  // remounted, which is why it appeared to tick itself back on.
-  const autoInput = useConfigStore((s) => s.config?.otpAutoInput ?? true);
-  const setConfig = useSetConfig();
-  const setAutoInput = (on: boolean) => {
-    useConfigStore.getState().updateConfigField("otpAutoInput", on);
-    setConfig.mutate({ key: "otp_auto_input", value: String(on) });
-  };
-  const [pasting, setPasting] = useState(false);
   const { t } = useTranslation();
-  const addToast = useErrorToastStore((s) => s.addToast);
-
-  function handleOtpError(error: Error) {
-    const msg = error.message || t("launcher.otp_error");
-    // Tauri rejects with the raw ErrorDto object, so the machine-readable
-    // code is available even though the mutation types the error as Error.
-    const code = (error as Partial<ErrorDto>).code ?? "";
-    const isSessionGone =
-      code === "AUTH_NOT_AUTHENTICATED" ||
-      code === "AUTH_SESSION_EXPIRED" ||
-      code === "AUTH_INVALID_CREDENTIALS";
-
-    if (isSessionGone) {
-      // Session is dead — remove it and redirect to login
-      const sessionId = useAuthStore.getState().activeSessionId;
-      if (sessionId) {
-        commands.logout(sessionId).catch(() => {});
-        useAuthStore.getState().removeSession(sessionId);
-      }
-      addToast({
-        message: t("errors.AUTH_SESSION_EXPIRED"),
-        category: "authentication",
-        critical: true,
-      });
-    } else {
-      addToast({ message: msg, category: "authentication", critical: false });
-    }
-  }
-
-  /** Show the OTP and put it on the clipboard, every time one is fetched — the
-   *  old launcher did the same. The copy goes through the backend because
-   *  auto-input has just handed focus to the game, and the webview's own
-   *  clipboard refuses to write when the document isn't focused. */
-  async function applyOtp(accountId: string, data: GameCredentialsDto) {
-    setCredentials(data);
-    onOtpFetched?.(accountId, data.otp);
-    const copied = await commands.copyToClipboard(data.otp).catch(() => false);
-    setCopied(copied);
-    if (copied) setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function handleGetOtp() {
-    if (!selectedAccountId) return;
-
-    if (autoInput) {
-      // Auto-paste mode: get OTP + auto-input to game window
-      setPasting(true);
-      try {
-        await commands.autoPasteOtp(
-          useAuthStore.getState().sessionIdForAccount(selectedAccountId) ?? "",
-          selectedAccountId,
-        );
-        // Always fetch credentials to display OTP regardless of paste result
-        credentialsMutation.mutate(selectedAccountId, {
-          onSuccess: (data) => {
-            void applyOtp(selectedAccountId, data);
-          },
-          onError: handleOtpError,
-        });
-      } catch {
-        // Error — fall back to regular OTP
-        credentialsMutation.mutate(selectedAccountId, {
-          onSuccess: (data) => {
-            void applyOtp(selectedAccountId, data);
-          },
-          onError: handleOtpError,
-        });
-      } finally {
-        setPasting(false);
-      }
-    } else {
-      // Manual mode: just get OTP and display
-      credentialsMutation.mutate(selectedAccountId, {
-        onSuccess: (data) => {
-          void applyOtp(selectedAccountId, data);
-        },
-        onError: handleOtpError,
-      });
-    }
-  }
-
-  async function handleCopyOtp() {
-    if (!credentials) return;
-    const copied = await commands.copyToClipboard(credentials.otp).catch(() => false);
-    setCopied(copied);
-    if (copied) setTimeout(() => setCopied(false), 1500);
-  }
+  const { credentials, copied, autoInput, setAutoInput, busy, getOtp, copyOtp, copyCredentials } =
+    useOtp(selectedAccountId, onOtpFetched);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <div className="mx-3 mb-3 shrink-0 rounded-xl border border-border bg-[var(--surface)] p-3.5 shadow-[0_-4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--border)] backdrop-blur-sm">
@@ -148,7 +47,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
       <div className="flex items-center gap-2.5">
         <button
           type="button"
-          onClick={handleCopyOtp}
+          onClick={copyOtp}
           disabled={!credentials}
           className={`relative flex flex-1 items-center justify-center rounded-[10px] border px-4 py-2.5 font-mono text-[22px] font-bold tracking-[4px] transition-all ${
             copied
@@ -196,14 +95,47 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           </span>
         </button>
 
-        <button
-          onClick={handleGetOtp}
-          disabled={!selectedAccountId || credentialsMutation.isPending || pasting}
-          title={t("launcher.get_otp")}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_16px_var(--accent-glow)] active:scale-[0.92] disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ↻
-        </button>
+        {/* Split button: fetch, and a ▾ with copy one-time credentials */}
+        <div className="relative flex shrink-0 shadow-[0_2px_10px_var(--accent-glow)] transition-shadow hover:shadow-[0_4px_16px_var(--accent-glow)]">
+          <button
+            onClick={getOtp}
+            disabled={!selectedAccountId || busy}
+            title={t("launcher.get_otp")}
+            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ↻
+          </button>
+          <button
+            onClick={() => setMoreOpen(!moreOpen)}
+            disabled={!selectedAccountId}
+            aria-label="More"
+            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[#c47a1a] text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M2 4l3 3 3-3" />
+            </svg>
+          </button>
+          {moreOpen && (
+            <OtpMoreMenu
+              onClose={() => setMoreOpen(false)}
+              items={[
+                {
+                  icon: "🔑",
+                  label: t("launcher.context.copy_credentials"),
+                  onClick: () => void copyCredentials(),
+                  disabled: busy,
+                },
+              ]}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

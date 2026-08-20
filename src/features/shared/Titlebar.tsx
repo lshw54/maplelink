@@ -2,6 +2,7 @@ import { useTranslation } from "../../lib/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 
 export function Titlebar() {
@@ -14,6 +15,10 @@ export function Titlebar() {
   const setConfig = useSetConfig();
 
   const region = config?.region ?? "HK";
+  // Off the login page the indicator describes the session in use, not the
+  // login-page default — with several tabs open they can differ.
+  const sessionRegion = useAuthStore((s) => s.session?.region);
+  const shownRegion = currentPage === "login" ? region : (sessionRegion ?? region);
   const regionFlag = region === "TW" ? "🇹🇼" : "🇭🇰";
 
   function handleDragStart(e: React.MouseEvent) {
@@ -92,7 +97,7 @@ export function Titlebar() {
           </>
         ) : (
           <span className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-faint">
-            {region}
+            {shownRegion}
           </span>
         )}
 

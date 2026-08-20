@@ -3,6 +3,7 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 import { autoLaunchGameIfEnabled } from "../../lib/hooks/use-auth";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
 
@@ -130,15 +131,23 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     return stopPolling;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Compact UI: the shorter window drops the logo and shows a smaller code
+  // (still comfortably scannable; "enlarge" is a click away).
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  const qrBox = enlarged ? "p-5" : compact ? "h-[172px] w-[172px] p-3" : "h-[228px] w-[228px] p-4";
+  const qrPx = enlarged ? 380 : compact ? 148 : 196;
+
   return (
     <div className="flex w-full flex-col items-center">
       {/* Header */}
-      <div className={`flex flex-col items-center ${enlarged ? "mb-3" : "mb-5"}`}>
-        <img
-          src="/app-logo.png"
-          alt="MapleLink"
-          className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
-        />
+      <div className={`flex flex-col items-center ${enlarged || compact ? "mb-3" : "mb-5"}`}>
+        {!compact && (
+          <img
+            src="/app-logo.png"
+            alt="MapleLink"
+            className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+          />
+        )}
         <div className="text-[12px] tracking-[4px] text-text-dim uppercase">
           {t("login.qr.title")}
         </div>
@@ -149,9 +158,11 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
       </div>
 
-      <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] p-5">
+      <div
+        className={`flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] ${compact ? "p-3" : "p-5"}`}
+      >
         <div
-          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${enlarged ? "p-5" : "h-[228px] w-[228px] p-4"}`}
+          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${qrBox}`}
         >
           {status === "loading" ? (
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -161,8 +172,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               alt="QR Code"
               className="block rounded"
               style={{
-                width: enlarged ? 380 : 196,
-                height: enlarged ? 380 : 196,
+                width: qrPx,
+                height: qrPx,
                 imageRendering: "pixelated",
               }}
             />
@@ -334,7 +345,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           }
           onBack();
         }}
-        className="mt-4 w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent"
+        className={`w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent ${compact ? "mt-2.5" : "mt-4"}`}
       >
         {t("login.back_normal")}
       </button>

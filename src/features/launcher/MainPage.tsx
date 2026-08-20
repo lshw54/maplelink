@@ -10,6 +10,8 @@ import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
 import { SessionTabs } from "./SessionTabs";
+import { BeansPopupMenu, MorePopupMenu } from "./PopupMenus";
+import { CompactMain } from "./CompactMain";
 import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../../components/Modal";
@@ -24,6 +26,7 @@ export function MainPage() {
   const region = useConfigStore((s) => s.config?.region ?? "HK");
   // The account header sits next to the beans count and was left unmasked.
   const nameMask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   const logout = useLogout();
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -330,6 +333,96 @@ export function MainPage() {
     setPendingLaunchId(null);
   }
 
+  const modals = (
+    <>
+      {/* Relaunch confirmation modal */}
+      <Modal
+        isOpen={showRelaunchConfirm}
+        onClose={() => setShowRelaunchConfirm(false)}
+        title={t("launcher.relaunch_title")}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-text-dim">{t("launcher.relaunch_message")}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowRelaunchConfirm(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={handleConfirmRelaunch}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("launcher.relaunch_confirm")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Logout confirmation modal */}
+      <Modal
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        title={t("launcher.logout")}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-text-dim">{t("launcher.logout_confirm_message")}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowLogoutConfirm(false)}
+              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={() => {
+                setShowLogoutConfirm(false);
+                logout.mutate();
+              }}
+              className="rounded-lg bg-[var(--danger)] px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              {t("launcher.logout")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+
+  if (compact) {
+    return (
+      <div className="flex h-full flex-col">
+        <SessionTabs />
+        <CompactMain
+          session={session}
+          activeSessionId={activeSessionId}
+          region={region}
+          nameMask={nameMask}
+          remainPoint={remainPoint}
+          onRemainPoint={setRemainPoint}
+          canClassic={canClassic}
+          classicGame={classicGame}
+          onClassicGame={setClassicGame}
+          showClassic={showClassic}
+          classicCheck={classicCheck}
+          ngmReady={ngmReady}
+          launching={launching}
+          gameRunning={gameRunning}
+          gamePid={gamePid}
+          onPlay={handlePlayClick}
+          onLogout={() => setShowLogoutConfirm(true)}
+          selectedAccountId={selectedAccountId}
+          onSelectAccount={handleSelectAccount}
+          onOtpFetched={(accountId, otp) => {
+            latestOtpRef.current = { accountId, otp };
+          }}
+        />
+        {modals}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <SessionTabs />
@@ -533,201 +626,7 @@ export function MainPage() {
           />
         </div>
       </div>
-      {/* close inner flex */}
-
-      {/* Relaunch confirmation modal */}
-      <Modal
-        isOpen={showRelaunchConfirm}
-        onClose={() => setShowRelaunchConfirm(false)}
-        title={t("launcher.relaunch_title")}
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-xs text-text-dim">{t("launcher.relaunch_message")}</p>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setShowRelaunchConfirm(false)}
-              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              onClick={handleConfirmRelaunch}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              {t("launcher.relaunch_confirm")}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Logout confirmation modal */}
-      <Modal
-        isOpen={showLogoutConfirm}
-        onClose={() => setShowLogoutConfirm(false)}
-        title={t("launcher.logout")}
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-xs text-text-dim">{t("launcher.logout_confirm_message")}</p>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setShowLogoutConfirm(false)}
-              className="rounded-lg px-3 py-1.5 text-[12px] text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              onClick={() => {
-                setShowLogoutConfirm(false);
-                logout.mutate();
-              }}
-              className="rounded-lg bg-[var(--danger)] px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              {t("launcher.logout")}
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-function BeansPopupMenu({
-  t,
-  region,
-  onRefresh,
-  onClose,
-  sessionId,
-}: {
-  t: (key: string) => string;
-  region: string;
-  onRefresh: () => void;
-  onClose: () => void;
-  sessionId: string;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", handleClickOutside);
-    }, 16);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [onClose]);
-
-  async function handleTopup() {
-    try {
-      await commands.openGashPopup(sessionId);
-    } catch {
-      /* ignore */
-    }
-    onClose();
-  }
-
-  async function handleExchange() {
-    try {
-      await commands.openAuthPopup(
-        sessionId,
-        "https://m.beanfun.com/Deposite",
-        t("launcher.beans_exchange"),
-      );
-    } catch {
-      /* ignore */
-    }
-    onClose();
-  }
-
-  return (
-    <div
-      ref={menuRef}
-      className="absolute top-full right-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-    >
-      <button
-        onClick={onRefresh}
-        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
-      >
-        <span className="w-4 text-center text-xs">🔄</span>
-        {t("launcher.beans_refresh")}
-      </button>
-      <button
-        onClick={handleTopup}
-        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
-      >
-        <span className="w-4 text-center text-xs">💳</span>
-        {t("launcher.beans_topup")}
-      </button>
-      {region === "TW" && (
-        <button
-          onClick={handleExchange}
-          className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
-        >
-          <span className="w-4 text-center text-xs">🎁</span>
-          {t("launcher.beans_exchange")}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function MorePopupMenu({
-  t,
-  sessionId,
-  onClose,
-}: {
-  t: (key: string) => string;
-  sessionId: string;
-  onClose: () => void;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", handleClickOutside);
-    }, 16);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={menuRef}
-      className="absolute top-full right-0 z-50 mt-1 min-w-[160px] animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--surface)] py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[20px]"
-    >
-      <button
-        onClick={() => {
-          commands.openMemberPopup(sessionId).catch(() => {});
-          onClose();
-        }}
-        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
-      >
-        <span className="w-4 text-center text-xs">👤</span>
-        {t("launcher.member_center")}
-      </button>
-      <button
-        onClick={() => {
-          commands
-            .openCustomerService(useAuthStore.getState().activeSessionId ?? "")
-            .catch(() => {});
-          onClose();
-        }}
-        className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[12px] text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent"
-      >
-        <span className="w-4 text-center text-xs">💬</span>
-        {t("launcher.support")}
-      </button>
+      {modals}
     </div>
   );
 }

@@ -143,6 +143,7 @@ pub async fn resize_window(
     page: String,
     announcement_bar: Option<bool>,
     window: tauri::Window,
+    state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
     // The announcement banner's height is part of every page's base size, so it
     // never fights the update banner's dynamic ±height adjustment in the
@@ -154,14 +155,25 @@ pub async fn resize_window(
     } else {
         0.0
     };
+    // Compact UI: the launcher is a single narrow column, the toolbox an icon
+    // rail, the login page loses its vertical slack. Read here rather than
+    // passed in so every caller of resize_window(page) gets the right size.
+    let compact = state.config.read().await.compact_ui;
     let (width, height): (f64, f64) = match page.as_str() {
-        "login" => (350.0, 620.0 + bar),
+        "login" if compact => (350.0, 490.0 + bar),
+        // Classic-mode login carries two extra notice boxes and a GamePass
+        // button; the compact window grows to fit them rather than scroll.
+        "login-classic" if compact => (350.0, 570.0 + bar),
+        "login" | "login-classic" => (350.0, 620.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
+        "main" if compact => (340.0, 340.0 + bar),
         "main" => (760.0, 530.0 + bar),
+        "toolbox" if compact => (620.0, 450.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),
         "web_launch" => (560.0, 640.0 + bar),
         // Temporarily enlarged while the announcement overlay is open so the
         // wide notice card has room (restored to the page size on close).
+        "announcement" if compact => (600.0, 560.0),
         "announcement" => (640.0, 700.0),
         _ => {
             return Err(ErrorDto {

@@ -14,6 +14,11 @@ import type { GameAccountDto } from "../../lib/types";
 interface AccountGridProps {
   selectedAccountId: string | null;
   onSelectAccount: (account: GameAccountDto) => void;
+  /** Compact launcher: always the list view, no view toggle, tighter rows. */
+  compact?: boolean;
+  /** Extra controls in the header line (the compact launcher puts the OTP
+   *  auto-input toggle here, next to refresh). */
+  headerExtra?: React.ReactNode;
 }
 
 interface ContextState {
@@ -23,14 +28,21 @@ interface ContextState {
 
 type ViewMode = "card" | "list";
 
-export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridProps) {
+export function AccountGrid({
+  selectedAccountId,
+  onSelectAccount,
+  compact,
+  headerExtra,
+}: AccountGridProps) {
   const { t } = useTranslation();
   const { data: accounts, isLoading } = useGameAccounts();
   const refreshAccounts = useRefreshAccounts();
   const queryClient = useQueryClient();
   const [contextMenu, setContextMenu] = useState<ContextState | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const viewMode = useConfigStore((s) => s.config?.accountViewMode ?? "card") as ViewMode;
+  const savedViewMode = useConfigStore((s) => s.config?.accountViewMode ?? "card") as ViewMode;
+  // The compact column is too narrow for a two-up card grid.
+  const viewMode: ViewMode = compact ? "list" : savedViewMode;
 
   // Drag reorder
   const [dragOrder, setDragOrder] = useState<GameAccountDto[] | null>(null);
@@ -40,7 +52,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
   const displayAccounts = dragOrder ?? accounts ?? [];
 
   function toggleViewMode() {
-    const next = viewMode === "card" ? "list" : "card";
+    const next = savedViewMode === "card" ? "list" : "card";
     // Update local store immediately for instant UI feedback
     const store = useConfigStore.getState();
     if (store.config) {
@@ -130,53 +142,63 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
   }, [selectedAccountId]);
 
   return (
-    <div className="flex flex-1 flex-col gap-2 overflow-hidden">
+    <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "gap-1" : "gap-2"}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold tracking-[1px] text-text-dim">
+          <span
+            className={`font-semibold tracking-[1px] text-text-dim ${compact ? "text-[10px] uppercase" : "text-[11px]"}`}
+          >
             {t("launcher.accounts")}
           </span>
           {/* View toggle */}
+          {!compact && (
+            <button
+              onClick={toggleViewMode}
+              title={viewMode === "card" ? t("launcher.view_list") : t("launcher.view_card")}
+              className="rounded p-0.5 text-text-faint transition-colors hover:text-accent"
+            >
+              {viewMode === "card" ? (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <line x1="2" y1="4" x2="14" y2="4" />
+                  <line x1="2" y1="8" x2="14" y2="8" />
+                  <line x1="2" y1="12" x2="14" y2="12" />
+                </svg>
+              ) : (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <rect x="1" y="1" width="6" height="6" rx="1" />
+                  <rect x="9" y="1" width="6" height="6" rx="1" />
+                  <rect x="1" y="9" width="6" height="6" rx="1" />
+                  <rect x="9" y="9" width="6" height="6" rx="1" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {headerExtra}
           <button
-            onClick={toggleViewMode}
-            title={viewMode === "card" ? t("launcher.view_list") : t("launcher.view_card")}
-            className="rounded p-0.5 text-text-faint transition-colors hover:text-accent"
+            onClick={refreshAccounts}
+            className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
           >
-            {viewMode === "card" ? (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <line x1="2" y1="4" x2="14" y2="4" />
-                <line x1="2" y1="8" x2="14" y2="8" />
-                <line x1="2" y1="12" x2="14" y2="12" />
-              </svg>
-            ) : (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <rect x="1" y="1" width="6" height="6" rx="1" />
-                <rect x="9" y="1" width="6" height="6" rx="1" />
-                <rect x="1" y="9" width="6" height="6" rx="1" />
-                <rect x="9" y="9" width="6" height="6" rx="1" />
-              </svg>
-            )}
+            {t("launcher.refresh")}
           </button>
         </div>
-        <button onClick={refreshAccounts} className="text-[12px] text-accent hover:underline">
-          {t("launcher.refresh")}
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -204,7 +226,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className={`flex flex-col ${compact ? "gap-[3px]" : "gap-1"}`}>
             {displayAccounts.map((account, idx) => (
               <ListItem
                 key={account.id}
@@ -219,6 +241,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount }: AccountGridP
                 onCopy={(e) => handleCopyAccount(e, account.id)}
                 onGripDown={(e) => onGripDown(e, idx)}
                 copyTitle={t("launcher.context.copy_account")}
+                compact={compact}
               />
             ))}
           </div>
@@ -323,6 +346,7 @@ function ListItem({
   onCopy,
   onGripDown,
   copyTitle,
+  compact,
 }: {
   account: GameAccountDto;
   isSelected: boolean;
@@ -335,20 +359,27 @@ function ListItem({
   onCopy: (e: React.MouseEvent) => void;
   onGripDown: (e: React.MouseEvent) => void;
   copyTitle: string;
+  compact?: boolean;
 }) {
   const initial = account.displayName.charAt(0).toUpperCase();
   const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
+  const { t } = useTranslation();
+  const banned = account.status === "banned";
   return (
     <button
       data-acct-idx={idx}
       onClick={onSelect}
       onContextMenu={onContextMenu}
-      className={`group flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
-        isDragging ? "opacity-50" : ""
-      } ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
+      className={`group flex items-center text-left transition-all duration-150 ${
+        compact ? "gap-2 rounded-md border px-2 py-[5px]" : "gap-2.5 rounded-lg border px-3 py-2"
+      } ${isDragging ? "opacity-50" : ""} ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
-          ? "border-accent bg-[rgba(232,162,58,0.05)]"
-          : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
+          ? compact
+            ? "border-[rgba(232,162,58,0.55)] bg-[rgba(232,162,58,0.08)]"
+            : "border-accent bg-[rgba(232,162,58,0.05)]"
+          : compact
+            ? "border-transparent hover:bg-[var(--surface-hover)]"
+            : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
       }`}
     >
       <span
@@ -365,7 +396,9 @@ function ListItem({
         </svg>
       </span>
       <div
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.5px] text-xs font-bold ${
+        className={`flex shrink-0 items-center justify-center rounded-full border-[1.5px] font-bold ${
+          compact ? "h-5 w-5 text-[10px]" : "h-7 w-7 text-xs"
+        } ${
           isSelected
             ? "border-accent text-accent"
             : "border-border text-text-dim group-hover:border-accent group-hover:text-accent"
@@ -374,8 +407,23 @@ function ListItem({
         {initial}
       </div>
       <div className="min-w-0 flex-1">
-        <div className={`truncate text-xs font-medium text-[var(--text)] ${mask}`}>
-          {account.displayName}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            className={`truncate font-medium text-[var(--text)] ${compact ? "text-[11px]" : "text-xs"} ${mask}`}
+          >
+            {account.displayName}
+          </span>
+          {/* Account standing, straight from beanfun's list — a glance is enough
+              to tell a banned account from a healthy one. */}
+          <span
+            className={`shrink-0 rounded px-1 py-px text-[9px] font-semibold tracking-[0.5px] ${
+              banned
+                ? "bg-[rgba(239,68,68,0.12)] text-red-400"
+                : "bg-[rgba(74,222,128,0.1)] text-green-500"
+            }`}
+          >
+            {t(banned ? "launcher.context.detail_banned" : "launcher.context.detail_normal")}
+          </span>
         </div>
       </div>
       <CopyIcon isCopied={isCopied} onClick={onCopy} title={copyTitle} position="" />

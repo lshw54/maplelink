@@ -29,7 +29,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       onMouseDown={onClose}
     >
       <div
-        className="w-[340px] rounded-[14px] border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
+        className="w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header with close button */}
