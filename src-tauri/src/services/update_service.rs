@@ -615,7 +615,7 @@ pub async fn download_update_with_progress(
 /// Download, self-replace, and prompt restart.
 pub async fn apply_update(
     update_bytes: &[u8],
-    _staging_dir: &std::path::Path,
+    staging_dir: &std::path::Path,
 ) -> Result<std::path::PathBuf, UpdateError> {
     // Use current_exe() as the target so the update writes back to WHATEVER name
     // the user is running under (e.g. accelerator users rename to Beanfun.exe).
@@ -625,33 +625,152 @@ pub async fn apply_update(
         reason: format!("failed to get current exe path: {e}"),
     })?;
 
-    let backup = current_exe.with_extension("exe.old");
-    let temp = current_exe.with_extension("exe.new");
+    swap_in_new_exe(update_bytes, staging_dir, &current_exe).await
+}
 
-    tokio::fs::write(&temp, update_bytes)
+/// Put the downloaded build where the running one is, keeping the old one until
+/// that has actually happened. Split from [`apply_update`] so the swap can be
+/// tested against real files rather than against whatever is running the tests.
+async fn swap_in_new_exe(
+    update_bytes: &[u8],
+    staging_dir: &std::path::Path,
+    current_exe: &std::path::Path,
+) -> Result<std::path::PathBuf, UpdateError> {
+    let staged = stage_new_exe(update_bytes, staging_dir, current_exe).await?;
+    swap_staged_exe(&staged, update_bytes.len() as u64, current_exe).await
+}
+
+/// Replace `current_exe` with an already-staged build of `expected_len` bytes,
+/// keeping the old one until that has happened.
+async fn swap_staged_exe(
+    staged: &std::path::Path,
+    expected_len: u64,
+    current_exe: &std::path::Path,
+) -> Result<std::path::PathBuf, UpdateError> {
+    swap_staged_exe_using(staged, expected_len, current_exe, move_file).await
+}
+
+/// As [`swap_staged_exe`], with the move injected.
+///
+/// That move is the one step that can fail *after* the running program has been
+/// moved aside, so it is the only way into the recovery path below — and it
+/// fails for reasons a test cannot arrange on demand (a volume filling up, a
+/// scanner holding the destination open). Passing it in is what lets the
+/// recovery be tested at all, rather than reasoned about.
+async fn swap_staged_exe_using(
+    staged: &std::path::Path,
+    expected_len: u64,
+    current_exe: &std::path::Path,
+    mover: fn(&std::path::Path, &std::path::Path) -> std::io::Result<()>,
+) -> Result<std::path::PathBuf, UpdateError> {
+    // Read the staged file back before anything irreversible happens. Anti-virus
+    // software that dislikes the download deletes it between the write and the
+    // swap — and by then the running program has been moved aside, leaving only
+    // the rollback below between the user and a directory with nothing runnable
+    // in it. Checking first turns that into an update that simply did not
+    // happen, which is a thing the user can retry.
+    let staged_len = tokio::fs::metadata(staged)
         .await
-        .map_err(|e| UpdateError::DownloadFailed {
-            reason: format!("failed to write new exe: {e}"),
-        })?;
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if staged_len != expected_len {
+        let _ = tokio::fs::remove_file(staged).await;
+        return Err(UpdateError::DownloadFailed {
+            reason: format!(
+                "the staged update is {staged_len} bytes rather than \
+                 {expected_len}; anti-virus software may have removed it"
+            ),
+        });
+    }
 
+    let backup = current_exe.with_extension("exe.old");
     if backup.exists() {
         let _ = tokio::fs::remove_file(&backup).await;
     }
-    tokio::fs::rename(&current_exe, &backup)
+    tokio::fs::rename(current_exe, &backup)
         .await
         .map_err(|e| UpdateError::DownloadFailed {
             reason: format!("failed to backup current exe: {e}"),
         })?;
 
-    tokio::fs::rename(&temp, &current_exe).await.map_err(|e| {
-        let _ = std::fs::rename(&backup, &current_exe);
-        UpdateError::DownloadFailed {
-            reason: format!("failed to replace exe: {e}"),
-        }
-    })?;
+    if let Err(e) = mover(staged, current_exe) {
+        // Put the user's program back. If even that fails there is nothing left
+        // to run, which is a different situation from a failed update and has to
+        // read as one — including where the only remaining copy is.
+        return Err(match std::fs::rename(&backup, current_exe) {
+            Ok(()) => UpdateError::DownloadFailed {
+                reason: format!("failed to replace exe: {e}"),
+            },
+            Err(restore) => UpdateError::DownloadFailed {
+                reason: format!(
+                    "failed to replace exe: {e}; the previous version could not be \
+                     put back either ({restore}) and is at {}",
+                    backup.display()
+                ),
+            },
+        });
+    }
+
+    // `move_file` may have fallen back to copying, which leaves the original.
+    let _ = tokio::fs::remove_file(staged).await;
 
     tracing::info!("self-replace complete, restart required");
-    Ok(current_exe)
+    Ok(current_exe.to_path_buf())
+}
+
+/// Write the downloaded build somewhere it can wait, under the name it will run
+/// under.
+///
+/// This used to be `<name>.exe.new`, written beside the running program. A PE
+/// with a disguised extension, dropped next to a running program by that
+/// program, is the shape of a dropper — and Windows Defender scores shapes:
+/// users running from their desktop had the download quarantined as
+/// `Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict on a file it had
+/// never seen before, so the update died before it could be swapped in.
+///
+/// Signing the binaries is what actually fixes that, and this does not replace
+/// it. But a half-written executable belongs in the app's own data directory
+/// with a real extension regardless of who is watching; someone's desktop is
+/// not a scratch directory.
+async fn stage_new_exe(
+    update_bytes: &[u8],
+    staging_dir: &std::path::Path,
+    current_exe: &std::path::Path,
+) -> Result<std::path::PathBuf, UpdateError> {
+    tokio::fs::create_dir_all(staging_dir)
+        .await
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("failed to prepare {}: {e}", staging_dir.display()),
+        })?;
+
+    // The name the user runs under, so the staged copy carries the same
+    // extension it will keep — and so a renamed install stays renamed.
+    let name = current_exe
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("MapleLink.exe"));
+    let staged = staging_dir.join(name);
+
+    tokio::fs::write(&staged, update_bytes)
+        .await
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("failed to write {}: {e}", staged.display()),
+        })?;
+
+    Ok(staged)
+}
+
+/// Move a file that may be on a different volume from its destination: the data
+/// directory and the program need not share one, and `rename` cannot cross that
+/// boundary.
+fn move_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            std::fs::copy(from, to)?;
+            let _ = std::fs::remove_file(from);
+            Ok(())
+        }
+    }
 }
 
 /// Simple semver comparison: returns true if `new` > `current`.
@@ -775,5 +894,176 @@ mod tests {
         fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
             prop_assert!(should_check(false, true));
         }
+    }
+
+    // ----- self-replace -------------------------------------------------
+
+    fn swap_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("maplelink_swap_{}", std::process::id()))
+            .join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn the_staged_build_keeps_the_name_it_will_run_under() {
+        let dir = swap_dir("staged_name");
+        let staging = dir.join("updates");
+        // An accelerator user's rename, which the update must not undo.
+        let current = dir.join("Beanfun (2).exe");
+
+        let staged = stage_new_exe(b"new build", &staging, &current)
+            .await
+            .unwrap();
+
+        assert_eq!(staged.file_name().unwrap(), "Beanfun (2).exe");
+        assert_eq!(staged.parent().unwrap(), staging);
+        // Nothing named `.exe.new` anywhere near the program itself: that shape
+        // is what got the download quarantined.
+        assert!(!dir.join("Beanfun (2).exe.new").exists());
+        assert_eq!(std::fs::read(&staged).unwrap(), b"new build");
+    }
+
+    #[tokio::test]
+    async fn a_swap_replaces_the_exe_and_keeps_the_old_one() {
+        let dir = swap_dir("swap_ok");
+        let current = dir.join("MapleLink.exe");
+        std::fs::write(&current, b"old build").unwrap();
+
+        swap_in_new_exe(b"new build", &dir.join("updates"), &current)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&current).unwrap(), b"new build");
+        assert_eq!(
+            std::fs::read(dir.join("MapleLink.exe.old")).unwrap(),
+            b"old build"
+        );
+        // The staging copy is not left behind to be scanned again later.
+        assert!(!dir.join("updates").join("MapleLink.exe").exists());
+    }
+
+    /// The case this guard exists for: anti-virus quarantines the download
+    /// between staging and the swap. The running program must still be there.
+    #[tokio::test]
+    async fn a_quarantined_download_leaves_the_running_exe_alone() {
+        let dir = swap_dir("swap_quarantined");
+        let current = dir.join("MapleLink.exe");
+        std::fs::write(&current, b"old build").unwrap();
+        let staged = dir.join("updates").join("MapleLink.exe");
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        // Staged, then taken away — exactly what Defender did to `.exe.new`.
+        std::fs::write(&staged, b"new build").unwrap();
+        std::fs::remove_file(&staged).unwrap();
+
+        let err = swap_staged_exe(&staged, b"new build".len() as u64, &current)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("anti-virus"),
+            "the reason should point at the likely cause, got: {err}"
+        );
+        assert_eq!(std::fs::read(&current).unwrap(), b"old build");
+        // Never moved aside in the first place, so there is nothing to restore.
+        assert!(!dir.join("MapleLink.exe.old").exists());
+    }
+
+    /// A truncated staged file is the same hazard wearing a different hat.
+    #[tokio::test]
+    async fn a_half_written_download_is_refused_too() {
+        let dir = swap_dir("swap_truncated");
+        let current = dir.join("MapleLink.exe");
+        std::fs::write(&current, b"old build").unwrap();
+        let staged = dir.join("updates").join("MapleLink.exe");
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        swap_staged_exe(&staged, b"new build".len() as u64, &current)
+            .await
+            .unwrap_err();
+
+        assert_eq!(std::fs::read(&current).unwrap(), b"old build");
+        // The bad copy is cleared out rather than left to be retried.
+        assert!(!staged.exists());
+    }
+
+    #[tokio::test]
+    async fn a_copy_is_used_when_a_rename_cannot_reach_the_destination() {
+        let dir = swap_dir("move_fallback");
+        let from = dir.join("from.exe");
+        let to = dir.join("to.exe");
+        std::fs::write(&from, b"payload").unwrap();
+
+        move_file(&from, &to).unwrap();
+
+        assert_eq!(std::fs::read(&to).unwrap(), b"payload");
+        assert!(!from.exists());
+    }
+
+    /// The move fails after the running program has been moved aside, and the
+    /// rollback puts it back. The user gets a failed update, not a missing app.
+    #[tokio::test]
+    async fn a_failed_move_puts_the_old_exe_back() {
+        let dir = swap_dir("swap_rollback");
+        let current = dir.join("MapleLink.exe");
+        std::fs::write(&current, b"old build").unwrap();
+        let staged = dir.join("updates").join("MapleLink.exe");
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        std::fs::write(&staged, b"new build").unwrap();
+
+        fn refuse(_: &std::path::Path, _: &std::path::Path) -> std::io::Result<()> {
+            Err(std::io::Error::other("no"))
+        }
+        let err = swap_staged_exe_using(&staged, b"new build".len() as u64, &current, refuse)
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("failed to replace exe"));
+        assert_eq!(std::fs::read(&current).unwrap(), b"old build");
+        assert!(!dir.join("MapleLink.exe.old").exists());
+    }
+
+    /// The rollback fails too — the one case where the user is left with
+    /// nothing to run. The error has to say that, and say where the old build
+    /// went, rather than reporting only the move that failed first.
+    #[tokio::test]
+    async fn a_failed_rollback_says_so_and_names_the_backup() {
+        let dir = swap_dir("swap_rollback_fails");
+        let current = dir.join("MapleLink.exe");
+        std::fs::write(&current, b"old build").unwrap();
+        let staged = dir.join("updates").join("MapleLink.exe");
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        std::fs::write(&staged, b"new build").unwrap();
+
+        // Fails, and leaves the destination name occupied by something a rename
+        // cannot overwrite — so the rollback fails for a reason of its own.
+        fn refuse_and_block(_: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+            std::fs::create_dir_all(to).unwrap();
+            std::fs::write(to.join("in the way"), b"x").unwrap();
+            Err(std::io::Error::other("no"))
+        }
+        let err = swap_staged_exe_using(
+            &staged,
+            b"new build".len() as u64,
+            &current,
+            refuse_and_block,
+        )
+        .await
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("could not be put back"), "got: {msg}");
+        assert!(
+            msg.contains("MapleLink.exe.old"),
+            "the message must name where the old build is, got: {msg}"
+        );
+        // And it really is there, which is what the message promises.
+        assert_eq!(
+            std::fs::read(dir.join("MapleLink.exe.old")).unwrap(),
+            b"old build"
+        );
     }
 }
