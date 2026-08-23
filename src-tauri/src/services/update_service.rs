@@ -37,6 +37,41 @@ const PROXY_MIRRORS: &[&str] = &[
     "https://ghproxy.cc/",
 ];
 
+/// A ceiling on the update itself. The build is ~12 MB and the largest shipped
+/// was 23 MB, so this is several times any real one — it bounds what a mirror
+/// can make us hold, not what a build may weigh.
+const MAX_UPDATE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How much to reserve up front for a download that declares `declared` bytes.
+///
+/// `Content-Length` is whatever the mirror said, and the mirrors are third
+/// parties. Unclamped, one answering `Content-Length: 999999999999` had us ask
+/// the allocator for 931 GB before a single byte arrived — which fails, and a
+/// failed allocation aborts the process. Not a panic: no unwind, no message the
+/// user sees, the app is simply gone mid-update.
+fn download_buffer_capacity(declared: u64) -> usize {
+    declared.min(MAX_UPDATE_BYTES) as usize
+}
+
+/// Read a response body, stopping at `limit` rather than at whatever the sender
+/// decides to send.
+async fn read_capped(response: reqwest::Response, limit: u64) -> Result<Vec<u8>, String> {
+    use futures_util::StreamExt;
+
+    let mut body: Vec<u8> = Vec::with_capacity(download_buffer_capacity(
+        response.content_length().unwrap_or(0),
+    ));
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("{e}"))?;
+        if body.len() as u64 + chunk.len() as u64 > limit {
+            return Err(format!("the body ran past {limit} bytes"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 /// Cached connectivity probe result.
 /// - `None` inside the Option = direct GitHub works (no proxy needed)
 /// - `Some(prefix)` = use this proxy prefix for GitHub URLs
@@ -517,7 +552,7 @@ pub async fn download_update_with_progress(
     // fall back to a simple non-streaming download.
     let buf = {
         let mut downloaded: u64 = 0;
-        let mut buf = Vec::with_capacity(total as usize);
+        let mut buf = Vec::with_capacity(download_buffer_capacity(total));
         let mut stream = response.bytes_stream();
         let start = std::time::Instant::now();
         let mut last_emit = std::time::Instant::now();
@@ -526,6 +561,16 @@ pub async fn download_update_with_progress(
         while let Some(chunk_result) = stream.next().await {
             match chunk_result {
                 Ok(chunk) => {
+                    // The clamp only bounds the reservation. A sender free to
+                    // lie about the length is equally free to keep sending, so
+                    // what actually arrives is counted too.
+                    if downloaded + chunk.len() as u64 > MAX_UPDATE_BYTES {
+                        return Err(UpdateError::DownloadFailed {
+                            reason: format!(
+                                "the download ran past {MAX_UPDATE_BYTES} bytes without ending"
+                            ),
+                        });
+                    }
                     downloaded += chunk.len() as u64;
                     buf.extend_from_slice(&chunk);
 
@@ -571,11 +616,12 @@ pub async fn download_update_with_progress(
                     reason: format!("fallback network error: {e}"),
                 })?;
 
-            let bytes = fallback_resp
-                .bytes()
+            // Same mirror, same ceiling — `bytes()` would read whatever it is
+            // given.
+            let bytes = read_capped(fallback_resp, MAX_UPDATE_BYTES)
                 .await
-                .map_err(|e| UpdateError::DownloadFailed {
-                    reason: format!("fallback read error: {e}"),
+                .map_err(|reason| UpdateError::DownloadFailed {
+                    reason: format!("fallback read error: {reason}"),
                 })?;
 
             let _ = app_handle.emit(
@@ -894,6 +940,40 @@ mod tests {
         fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
             prop_assert!(should_check(false, true));
         }
+    }
+
+    /// A real update sizes its own buffer.
+    #[test]
+    fn an_honest_length_is_reserved_in_full() {
+        let real = 11_800_000;
+        assert_eq!(download_buffer_capacity(real), real as usize);
+    }
+
+    /// A claimed one cannot. 999999999999 is what the repro used; unclamped it
+    /// aborted the process with 0xC0000409 before any byte was read.
+    #[test]
+    fn a_claimed_length_cannot_reserve_more_than_a_real_update() {
+        assert_eq!(
+            download_buffer_capacity(999_999_999_999),
+            MAX_UPDATE_BYTES as usize
+        );
+        assert_eq!(
+            download_buffer_capacity(u64::MAX),
+            MAX_UPDATE_BYTES as usize
+        );
+    }
+
+    /// The clamp must not be so generous that it is the same bug in slow motion:
+    /// whatever is reserved has to be an amount a machine can actually give.
+    #[test]
+    fn the_ceiling_is_an_allocatable_amount() {
+        let ceiling = download_buffer_capacity(u64::MAX);
+        assert!(
+            ceiling <= 512 * 1024 * 1024,
+            "{ceiling} is too much to hold"
+        );
+        let buf: Vec<u8> = Vec::with_capacity(ceiling);
+        assert_eq!(buf.capacity(), ceiling);
     }
 
     // ----- self-replace -------------------------------------------------
