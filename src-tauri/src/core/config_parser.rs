@@ -139,6 +139,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("github_hosts") {
             config.github_hosts = parse_bool(v, "github_hosts", defaults.github_hosts);
         }
+        if let Some(v) = general.get("compact_ui") {
+            config.compact_ui = parse_bool(v, "compact_ui", defaults.compact_ui);
+        }
     }
 
     // --- [game] ---
@@ -259,6 +262,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         default_login_view_to_str(&config.default_login_view)
     ));
     out.push_str(&format!("github_hosts = {}\n", config.github_hosts));
+    out.push_str(&format!("compact_ui = {}\n", config.compact_ui));
     out.push('\n');
 
     // [game]
@@ -609,6 +613,7 @@ x = not_a_number
             otp_auto_input: true,
             default_login_view: DefaultLoginView::Qr,
             github_hosts: false,
+            compact_ui: true,
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

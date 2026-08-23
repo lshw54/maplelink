@@ -122,6 +122,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 otp_auto_input: true,
                 default_login_view: DefaultLoginView::Qr,
                 github_hosts: false,
+                compact_ui: true,
             }
         },
     )

@@ -15,6 +15,9 @@ export function SessionTabs() {
   const removeSession = useAuthStore((s) => s.removeSession);
   const setPage = useUiStore((s) => s.setPage);
   const mask = useConfigStore((s) => (s.config?.hideAccountNames ? MASK_CLASS : ""));
+  // Compact UI: narrower tabs (shorter names, no region text — the dot colour
+  // already says HK/TW) so five or six sessions still fit the strip.
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +124,13 @@ export function SessionTabs() {
     document.addEventListener("mouseup", onUp);
   }
 
+  // A vertical wheel over the strip scrolls it sideways (it only overflows
+  // horizontally, and few mice have a horizontal wheel).
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (!containerRef.current || e.deltaY === 0) return;
+    containerRef.current.scrollLeft += e.deltaY;
+  }
+
   // Grabbing the empty part of the tab strip drags the window — the 34px
   // titlebar alone is a tiny target, so this doubles the usable drag area.
   function handleStripDrag(e: React.MouseEvent) {
@@ -133,7 +143,10 @@ export function SessionTabs() {
     <div
       ref={containerRef}
       onMouseDown={handleStripDrag}
-      className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border bg-[var(--bg)] px-1 py-0.5"
+      onWheel={handleWheel}
+      className={`scroll-quiet flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border bg-[var(--bg)] px-1 py-0.5 ${
+        compact ? "min-h-[26px]" : ""
+      }`}
     >
       {entries.map((entry, idx) => {
         const isActive = entry.sessionId === activeSessionId;
@@ -146,7 +159,9 @@ export function SessionTabs() {
             data-tab-id={entry.sessionId}
             onMouseDown={(e) => handleTabMouseDown(e, entry.sessionId)}
             onClick={() => !isEditing && setActiveSessionId(entry.sessionId)}
-            className={`group flex cursor-pointer items-center gap-1 rounded-t-md px-2 py-1 text-[11px] transition-colors select-none ${
+            className={`group flex shrink-0 cursor-pointer items-center gap-1 rounded-t-md py-1 text-[11px] transition-colors select-none ${
+              compact ? "px-1.5" : "px-2"
+            } ${
               isActive
                 ? "bg-[var(--surface)] text-accent"
                 : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
@@ -173,10 +188,12 @@ export function SessionTabs() {
                 autoFocus
               />
             ) : (
-              <span className={`max-w-[100px] truncate ${mask}`}>{entry.session.accountName}</span>
+              <span className={`truncate ${compact ? "max-w-[64px]" : "max-w-[100px]"} ${mask}`}>
+                {entry.session.accountName}
+              </span>
             )}
-            <span className="text-[9px] text-text-faint">{entry.session.region}</span>
-            {!isEditing && (
+            {!compact && <span className="text-[9px] text-text-faint">{entry.session.region}</span>}
+            {!isEditing && (!compact || isActive) && (
               <span
                 onClick={(e) => {
                   e.stopPropagation();
@@ -199,26 +216,28 @@ export function SessionTabs() {
                 </svg>
               </span>
             )}
-            <span
-              onClick={(e) => {
-                e.stopPropagation();
-                handleClose(entry.sessionId);
-              }}
-              className="rounded p-0.5 text-text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400"
-              title="Close"
-            >
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
+            {(!compact || isActive) && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClose(entry.sessionId);
+                }}
+                className="rounded p-0.5 text-text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-[rgba(239,68,68,0.1)] hover:text-red-400"
+                title="Close"
               >
-                <path d="M3 3L9 9M9 3L3 9" />
-              </svg>
-            </span>
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M3 3L9 9M9 3L3 9" />
+                </svg>
+              </span>
+            )}
           </div>
         );
       })}

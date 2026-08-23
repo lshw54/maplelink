@@ -239,6 +239,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "githubHosts" | "github_hosts" => {
             config.github_hosts = parse_bool(value)?;
         }
+        "compactUi" | "compact_ui" => {
+            config.compact_ui = parse_bool(value)?;
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

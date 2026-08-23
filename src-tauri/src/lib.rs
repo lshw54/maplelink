@@ -448,6 +448,8 @@ pub fn run() {
 
             // 4. Initialise AppState with loaded config.
             let auto_update_enabled = config.auto_update;
+            let compact_ui = config.compact_ui;
+            let announcement_dismissed = !config.announcement_dismissed_id.is_empty();
             let update_channel = config.update_channel.clone();
             let github_hosts_enabled = config.github_hosts;
             let http_client = reqwest::Client::builder()
@@ -594,22 +596,39 @@ pub fn run() {
             });
 
             // Only resize the initial window when text-scale compensation
-            // is active (force-device-scale-factor was set).  Otherwise
-            // tauri.conf.json5's logical 350×620 is correct as-is.
+            // is active (force-device-scale-factor was set) or the compact UI
+            // is on. Otherwise tauri.conf.json5's logical 350×648 is correct
+            // as-is. Compact is sized here, before the webview paints, so the
+            // frontend's own resize on mount is a no-op instead of a visible
+            // shrink of a freshly created window.
             #[cfg(target_os = "windows")]
             {
                 let text_scale = get_text_scale_factor();
-                if text_scale != 100 {
-                    let dpi = get_dpi_scale();
-                    let pw = (350.0 * dpi).round() as u32;
-                    let ph = (620.0 * dpi).round() as u32;
+                // Compact login: 490 + the 28px announcement bar (kept unless
+                // the user has closed one; the frontend re-asserts the exact
+                // size once it knows the current announcement id).
+                let compact_size = compact_ui.then(|| {
+                    let bar = if announcement_dismissed { 0.0 } else { 28.0 };
+                    (350.0, 490.0 + bar)
+                });
+                if text_scale != 100 || compact_size.is_some() {
+                    let (w, h) = compact_size.unwrap_or((350.0, 620.0));
                     if let Some(win) = app.get_webview_window("main") {
-                        let _ =
-                            win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)));
+                        if text_scale != 100 {
+                            let dpi = get_dpi_scale();
+                            let pw = (w * dpi).round() as u32;
+                            let ph = (h * dpi).round() as u32;
+                            let _ = win
+                                .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(pw, ph)));
+                            tracing::info!(
+                                "initial window {pw}×{ph} physical (dpi={dpi}, text_scale={text_scale}%)"
+                            );
+                        } else {
+                            let _ = win
+                                .set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
+                            tracing::info!("initial window {w}×{h} (compact)");
+                        }
                         let _ = win.center();
-                        tracing::info!(
-                            "initial window {pw}×{ph} physical (dpi={dpi}, text_scale={text_scale}%)"
-                        );
                     }
                 }
             }

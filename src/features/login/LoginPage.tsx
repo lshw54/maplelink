@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
-import { useUiStore } from "../../lib/stores/ui-store";
+import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
@@ -26,6 +26,21 @@ export function LoginPage() {
   const persistedView = useUiStore((s) => s.loginView);
   const classicMode = useUiStore((s) => s.classicMode);
   const addingSession = useUiStore((s) => s.addingSession);
+  // Compact UI: a much shorter window — the logo block goes. The height is
+  // sized to the form (classic mode adds notice boxes, so it gets a taller
+  // window) so nothing ever needs to scroll.
+  const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  const classicSizedRef = useRef(classicMode);
+  useEffect(() => {
+    // Only when classic mode actually flips — the page's normal size is set by
+    // setPage / the app's mount resize, and repeating it here just adds a
+    // redundant resize while the window is coming up.
+    if (!compact || classicSizedRef.current === classicMode) return;
+    classicSizedRef.current = classicMode;
+    commands
+      .resizeWindow(classicMode ? "login-classic" : "login", announcementBarShown())
+      .catch(() => {});
+  }, [compact, classicMode]);
   const [view, setViewLocal] = useState<LoginView>(() => {
     if (persistedView) return persistedView as LoginView;
     // First mount this session — fall back to the user's configured default.
@@ -130,19 +145,29 @@ export function LoginPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center px-9">
+      <div
+        className={`flex flex-1 flex-col items-center px-9 ${
+          compact
+            ? "scroll-quiet min-h-0 [justify-content:safe_center] overflow-y-auto pt-2 pb-1"
+            : "justify-center"
+        }`}
+      >
         {view === "normal" && (
           <>
-            <div className="mb-6 flex flex-col items-center">
-              <img
-                src="/app-logo.png"
-                alt="MapleLink"
-                className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
-              />
-              <div className="text-[11px] font-bold tracking-[5px] text-text-dim uppercase">
-                {t("app.name")}
+            {/* The titlebar already carries the wordmark — the compact window
+                spends the height on the form instead. */}
+            {!compact && (
+              <div className="mb-6 flex flex-col items-center">
+                <img
+                  src="/app-logo.png"
+                  alt="MapleLink"
+                  className="mb-2.5 h-10 w-10 rounded-[10px] shadow-[0_4px_20px_var(--accent-glow)]"
+                />
+                <div className="text-[11px] font-bold tracking-[5px] text-text-dim uppercase">
+                  {t("app.name")}
+                </div>
               </div>
-            </div>
+            )}
 
             {loginError && <p className="mb-2 w-full text-xs text-[var(--danger)]">{loginError}</p>}
 

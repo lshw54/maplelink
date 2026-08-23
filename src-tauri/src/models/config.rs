@@ -106,6 +106,11 @@ pub struct AppConfig {
     /// only consulted after that fails.
     #[serde(default = "default_true")]
     pub github_hosts: bool,
+    /// Compact launcher: the main page collapses to a single narrow column
+    /// (accounts, OTP, play) so the window can sit beside the game without
+    /// covering it. Every other page keeps its size. Default: off.
+    #[serde(default)]
+    pub compact_ui: bool,
 }
 
 fn default_true() -> bool {
@@ -153,6 +158,7 @@ impl Default for AppConfig {
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,
             github_hosts: true,
+            compact_ui: false,
         }
     }
 }

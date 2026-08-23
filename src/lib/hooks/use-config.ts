@@ -57,6 +57,7 @@ const KEY_MAP: Record<string, string> = {
   otpAutoInput: "otp_auto_input",
   defaultLoginView: "default_login_view",
   githubHosts: "github_hosts",
+  compactUi: "compact_ui",
   __reset__: "__reset__",
 };
 
