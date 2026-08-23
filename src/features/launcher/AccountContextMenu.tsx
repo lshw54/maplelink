@@ -36,7 +36,7 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-2 text-left text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent ${
+      className={`flex w-full items-center gap-2 text-left text-[var(--text)] transition-colors hover:bg-[rgba(var(--accent-rgb),0.08)] hover:text-accent ${
         compact ? "px-3 py-[5px] text-[11.5px]" : "gap-2.5 px-4 py-2 text-[12px]"
       }`}
     >
@@ -93,7 +93,7 @@ function AccountDetailView({
     <div className="flex flex-col gap-4">
       {/* Hero */}
       <div className="flex items-center gap-3.5">
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#c47a1a] text-lg font-bold text-white shadow-[0_4px_16px_rgba(232,162,58,0.35)]">
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[var(--accent-dark)] text-lg font-bold text-[var(--on-accent)] shadow-[0_4px_16px_rgba(var(--accent-rgb),0.35)]">
           {(account.displayName || "?").charAt(0)}
         </div>
         <div className="min-w-0 flex-1">
@@ -136,7 +136,7 @@ function AccountDetailView({
       {/* Days counter */}
       {days !== null && (
         <div className="relative flex flex-col items-center gap-0.5 py-2">
-          <div className="pointer-events-none absolute h-[100px] w-[100px] rounded-full bg-[radial-gradient(circle,rgba(232,162,58,0.35),transparent_70%)] opacity-30" />
+          <div className="pointer-events-none absolute h-[100px] w-[100px] rounded-full bg-[radial-gradient(circle,rgba(var(--accent-rgb),0.35),transparent_70%)] opacity-30" />
           <div className="relative text-[52px] leading-none font-black text-accent">{days}</div>
           <div className="text-[12px] font-semibold tracking-[2px] text-[var(--text-dim)] uppercase">
             {t("launcher.context.detail_days")}
@@ -207,7 +207,7 @@ function EditAccountView({
         </button>
         <button
           onClick={() => name && onSave(name, syncToServer)}
-          className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+          className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
         >
           {t("common.ok")}
         </button>
@@ -244,7 +244,7 @@ function EmailResultView({ email, t }: { email: string | null; t: (key: string) 
       </div>
       <button
         onClick={handleCopy}
-        className="self-center rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+        className="self-center rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
       >
         {copied ? t("common.copied") : t("common.copy")}
       </button>

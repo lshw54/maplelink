@@ -242,6 +242,20 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "compactUi" | "compact_ui" => {
             config.compact_ui = parse_bool(value)?;
         }
+        "accentColor" | "accent_color" => {
+            // Empty clears it; otherwise it must be #rrggbb.
+            let v = value.trim();
+            let ok = v.is_empty()
+                || (v.len() == 7
+                    && v.starts_with('#')
+                    && v[1..].chars().all(|c| c.is_ascii_hexdigit()));
+            if !ok {
+                return Err(ConfigError::ParseError {
+                    reason: format!("accent_color must be #rrggbb, got: {value}"),
+                });
+            }
+            config.accent_color = v.to_lowercase();
+        }
         "__reset__" => {
             *config = AppConfig::default();
         }

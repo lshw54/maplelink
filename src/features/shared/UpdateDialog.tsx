@@ -105,14 +105,14 @@ export function UpdateDialog({ update, onClose }: Props) {
       <div className="flex flex-col gap-4">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-lg font-bold text-white shadow-lg">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-[var(--accent-dark)] text-lg font-bold text-[var(--on-accent)] shadow-lg">
             ↑
           </div>
           <div>
             <div className="text-sm font-semibold text-[var(--text)]">
               v{update.version}
               {update.isPrerelease && (
-                <span className="ml-2 rounded bg-[rgba(232,162,58,0.15)] px-1.5 py-0.5 text-[10px] text-accent">
+                <span className="ml-2 rounded bg-[rgba(var(--accent-rgb),0.15)] px-1.5 py-0.5 text-[10px] text-accent">
                   PRE
                 </span>
               )}
@@ -137,7 +137,7 @@ export function UpdateDialog({ update, onClose }: Props) {
           <div className="flex flex-col gap-2">
             <div className="h-2 overflow-hidden rounded-full bg-[var(--surface)]">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-accent to-[#c47a1a] transition-all duration-300"
+                className="h-full rounded-full bg-gradient-to-r from-accent to-[var(--accent-dark)] transition-all duration-300"
                 style={{ width: `${percent}%` }}
               />
             </div>
@@ -196,7 +196,7 @@ export function UpdateDialog({ update, onClose }: Props) {
             </button>
             <button
               onClick={handleRestart}
-              className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-all hover:opacity-90 active:scale-95"
             >
               {t("update.restart")}
             </button>
@@ -221,7 +221,7 @@ export function UpdateDialog({ update, onClose }: Props) {
             <button
               onClick={handleDownload}
               disabled={!update.downloadUrl || !probeComplete}
-              className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
             >
               {t("update.download")}
             </button>

@@ -207,7 +207,7 @@ export function VerifyForm({
         </p>
         <button
           onClick={() => commands.openExternal(webVerifyUrl).catch(() => {})}
-          className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95"
+          className="w-full rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-[var(--on-accent)] uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95"
         >
           {t("login.verify.open_browser")}
         </button>
@@ -230,7 +230,7 @@ export function VerifyForm({
     <div className="flex w-full flex-col">
       {/* Auth hint */}
       {(hintLabel || hintValue) && (
-        <div className="mb-3 rounded-lg bg-[rgba(232,162,58,0.06)] px-3 py-2">
+        <div className="mb-3 rounded-lg bg-[rgba(var(--accent-rgb),0.06)] px-3 py-2">
           {hintLabel && <div className="text-[12px] text-text-dim">{hintLabel}</div>}
           {hintValue && (
             <div className="mt-0.5 text-[12px] font-semibold text-[var(--text)]">{hintValue}</div>
@@ -250,7 +250,7 @@ export function VerifyForm({
           data-form-type="other"
           autoFocus
           disabled={submitting}
-          className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(var(--accent-rgb),0.4)] focus:outline-none disabled:opacity-50"
         />
       </div>
 
@@ -268,7 +268,7 @@ export function VerifyForm({
           autoComplete="off"
           data-form-type="other"
           disabled={submitting}
-          className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(var(--accent-rgb),0.4)] focus:outline-none disabled:opacity-50"
         />
       </div>
 
@@ -297,7 +297,7 @@ export function VerifyForm({
       <button
         onClick={handleSubmit}
         disabled={submitting || !authInfo.trim() || !captchaCode.trim()}
-        className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
+        className="w-full rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-[var(--on-accent)] uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
       >
         {submitting ? t("login.verify.submitting") : t("login.verify.submit")}
       </button>

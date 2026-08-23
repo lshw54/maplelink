@@ -31,7 +31,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             type="button"
             onClick={() => setAutoInput(!autoInput)}
             className={`relative h-[18px] w-8 shrink-0 rounded-[9px] transition-colors ${
-              autoInput ? "bg-[rgba(232,162,58,0.3)]" : "bg-[var(--surface-hover)]"
+              autoInput ? "bg-[rgba(var(--accent-rgb),0.3)]" : "bg-[var(--surface-hover)]"
             }`}
           >
             <span
@@ -53,8 +53,8 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             copied
               ? "border-[rgba(74,222,128,0.4)] bg-[rgba(74,222,128,0.04)] text-green-400"
               : credentials
-                ? "border-[rgba(232,162,58,0.08)] bg-[rgba(232,162,58,0.04)] text-accent shadow-[0_0_20px_rgba(232,162,58,0.06)_inset,0_2px_8px_rgba(0,0,0,0.3)_inset] hover:border-[rgba(232,162,58,0.2)] hover:bg-[rgba(232,162,58,0.06)]"
-                : "cursor-default border-[rgba(232,162,58,0.08)] bg-[rgba(232,162,58,0.04)] text-text-faint"
+                ? "border-[rgba(var(--accent-rgb),0.08)] bg-[rgba(var(--accent-rgb),0.04)] text-accent shadow-[0_0_20px_rgba(var(--accent-rgb),0.06)_inset,0_2px_8px_rgba(0,0,0,0.3)_inset] hover:border-[rgba(var(--accent-rgb),0.2)] hover:bg-[rgba(var(--accent-rgb),0.06)]"
+                : "cursor-default border-[rgba(var(--accent-rgb),0.08)] bg-[rgba(var(--accent-rgb),0.04)] text-text-faint"
           }`}
         >
           {credentials?.otp ?? "••••••••••"}
@@ -101,7 +101,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             onClick={getOtp}
             disabled={!selectedAccountId || busy}
             title={t("launcher.get_otp")}
-            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[var(--accent-dark)] text-base text-[var(--on-accent)] transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
           >
             ↻
           </button>
@@ -109,7 +109,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             onClick={() => setMoreOpen(!moreOpen)}
             disabled={!selectedAccountId}
             aria-label="More"
-            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[#c47a1a] text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[var(--on-accent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <svg
               width="9"

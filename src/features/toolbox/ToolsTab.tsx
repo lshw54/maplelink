@@ -217,7 +217,7 @@ export function ToolsTab() {
             </button>
             <button
               onClick={doCleanup}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("common.confirm")}
             </button>
@@ -242,7 +242,7 @@ export function ToolsTab() {
             </button>
             <button
               onClick={doResetWebview}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("toolbox.tools.reset_webview_restart")}
             </button>

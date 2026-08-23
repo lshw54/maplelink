@@ -25,7 +25,7 @@ export function AnnouncementsTab() {
           ← {t("shared.titlebar.back")}
         </button>
         <article className="overflow-hidden rounded-[10px] border border-[var(--tb-border)]">
-          <header className="flex items-center gap-2 border-b border-[var(--tb-border)] bg-[rgba(232,162,58,0.06)] px-4 py-2.5">
+          <header className="flex items-center gap-2 border-b border-[var(--tb-border)] bg-[rgba(var(--accent-rgb),0.06)] px-4 py-2.5">
             <span className="text-[13px]">📢</span>
             <span className="flex-1 text-[13px] font-bold text-[var(--text)]">
               {t("announcement.title")}

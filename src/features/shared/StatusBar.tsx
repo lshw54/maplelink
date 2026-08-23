@@ -141,7 +141,7 @@ export function DownloadProgressBar() {
     <div className="mx-2 mb-0.5 rounded-md border border-border bg-[var(--surface)] px-2.5 py-1">
       <div className="mb-1 h-1 overflow-hidden rounded-full bg-[var(--bg)]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent to-[#c47a1a] transition-all duration-300"
+          className="h-full rounded-full bg-gradient-to-r from-accent to-[var(--accent-dark)] transition-all duration-300"
           style={{ width: `${percent}%` }}
         />
       </div>

@@ -128,6 +128,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 default_login_view: maplelink_lib::models::config::DefaultLoginView::Normal,
                 github_hosts: true,
                 compact_ui: false,
+                accent_color: String::new(),
             }
         },
     )

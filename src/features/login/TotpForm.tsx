@@ -153,7 +153,7 @@ export function TotpForm({ onBack }: TotpFormProps) {
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={i === 0 ? handlePaste : undefined}
               disabled={totp.isPending}
-              className="h-12 w-10 rounded-[10px] border-[1.5px] border-border bg-[var(--surface)] text-center font-mono text-[22px] font-extrabold text-accent caret-accent transition-all outline-none focus:border-accent focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring),0_0_12px_rgba(232,162,58,0.1)] disabled:opacity-50"
+              className="h-12 w-10 rounded-[10px] border-[1.5px] border-border bg-[var(--surface)] text-center font-mono text-[22px] font-extrabold text-accent caret-accent transition-all outline-none focus:border-accent focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring),0_0_12px_rgba(var(--accent-rgb),0.1)] disabled:opacity-50"
             />
           </span>
         ))}
@@ -178,7 +178,7 @@ export function TotpForm({ onBack }: TotpFormProps) {
         type="button"
         onClick={handleSubmit}
         disabled={totp.isPending || digits.join("").length < 6}
-        className="w-full rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
+        className="w-full rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-5 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-[var(--on-accent)] uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:opacity-40"
       >
         {totp.isPending ? t("login.totp.verifying") : t("login.totp.submit")}
       </button>

@@ -466,5 +466,14 @@
   "settings.section.launch": "Launch",
   "settings.section.privacy": "Privacy",
   "settings.section.window": "Window",
-  "settings.section.debug": "Debugging"
+  "settings.section.debug": "Debugging",
+  "settings.accent_color": "Accent colour",
+  "settings.accent.maple": "Maple orange (default)",
+  "settings.accent.blue": "Blue",
+  "settings.accent.teal": "Teal",
+  "settings.accent.green": "Green",
+  "settings.accent.purple": "Purple",
+  "settings.accent.pink": "Pink",
+  "settings.accent.red": "Red",
+  "settings.accent.custom": "Custom…"
 }

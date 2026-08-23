@@ -272,6 +272,7 @@ mod tests {
                         default_login_view: crate::models::config::DefaultLoginView::Normal,
                         github_hosts: true,
                         compact_ui: false,
+                        accent_color: String::new(),
                     }
                 },
             )

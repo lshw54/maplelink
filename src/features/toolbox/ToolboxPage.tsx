@@ -44,7 +44,7 @@ export function ToolboxPage() {
               title={t(tab.labelKey)}
               className={`mx-1.5 my-0.5 flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[9px] font-semibold tracking-[0.3px] transition-all hover:bg-[var(--surface)] hover:text-[var(--text)] ${
                 activeTab === tab.key
-                  ? "bg-[rgba(232,162,58,0.1)] text-accent shadow-[inset_0_0_0_1px_rgba(232,162,58,0.25)]"
+                  ? "bg-[rgba(var(--accent-rgb),0.1)] text-accent shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb),0.25)]"
                   : "text-text-dim"
               }`}
             >
@@ -57,7 +57,7 @@ export function ToolboxPage() {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 border-l-[3px] px-[18px] py-2.5 text-left text-[12px] font-semibold tracking-[0.5px] transition-all hover:translate-y-[-1px] hover:bg-[var(--surface)] hover:text-[var(--text)] ${
                 activeTab === tab.key
-                  ? "border-l-accent bg-[rgba(232,162,58,0.05)] text-accent"
+                  ? "border-l-accent bg-[rgba(var(--accent-rgb),0.05)] text-accent"
                   : "border-l-transparent text-text-dim"
               }`}
             >

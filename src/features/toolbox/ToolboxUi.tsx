@@ -87,7 +87,7 @@ export function Segmented<T extends string>({
             i < options.length - 1 ? "border-r border-[var(--tb-border)]" : ""
           } ${
             value === o.value
-              ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
+              ? "bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[var(--on-accent)]"
               : "bg-transparent text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
           }`}
         >

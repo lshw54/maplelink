@@ -466,5 +466,14 @@
   "settings.section.launch": "啟動",
   "settings.section.privacy": "隱私",
   "settings.section.window": "視窗",
-  "settings.section.debug": "除錯"
+  "settings.section.debug": "除錯",
+  "settings.accent_color": "主題色",
+  "settings.accent.maple": "楓葉橙（預設）",
+  "settings.accent.blue": "藍",
+  "settings.accent.teal": "青",
+  "settings.accent.green": "綠",
+  "settings.accent.purple": "紫",
+  "settings.accent.pink": "粉紅",
+  "settings.accent.red": "紅",
+  "settings.accent.custom": "自訂…"
 }

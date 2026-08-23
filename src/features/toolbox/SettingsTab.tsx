@@ -6,6 +6,7 @@ import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
+import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccent, isHexColor } from "../../lib/accent";
 import type { ThemeMode, Language } from "../../lib/stores/ui-store";
 
 const THEMES: { value: ThemeMode; labelKey: string }[] = [
@@ -92,6 +93,18 @@ export function SettingsTab() {
     setConfig.mutate({ key: "updateChannel", value: channel });
   }
 
+  // Applied at once so the page previews the colour; persisted as "" for the
+  // default so config.ini stays clean.
+  function handleAccentChange(hex: string) {
+    const value = hex.toLowerCase() === DEFAULT_ACCENT ? "" : hex.toLowerCase();
+    applyAccent(value);
+    useConfigStore.getState().updateConfigField("accentColor", value);
+    setConfig.mutate({ key: "accentColor", value });
+  }
+  const currentAccent =
+    config?.accentColor && isHexColor(config.accentColor) ? config.accentColor : DEFAULT_ACCENT;
+  const accentIsPreset = ACCENT_PRESETS.some((p) => p.hex === currentAccent);
+
   function handleDefaultLoginViewChange(view: DefaultLoginView) {
     useConfigStore.getState().updateConfigField("defaultLoginView", view);
     setConfig.mutate({ key: "defaultLoginView", value: view });
@@ -135,6 +148,45 @@ export function SettingsTab() {
             value={config?.language ?? "zh-TW"}
             onChange={handleLanguageChange}
           />
+        </Row>
+        <Row label={t("settings.accent_color")}>
+          <div className="flex items-center gap-1.5">
+            {ACCENT_PRESETS.map((p) => {
+              const active = p.hex === currentAccent;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  title={t(`settings.accent.${p.key}`)}
+                  onClick={() => handleAccentChange(p.hex)}
+                  style={{ background: p.hex }}
+                  className={`h-5 w-5 rounded-full transition-transform hover:scale-110 ${
+                    active
+                      ? "ring-2 ring-[var(--text)] ring-offset-2 ring-offset-[var(--tb-card)]"
+                      : "ring-1 ring-black/10"
+                  }`}
+                />
+              );
+            })}
+            {/* Custom: the native colour picker behind a rainbow swatch */}
+            <label
+              title={t("settings.accent.custom")}
+              className={`relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-[10px] font-bold transition-transform hover:scale-110 ${
+                accentIsPreset
+                  ? "bg-[conic-gradient(#f87171,#facc15,#4ade80,#60a5fa,#c084fc,#f87171)] text-white ring-1 ring-black/10"
+                  : "text-[var(--on-accent)] ring-2 ring-[var(--text)] ring-offset-2 ring-offset-[var(--tb-card)]"
+              }`}
+              style={accentIsPreset ? undefined : { background: currentAccent }}
+            >
+              <span className="drop-shadow-[0_0_1px_rgba(0,0,0,0.6)]">+</span>
+              <input
+                type="color"
+                value={currentAccent}
+                onChange={(e) => handleAccentChange(e.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+          </div>
         </Row>
         <Row label={t("settings.compact_ui")} hint={t("settings.compact_ui_desc")}>
           <Toggle

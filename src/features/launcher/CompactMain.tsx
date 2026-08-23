@@ -111,7 +111,7 @@ export function CompactMain(p: CompactMainProps) {
               ? ` · ${t("launcher.running")}${p.gamePid !== null ? ` (PID ${p.gamePid})` : ""}`
               : ""
           }`}
-          className="relative flex h-[22px] shrink-0 items-center justify-center gap-1 rounded-[6px] bg-gradient-to-br from-[#c46a00] to-accent px-2.5 text-[10.5px] font-extrabold tracking-[0.5px] text-white shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
+          className="relative flex h-[22px] shrink-0 items-center justify-center gap-1 rounded-[6px] bg-gradient-to-br from-[var(--accent-deep)] to-accent px-2.5 text-[10.5px] font-extrabold tracking-[0.5px] text-[var(--on-accent)] shadow-[0_2px_8px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_3px_12px_var(--accent-glow)] active:scale-[0.96] disabled:transform-none disabled:opacity-40"
         >
           <span className="pointer-events-none absolute inset-0 rounded-[6px] bg-gradient-to-b from-white/15 to-transparent" />
           <span className="relative text-[10px]">{p.showClassic ? "🍁" : "▶"}</span>
@@ -162,7 +162,7 @@ export function CompactMain(p: CompactMainProps) {
                   onClick={() => p.onClassicGame(classic)}
                   className={`flex h-[18px] items-center justify-center gap-1 rounded-[4px] text-[10.5px] font-bold transition-all ${
                     active
-                      ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_1px_6px_var(--accent-glow)]"
+                      ? "bg-gradient-to-br from-[var(--accent-deep)] to-accent text-[var(--on-accent)] shadow-[0_1px_6px_var(--accent-glow)]"
                       : "text-text-dim hover:text-[var(--text)]"
                   }`}
                 >
@@ -218,7 +218,7 @@ export function CompactMain(p: CompactMainProps) {
             otp.copied
               ? "bg-[rgba(74,222,128,0.08)] text-green-400"
               : otp.credentials
-                ? "bg-[rgba(232,162,58,0.08)] text-accent hover:bg-[rgba(232,162,58,0.13)]"
+                ? "bg-[rgba(var(--accent-rgb),0.08)] text-accent hover:bg-[rgba(var(--accent-rgb),0.13)]"
                 : "cursor-default bg-[var(--surface)] text-text-faint"
           }`}
         >
@@ -269,7 +269,7 @@ export function CompactMain(p: CompactMainProps) {
               aria-checked={otp.autoInput}
               onClick={() => otp.setAutoInput(!otp.autoInput)}
               className={`relative h-[18px] w-[32px] shrink-0 rounded-full transition-colors ${
-                otp.autoInput ? "bg-[rgba(232,162,58,0.35)]" : "bg-[var(--surface-hover)]"
+                otp.autoInput ? "bg-[rgba(var(--accent-rgb),0.35)]" : "bg-[var(--surface-hover)]"
               }`}
             >
               <span
@@ -285,7 +285,7 @@ export function CompactMain(p: CompactMainProps) {
             <button
               onClick={otp.getOtp}
               disabled={!p.selectedAccountId || otp.busy}
-              className="flex h-[18px] items-center gap-1 rounded-l-[5px] bg-[rgba(232,162,58,0.14)] px-1.5 text-[10.5px] leading-none font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[18px] items-center gap-1 rounded-l-[5px] bg-[rgba(var(--accent-rgb),0.14)] px-1.5 text-[10.5px] leading-none font-semibold whitespace-nowrap text-accent transition-all hover:bg-[rgba(var(--accent-rgb),0.22)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               ↻ {t("launcher.get_otp")}
             </button>
@@ -293,7 +293,7 @@ export function CompactMain(p: CompactMainProps) {
               onClick={() => setOtpMenuOpen(!otpMenuOpen)}
               disabled={!p.selectedAccountId}
               aria-label="More"
-              className="flex h-[18px] w-4 items-center justify-center rounded-r-[5px] border-l border-[rgba(232,162,58,0.25)] bg-[rgba(232,162,58,0.14)] text-accent transition-all hover:bg-[rgba(232,162,58,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-[18px] w-4 items-center justify-center rounded-r-[5px] border-l border-[rgba(var(--accent-rgb),0.25)] bg-[rgba(var(--accent-rgb),0.14)] text-accent transition-all hover:bg-[rgba(var(--accent-rgb),0.22)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <svg
                 width="8"
