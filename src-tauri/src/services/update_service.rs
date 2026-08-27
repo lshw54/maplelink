@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use crate::core::error::UpdateError;
 use crate::models::update::UpdateInfo;
-use crate::services::{github_hosts, http_util};
+use crate::services::{github_hosts, http_util, update_signature};
 
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
@@ -681,7 +681,55 @@ pub async fn download_update_with_progress(
     }
 
     tracing::info!("downloaded {} bytes", buf.len());
+
+    // Verified here rather than by the caller, so that no path to a downloaded
+    // update exists that skips it.
+    let signature = fetch_signature(client, download_url).await?;
+    update_signature::verify(&buf, &signature)?;
+    tracing::info!("update signature verified");
+
     Ok(buf)
+}
+
+/// Fetch the `.sig` published beside the asset.
+///
+/// Asked for through the same URL the bytes came from, mirror prefix and all:
+/// there is no advantage in a different route, since the signature is checked
+/// against a key compiled in here rather than against whoever served it. A
+/// mirror can withhold it or corrupt it, and then the update does not happen —
+/// which is the correct outcome for bytes we cannot identify.
+async fn fetch_signature(
+    client: &reqwest::Client,
+    download_url: &str,
+) -> Result<String, UpdateError> {
+    /// Minisign signatures are a few hundred bytes.
+    const MAX_SIGNATURE_BYTES: u64 = 8 * 1024;
+
+    let url = format!("{download_url}.sig");
+    let response = client
+        .get(&url)
+        .header("User-Agent", "MapleLink-Updater")
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| UpdateError::DownloadFailed {
+            reason: format!("could not fetch the update signature: {e}"),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(UpdateError::DownloadFailed {
+            reason: format!(
+                "the update signature is missing (HTTP {} from {url})",
+                response.status()
+            ),
+        });
+    }
+
+    http_util::read_capped_text(response, MAX_SIGNATURE_BYTES)
+        .await
+        .ok_or_else(|| UpdateError::DownloadFailed {
+            reason: "the update signature could not be read".to_string(),
+        })
 }
 
 /// Download, self-replace, and prompt restart.

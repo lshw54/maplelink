@@ -25,6 +25,7 @@ pub mod process_service;
 pub mod recaptcha_window;
 pub mod session_key_fallback;
 pub mod update_service;
+pub mod update_signature;
 pub mod web_launch;
 pub mod web_popup_service;
 pub mod webview_login;
