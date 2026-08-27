@@ -36,7 +36,13 @@ pub async fn geo_lookup(client: &reqwest::Client) -> (String, String) {
     // would otherwise hold the accelerator hint open for as long as it liked.
     // The answer is optional — an empty one costs a hint, not a launch.
     match client.get(url).timeout(GEO_TIMEOUT).send().await {
-        Ok(resp) => match resp.json::<serde_json::Value>().await {
+        // Three fields, about a hundred bytes. Read to a bound like everything
+        // else that comes from somewhere we do not run.
+        Ok(resp) => match crate::services::http_util::read_capped_text(resp, 64 * 1024)
+            .await
+            .ok_or(())
+            .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|_| ()))
+        {
             Ok(j) => (
                 j["query"].as_str().unwrap_or_default().to_string(),
                 j["countryCode"].as_str().unwrap_or_default().to_string(),

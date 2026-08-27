@@ -48,14 +48,20 @@ pub async fn detect_game_path(state: &AppState) -> Result<Option<String>, ErrorD
             "https://{host}.beanfun.com/beanfun_block/generic_handlers/get_service_ini.ashx"
         );
 
+        // The shared client sets no deadline of its own, and this is the only
+        // request on it that never named one. The file is a few KB of ini, so
+        // the bound below is generous and still finite.
         if let Ok(ini_text) = state
             .http_client
             .get(&ini_url)
             .header("User-Agent", WEBVIEW_USER_AGENT)
+            .timeout(std::time::Duration::from_secs(15))
             .send()
             .await
         {
-            if let Ok(body) = ini_text.text().await {
+            if let Some(body) =
+                crate::services::http_util::read_capped_text(ini_text, 4 * 1024 * 1024).await
+            {
                 let game_code = "610074_T9";
                 let dir_reg = extract_ini_value(&body, game_code, "dir_reg");
                 let dir_value_name = extract_ini_value(&body, game_code, "dir_value_name");

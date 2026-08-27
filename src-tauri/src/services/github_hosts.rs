@@ -105,6 +105,11 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
 /// answers with something else.
 const MAX_LIST_BYTES: u64 = 4 * 1024 * 1024;
 
+/// How much of a DoH answer is worth reading. A handful of A records is a few
+/// hundred bytes; two of the three resolvers are domestic ones this feature
+/// exists precisely because it cannot take on trust.
+const MAX_DOH_BYTES: u64 = 64 * 1024;
+
 /// A domain → IPs mapping parsed out of a hosts file.
 pub type HostsMap = HashMap<String, Vec<IpAddr>>;
 
@@ -226,7 +231,11 @@ async fn doh_lookup(client: &reqwest::Client, endpoint: &str, host: &str) -> Vec
     if !response.status().is_success() {
         return Vec::new();
     }
-    let Ok(json) = response.json::<serde_json::Value>().await else {
+    let Some(body) = crate::services::http_util::read_capped_text(response, MAX_DOH_BYTES).await
+    else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) else {
         return Vec::new();
     };
 
