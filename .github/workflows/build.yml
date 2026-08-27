@@ -134,6 +134,32 @@ jobs:
           Write-Host "SHA256: $hash"
           Write-Host "Size: $size bytes"
 
+      # The one thing a proxy mirror cannot produce. Users on the mirrors reach
+      # a third party that terminates TLS legitimately and could serve any bytes
+      # it liked; the app checks this against a key compiled into it, so what it
+      # verifies is that we built the file rather than that someone with a valid
+      # certificate handed it over. Unrelated to Authenticode — that is what
+      # SmartScreen reads, and this is invisible to it.
+      - name: Sign the update
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            # Refused rather than released: an unsigned build is one every
+            # updated client will reject, and finding that out from users is a
+            # worse way to learn the secret is missing.
+            Write-Error "UPDATE_SIGNING_KEY is not set - the release would be unverifiable"
+            exit 1
+          }
+          npx @tauri-apps/cli@2.11.1 signer sign MapleLink.exe
+          if (-not (Test-Path "MapleLink.exe.sig")) {
+            Write-Error "signing produced no MapleLink.exe.sig"
+            exit 1
+          }
+          Write-Host "signature: $((Get-Item 'MapleLink.exe.sig').Length) bytes"
+
       - name: Build self-extracting package (new users)
         id: sfx
         shell: pwsh
@@ -279,6 +305,7 @@ jobs:
             </details>
           files: |
             MapleLink.exe
+            MapleLink.exe.sig
             MapleLink-Setup.exe
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
