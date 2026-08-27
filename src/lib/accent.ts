@@ -101,8 +101,10 @@ export function applyAccent(hex: string): void {
   set("--nav-user", 23, 5.1);
   set("--card-user", 11, 8.8);
   set("--input-user", 14, 6.9);
-  set("--bg-user-light", 11, 96.5);
-  set("--nav-user-light", 8, 90);
-  set("--card-user-light", 20, 99);
-  set("--input-user-light", 20, 97.5);
+  // The light palette leans harder into the hue — near-white carries far less
+  // colour than near-black, so the same saturation reads as no tint at all.
+  set("--bg-user-light", 42, 95);
+  set("--nav-user-light", 30, 88);
+  set("--card-user-light", 55, 98.5);
+  set("--input-user-light", 45, 96.5);
 }

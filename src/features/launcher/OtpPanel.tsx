@@ -95,33 +95,41 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           </span>
         </button>
 
-        {/* Split button: fetch, and a ▾ with copy one-time credentials */}
-        <div className="relative flex shrink-0 shadow-[0_2px_10px_var(--accent-glow)] transition-shadow hover:shadow-[0_4px_16px_var(--accent-glow)]">
-          <button
-            onClick={getOtp}
-            disabled={!selectedAccountId || busy}
-            title={t("launcher.get_otp")}
-            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[var(--accent-dark)] text-base text-[var(--on-accent)] transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+        {/* Split button: fetch, and a ▾ with copy one-time credentials. One
+            gradient across the pair (per-half gradients restart at the seam,
+            which saturated accents make very visible). */}
+        <div className="relative shrink-0">
+          <div
+            className={`flex overflow-hidden rounded-[10px] bg-gradient-to-br from-accent to-[var(--accent-dark)] shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:shadow-[0_4px_16px_var(--accent-glow)] ${
+              !selectedAccountId ? "opacity-40" : ""
+            }`}
           >
-            ↻
-          </button>
-          <button
-            onClick={() => setMoreOpen(!moreOpen)}
-            disabled={!selectedAccountId}
-            aria-label="More"
-            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[var(--on-accent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <svg
-              width="9"
-              height="9"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
+            <button
+              onClick={getOtp}
+              disabled={!selectedAccountId || busy}
+              title={t("launcher.get_otp")}
+              className="flex h-10 w-10 items-center justify-center text-base text-[var(--on-accent)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
             >
-              <path d="M2 4l3 3 3-3" />
-            </svg>
-          </button>
+              ↻
+            </button>
+            <button
+              onClick={() => setMoreOpen(!moreOpen)}
+              disabled={!selectedAccountId}
+              aria-label="More"
+              className="flex h-10 w-5 items-center justify-center border-l border-white/25 text-[var(--on-accent)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
+            >
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M2 4l3 3 3-3" />
+              </svg>
+            </button>
+          </div>
           {moreOpen && (
             <OtpMoreMenu
               onClose={() => setMoreOpen(false)}
