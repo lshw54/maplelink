@@ -27,7 +27,7 @@ use crate::core::error::UpdateError;
 /// signed with the old key, so it changes only if the private half is lost or
 /// compromised — and then the release before the change has to be installed by
 /// hand, since no build after it will verify against what users already have.
-const UPDATE_PUBLIC_KEY: &str = "";
+const UPDATE_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0QjNCMTlCQkYzQjEzRDEKUldUUkV6dS9tN0d6Wkwrb2IrZm5ISTZrdEsrNTZUdytncVFSdjdoV0NiU2IvK3o0N3lvNUVCQXkK";
 
 /// Whether a public key has been published yet.
 ///
@@ -133,11 +133,9 @@ mod tests {
         assert!(verify_with_key(TEST_BYTES, TEST_SIGNATURE, "").is_err());
     }
 
-    /// Fails until the key is published, which is the point: it is the one step
-    /// that cannot be done from inside the repository, and a green build would
-    /// hide that the protection is not on yet.
+    /// The key that ships is a real minisign key, and the one releases are
+    /// signed with. Its fingerprint is 64B3B19BBF3B13D1.
     #[test]
-    #[ignore = "enable once UPDATE_PUBLIC_KEY is filled in"]
     fn the_shipped_key_is_a_real_one() {
         assert!(signing_configured(), "UPDATE_PUBLIC_KEY is still empty");
         // Wrong bytes, real key: reaching "does not match" proves the key
