@@ -470,9 +470,14 @@ pub fn run() {
             // reads, so those users validate too — against what their own
             // machine already trusts.
             //
-            // beanfun's own clients keep their exception. Nothing here talks to
-            // beanfun, and its certificates have not been checked the same way.
+            // A connect timeout, and deliberately not a total one: this client
+            // carries the 12 MB update, and reqwest's `timeout` covers the body
+            // too — which is how a 300-second cap came to cut off mainland users
+            // who were downloading perfectly well, just slowly. Opening a
+            // connection is the part that should be quick; the download names
+            // its own deadlines, per chunk.
             let http_client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("failed to build HTTP client");
             let update_client = http_client.clone();

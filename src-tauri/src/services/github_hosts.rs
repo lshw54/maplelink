@@ -170,7 +170,11 @@ pub fn build_client(map: &HostsMap) -> Option<reqwest::Client> {
         return None;
     }
 
-    let mut builder = reqwest::Client::builder();
+    // Certificates are verified, so an override says which address to dial and
+    // never who may answer. A connect timeout matters more here than elsewhere:
+    // an override can name an address that has stopped answering, and each of
+    // those costs a full connect before the mirrors get a turn.
+    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(10));
     for (host, ips) in map {
         // Port 0 means "the conventional port for the scheme", so one override
         // covers both https and the plain-http redirects GitHub occasionally
