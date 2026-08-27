@@ -1,0 +1,185 @@
+"""Cut the bundled font down to the characters the interface can actually show.
+
+`@fontsource-variable/noto-sans-tc` ships the whole Traditional Chinese face,
+split into 105 chunks so a *web page* downloads only the pieces it needs. A
+desktop build has no such luxury: every chunk is embedded, all four megabytes of
+it, for an interface that uses under a thousand characters.
+
+So the chunks are cut to what the interface uses and the result is committed.
+Nothing runs this at build time; it is run by hand when the interface gains
+characters it did not have before, and `fonts.test.ts` fails if that is
+forgotten.
+
+    pip install fonttools brotli
+    python scripts/build-font-subset.py
+
+Characters outside the subset — an account name, a character name — fall back to
+the next font in the stack, which on Windows is Microsoft JhengHei. That is the
+trade being made: the interface looks the same everywhere, and text the user
+supplied may not.
+"""
+
+import io
+import json
+import pathlib
+import re
+import shutil
+import sys
+
+try:
+    from fontTools import subset
+except ImportError:
+    sys.exit("fonttools is missing: pip install fonttools brotli")
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "node_modules" / "@fontsource-variable" / "noto-sans-tc"
+DEST = ROOT / "src" / "assets" / "fonts"
+FAMILY = "Noto Sans TC Variable"
+
+
+def interface_characters() -> set[int]:
+    """Every character the interface can render on its own.
+
+    The locale files are the bulk of it; the sources are read too, for the
+    handful of strings that never made it into a locale file.
+    """
+    chars: set[str] = set()
+    for path in (ROOT / "src" / "locales").glob("*.json"):
+        chars |= set(json.dumps(json.load(io.open(path, encoding="utf-8")), ensure_ascii=False))
+    for pattern in ("*.ts", "*.tsx", "*.css", "*.html"):
+        for path in (ROOT / "src").rglob(pattern):
+            if DEST in path.parents:
+                continue
+            chars |= set(io.open(path, encoding="utf-8").read())
+    for path in (ROOT / "index.html"), (ROOT / "debug.html"):
+        if path.exists():
+            chars |= set(io.open(path, encoding="utf-8").read())
+    return {ord(c) for c in chars}
+
+
+def parse_ranges(text: str) -> list[tuple[int, int]]:
+    out = []
+    for part in text.split(","):
+        part = part.strip()
+        if not part.startswith("U+"):
+            continue
+        body = part[2:]
+        if "-" in body:
+            lo, hi = body.split("-")
+            out.append((int(lo, 16), int(hi, 16)))
+        else:
+            out.append((int(body, 16), int(body, 16)))
+    return out
+
+
+def source_chunks() -> list[tuple[str, list[tuple[int, int]]]]:
+    """Each chunk's file name and the range the browser routes to it.
+
+    Routing is by `unicode-range`, not by what a chunk happens to contain, so a
+    character is only ever asked of one chunk — which is what makes dropping the
+    others safe.
+    """
+    css = io.open(SOURCE / "index.css", encoding="utf-8").read()
+    chunks = []
+    for block in css.split("@font-face")[1:]:
+        url = re.search(r"url\(\.?/?files/([^)'\"]+)\)", block)
+        rng = re.search(r"unicode-range:\s*([^;]+);", block)
+        if url and rng:
+            chunks.append((url.group(1), parse_ranges(rng.group(1))))
+    return chunks
+
+
+def runs(codepoints: set[int]) -> list[list[int]]:
+    """Contiguous runs, so a range says exactly what the file now holds."""
+    parts: list[list[int]] = []
+    for cp in sorted(codepoints):
+        if parts and cp == parts[-1][1] + 1:
+            parts[-1][1] = cp
+        else:
+            parts.append([cp, cp])
+    return parts
+
+
+def as_range_list(codepoints: set[int]) -> str:
+    return ",".join(
+        f"U+{lo:x}" if lo == hi else f"U+{lo:x}-{hi:x}" for lo, hi in runs(codepoints)
+    )
+
+
+def main() -> int:
+    if not SOURCE.exists():
+        sys.exit(f"{SOURCE} is missing — run npm install first")
+
+    wanted = interface_characters()
+    if DEST.exists():
+        shutil.rmtree(DEST)
+    DEST.mkdir(parents=True)
+
+    before = sum(p.stat().st_size for p in (SOURCE / "files").glob("*.woff2"))
+    faces, after, dropped = [], 0, 0
+
+    for name, ranges in source_chunks():
+        keep = {cp for cp in wanted if any(lo <= cp <= hi for lo, hi in ranges)}
+        if not keep:
+            dropped += 1
+            continue
+
+        options = subset.Options()
+        options.flavor = "woff2"
+        options.layout_features = ["*"]
+        options.name_IDs = ["*"]
+        font = subset.load_font(str(SOURCE / "files" / name), options)
+        cutter = subset.Subsetter(options=options)
+        cutter.populate(unicodes=keep)
+        cutter.subset(font)
+        subset.save_font(font, str(DEST / name), options)
+        font.close()
+
+        after += (DEST / name).stat().st_size
+        faces.append((name, keep))
+
+    css = [
+        "/* Generated by scripts/build-font-subset.py — do not edit.",
+        " *",
+        f" * {FAMILY}, cut to the {len(wanted)} characters the interface uses.",
+        " * Anything outside these ranges falls back to the system stack.",
+        " */",
+        "",
+    ]
+    for name, keep in faces:
+        css += [
+            "@font-face {",
+            f"  font-family: '{FAMILY}';",
+            "  font-style: normal;",
+            "  font-display: swap;",
+            "  font-weight: 100 900;",
+            f"  src: url(./{name}) format('woff2-variations');",
+            f"  unicode-range: {as_range_list(keep)};",
+            "}",
+            "",
+        ]
+    io.open(DEST / "noto-sans-tc.css", "w", encoding="utf-8", newline="\n").write("\n".join(css))
+
+    # The same ranges again, as data, because `font-coverage.test.ts` needs to
+    # read them and a `?raw` import of CSS comes back empty under vitest. Both
+    # files are written here, from one list, in one run, so they cannot drift
+    # apart without someone editing a generated file by hand.
+    coverage = {
+        "note": "Generated by scripts/build-font-subset.py — do not edit.",
+        "characters": len(wanted),
+        "ranges": sorted(r for _, keep in faces for r in runs(keep)),
+    }
+    io.open(DEST / "coverage.json", "w", encoding="utf-8", newline="\n").write(
+        json.dumps(coverage, indent=2) + "\n"
+    )
+
+    print(f"characters : {len(wanted)}")
+    print(f"chunks     : {len(faces)} kept, {dropped} dropped")
+    print(f"before     : {before / 1048576:.2f} MB")
+    print(f"after      : {after / 1024:.0f} KB")
+    print(f"written to : {DEST.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
