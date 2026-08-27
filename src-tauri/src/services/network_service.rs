@@ -2,6 +2,11 @@
 //! China-specific hints (e.g. the "rename to Beanfun.exe" accelerator
 //! suggestion). No DNS changes are made — that feature was removed.
 
+/// How long the country is worth waiting for. Nothing blocks on it, but a
+/// failed lookup is not cached, so a short one also means the next caller gets
+/// another try rather than inheriting a stalled one.
+const GEO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Cached result of [`geo_lookup`], so the startup checks that each need the
 /// country don't each pay for their own request.
 static GEO_CACHE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
@@ -26,8 +31,18 @@ pub async fn geo_lookup_cached(client: &reqwest::Client) -> (String, String) {
 /// failure. Best-effort — never errors.
 pub async fn geo_lookup(client: &reqwest::Client) -> (String, String) {
     let url = "http://ip-api.com/json/?fields=status,countryCode,query";
-    match client.get(url).send().await {
-        Ok(resp) => match resp.json::<serde_json::Value>().await {
+    // The only request in the app with no deadline of its own, and it runs at
+    // startup: a third party that accepts the connection and then says nothing
+    // would otherwise hold the accelerator hint open for as long as it liked.
+    // The answer is optional — an empty one costs a hint, not a launch.
+    match client.get(url).timeout(GEO_TIMEOUT).send().await {
+        // Three fields, about a hundred bytes. Read to a bound like everything
+        // else that comes from somewhere we do not run.
+        Ok(resp) => match crate::services::http_util::read_capped_text(resp, 64 * 1024)
+            .await
+            .ok_or(())
+            .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|_| ()))
+        {
             Ok(j) => (
                 j["query"].as_str().unwrap_or_default().to_string(),
                 j["countryCode"].as_str().unwrap_or_default().to_string(),

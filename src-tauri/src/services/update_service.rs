@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use crate::core::error::UpdateError;
 use crate::models::update::UpdateInfo;
-use crate::services::github_hosts;
+use crate::services::{github_hosts, http_util};
 
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
@@ -36,6 +36,55 @@ const PROXY_MIRRORS: &[&str] = &[
     "https://gh-proxy.com/",
     "https://ghproxy.cc/",
 ];
+
+/// A ceiling on the update itself. The build is ~12 MB and the largest shipped
+/// was 23 MB, so this is several times any real one — it bounds what a mirror
+/// can make us hold, not what a build may weigh.
+const MAX_UPDATE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How much to reserve up front for a download that declares `declared` bytes.
+///
+/// `Content-Length` is whatever the mirror said, and the mirrors are third
+/// parties. Unclamped, one answering `Content-Length: 999999999999` had us ask
+/// the allocator for 931 GB before a single byte arrived — which fails, and a
+/// failed allocation aborts the process. Not a panic: no unwind, no message the
+/// user sees, the app is simply gone mid-update.
+fn download_buffer_capacity(declared: u64) -> usize {
+    declared.min(MAX_UPDATE_BYTES) as usize
+}
+
+/// How much release metadata is worth reading. Thirty releases with their
+/// assets is well under a megabyte; this is room to spare, and a stop on a
+/// mirror answering the API with something else.
+const MAX_RELEASE_JSON_BYTES: u64 = 8 * 1024 * 1024;
+
+/// How long the download may go without producing a byte.
+///
+/// This replaces a 300-second cap on the request *as a whole*, which is a
+/// different thing entirely: 11.8 MB inside 300 s demands a sustained 40 KB/s,
+/// and a mainland user on a slow ghproxy mirror is often under that. Those
+/// downloads were being cut off at five minutes for making steady progress —
+/// exactly the users the mirrors exist for.
+///
+/// What deserves a deadline is silence, not slowness. A mirror that stops
+/// sending is finished with us; one that trickles is still working.
+const DOWNLOAD_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A ceiling on the download regardless of progress, so a mirror sending one
+/// byte a minute cannot hold the update open indefinitely. Thirty minutes is
+/// about 6 KB/s for a 12 MB build — slower than anything worth waiting for, and
+/// far below what the old total timeout demanded.
+const DOWNLOAD_TOTAL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// Read a release listing, bounded.
+async fn read_release_json(response: reqwest::Response) -> Result<serde_json::Value, UpdateError> {
+    let body = http_util::read_capped(response, MAX_RELEASE_JSON_BYTES)
+        .await
+        .map_err(|reason| UpdateError::CheckFailed { reason })?;
+    serde_json::from_slice(&body).map_err(|e| UpdateError::CheckFailed {
+        reason: format!("invalid response: {e}"),
+    })
+}
 
 /// Cached connectivity probe result.
 /// - `None` inside the Option = direct GitHub works (no proxy needed)
@@ -288,13 +337,7 @@ pub async fn check_for_update(
         let list_url =
             maybe_proxy_url("https://api.github.com/repos/lshw54/maplelink/releases?per_page=30");
         if let Some(response) = github_get(client, &list_url).await? {
-            let body: serde_json::Value =
-                response
-                    .json()
-                    .await
-                    .map_err(|e| UpdateError::CheckFailed {
-                        reason: format!("invalid response: {e}"),
-                    })?;
+            let body: serde_json::Value = read_release_json(response).await?;
             for release in body.as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
                 let tag = release["tag_name"]
                     .as_str()
@@ -312,13 +355,7 @@ pub async fn check_for_update(
         // Newest stable — covers the list-omission quirk above.
         let latest_url = maybe_proxy_url(GITHUB_API_URL);
         if let Some(response) = github_get(client, &latest_url).await? {
-            let release: serde_json::Value =
-                response
-                    .json()
-                    .await
-                    .map_err(|e| UpdateError::CheckFailed {
-                        reason: format!("invalid response: {e}"),
-                    })?;
+            let release: serde_json::Value = read_release_json(response).await?;
             if !release.is_null() {
                 let tag = release["tag_name"]
                     .as_str()
@@ -347,13 +384,7 @@ pub async fn check_for_update(
             None => return Ok(None),
         };
 
-        let release: serde_json::Value =
-            response
-                .json()
-                .await
-                .map_err(|e| UpdateError::CheckFailed {
-                    reason: format!("invalid response: {e}"),
-                })?;
+        let release: serde_json::Value = read_release_json(response).await?;
 
         if release.is_null() {
             return Ok(None);
@@ -496,7 +527,7 @@ pub async fn download_update_with_progress(
     let response = client
         .get(download_url)
         .header("User-Agent", "MapleLink-Updater")
-        .timeout(std::time::Duration::from_secs(300))
+        // No total timeout: the deadlines that apply here are per-chunk, below.
         .send()
         .await
         .map_err(|e| UpdateError::DownloadFailed {
@@ -517,15 +548,45 @@ pub async fn download_update_with_progress(
     // fall back to a simple non-streaming download.
     let buf = {
         let mut downloaded: u64 = 0;
-        let mut buf = Vec::with_capacity(total as usize);
+        let mut buf = Vec::with_capacity(download_buffer_capacity(total));
         let mut stream = response.bytes_stream();
         let start = std::time::Instant::now();
         let mut last_emit = std::time::Instant::now();
         let mut stream_failed = false;
 
-        while let Some(chunk_result) = stream.next().await {
+        while let Some(chunk_result) =
+            match tokio::time::timeout(DOWNLOAD_IDLE_TIMEOUT, stream.next()).await {
+                Ok(next) => next,
+                Err(_) => {
+                    return Err(UpdateError::DownloadFailed {
+                        reason: format!(
+                            "the mirror stopped sending for {} seconds",
+                            DOWNLOAD_IDLE_TIMEOUT.as_secs()
+                        ),
+                    })
+                }
+            }
+        {
+            if start.elapsed() > DOWNLOAD_TOTAL_LIMIT {
+                return Err(UpdateError::DownloadFailed {
+                    reason: format!(
+                        "the download was still going after {} minutes",
+                        DOWNLOAD_TOTAL_LIMIT.as_secs() / 60
+                    ),
+                });
+            }
             match chunk_result {
                 Ok(chunk) => {
+                    // The clamp only bounds the reservation. A sender free to
+                    // lie about the length is equally free to keep sending, so
+                    // what actually arrives is counted too.
+                    if downloaded + chunk.len() as u64 > MAX_UPDATE_BYTES {
+                        return Err(UpdateError::DownloadFailed {
+                            reason: format!(
+                                "the download ran past {MAX_UPDATE_BYTES} bytes without ending"
+                            ),
+                        });
+                    }
                     downloaded += chunk.len() as u64;
                     buf.extend_from_slice(&chunk);
 
@@ -564,19 +625,30 @@ pub async fn download_update_with_progress(
             let fallback_resp = client
                 .get(download_url)
                 .header("User-Agent", "MapleLink-Updater")
-                .timeout(std::time::Duration::from_secs(300))
+                // Bounded by `DOWNLOAD_TOTAL_LIMIT` below rather than by a cap
+                // a slow mirror would trip while working.
                 .send()
                 .await
                 .map_err(|e| UpdateError::DownloadFailed {
                     reason: format!("fallback network error: {e}"),
                 })?;
 
-            let bytes = fallback_resp
-                .bytes()
-                .await
-                .map_err(|e| UpdateError::DownloadFailed {
-                    reason: format!("fallback read error: {e}"),
-                })?;
+            // Same mirror, same ceiling — `bytes()` would read whatever it is
+            // given.
+            let bytes = tokio::time::timeout(
+                DOWNLOAD_TOTAL_LIMIT,
+                http_util::read_capped(fallback_resp, MAX_UPDATE_BYTES),
+            )
+            .await
+            .map_err(|_| UpdateError::DownloadFailed {
+                reason: format!(
+                    "the download was still going after {} minutes",
+                    DOWNLOAD_TOTAL_LIMIT.as_secs() / 60
+                ),
+            })?
+            .map_err(|reason| UpdateError::DownloadFailed {
+                reason: format!("fallback read error: {reason}"),
+            })?;
 
             let _ = app_handle.emit(
                 "update-download-progress",
@@ -894,6 +966,40 @@ mod tests {
         fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
             prop_assert!(should_check(false, true));
         }
+    }
+
+    /// A real update sizes its own buffer.
+    #[test]
+    fn an_honest_length_is_reserved_in_full() {
+        let real = 11_800_000;
+        assert_eq!(download_buffer_capacity(real), real as usize);
+    }
+
+    /// A claimed one cannot. 999999999999 is what the repro used; unclamped it
+    /// aborted the process with 0xC0000409 before any byte was read.
+    #[test]
+    fn a_claimed_length_cannot_reserve_more_than_a_real_update() {
+        assert_eq!(
+            download_buffer_capacity(999_999_999_999),
+            MAX_UPDATE_BYTES as usize
+        );
+        assert_eq!(
+            download_buffer_capacity(u64::MAX),
+            MAX_UPDATE_BYTES as usize
+        );
+    }
+
+    /// The clamp must not be so generous that it is the same bug in slow motion:
+    /// whatever is reserved has to be an amount a machine can actually give.
+    #[test]
+    fn the_ceiling_is_an_allocatable_amount() {
+        let ceiling = download_buffer_capacity(u64::MAX);
+        assert!(
+            ceiling <= 512 * 1024 * 1024,
+            "{ceiling} is too much to hold"
+        );
+        let buf: Vec<u8> = Vec::with_capacity(ceiling);
+        assert_eq!(buf.capacity(), ceiling);
     }
 
     // ----- self-replace -------------------------------------------------

@@ -1213,7 +1213,6 @@ async fn tw_get_session_key(
         .redirect(reqwest::redirect::Policy::none())
         .http1_only()
         .timeout(std::time::Duration::from_secs(30))
-        .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| map_reqwest_error(url, e))?;
 
@@ -1711,9 +1710,12 @@ async fn tw_send_login_flow(
         }
     }
 
+    // The only client in the app that named no deadline at all, and it posts
+    // to beanfun mid-login: a host that accepts the connection and then says
+    // nothing would have held the login open indefinitely.
     let no_redirect_client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .danger_accept_invalid_certs(true)
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| parse_error_str(&format!("failed to build no-redirect client: {e}")))?;
 

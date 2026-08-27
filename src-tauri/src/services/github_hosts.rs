@@ -17,9 +17,9 @@
 //! - addresses that arrive over DNS rather than from the curated list must sit
 //!   inside GitHub's own address blocks, which is also what makes a poisoned
 //!   answer detectable;
-//! - the client built here validates certificates, unlike the app-wide one, so
-//!   a wrong or hostile IP fails the handshake and we fall back to the mirrors
-//!   rather than downloading an exe from it.
+//! - certificates are validated, so an override says which address to dial and
+//!   never who may answer: a wrong or hostile IP fails the handshake and we fall
+//!   back to the mirrors rather than downloading an exe from it.
 //!
 //! Where the list comes from matters as much as what's in it: the users who
 //! need it are exactly the ones who cannot fetch it from GitHub. So several
@@ -100,6 +100,16 @@ const ALLOWED_SUFFIXES: &[&str] = &["github.com", "githubusercontent.com", "gith
 /// many.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
 
+/// How much of a hosts list is worth reading. The real one is a few hundred KB;
+/// this leaves it room to grow several times over and still stops a mirror that
+/// answers with something else.
+const MAX_LIST_BYTES: u64 = 4 * 1024 * 1024;
+
+/// How much of a DoH answer is worth reading. A handful of A records is a few
+/// hundred bytes; two of the three resolvers are domestic ones this feature
+/// exists precisely because it cannot take on trust.
+const MAX_DOH_BYTES: u64 = 64 * 1024;
+
 /// A domain → IPs mapping parsed out of a hosts file.
 pub type HostsMap = HashMap<String, Vec<IpAddr>>;
 
@@ -160,7 +170,11 @@ pub fn build_client(map: &HostsMap) -> Option<reqwest::Client> {
         return None;
     }
 
-    let mut builder = reqwest::Client::builder();
+    // Certificates are verified, so an override says which address to dial and
+    // never who may answer. A connect timeout matters more here than elsewhere:
+    // an override can name an address that has stopped answering, and each of
+    // those costs a full connect before the mirrors get a turn.
+    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(10));
     for (host, ips) in map {
         // Port 0 means "the conventional port for the scheme", so one override
         // covers both https and the plain-http redirects GitHub occasionally
@@ -221,7 +235,11 @@ async fn doh_lookup(client: &reqwest::Client, endpoint: &str, host: &str) -> Vec
     if !response.status().is_success() {
         return Vec::new();
     }
-    let Ok(json) = response.json::<serde_json::Value>().await else {
+    let Some(body) = crate::services::http_util::read_capped_text(response, MAX_DOH_BYTES).await
+    else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) else {
         return Vec::new();
     };
 
@@ -275,7 +293,9 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     if !response.status().is_success() {
         return None;
     }
-    response.text().await.ok()
+    // Every source here is replaceable, so one answering with something
+    // enormous is dropped rather than parsed.
+    crate::services::http_util::read_capped_text(response, MAX_LIST_BYTES).await
 }
 
 /// Download the list.

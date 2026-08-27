@@ -452,8 +452,32 @@ pub fn run() {
             let announcement_dismissed = !config.announcement_dismissed_id.is_empty();
             let update_channel = config.update_channel.clone();
             let github_hosts_enabled = config.github_hosts;
+            // Certificates are verified here. This client carries the update —
+            // the release listing, and the executable that replaces the running
+            // one, which is then written over it unsigned. Accepting any
+            // certificate meant anything on the path could answer in GitHub's
+            // place, and for the users the mirrors and the hosts override exist
+            // for, "anything on the path" is what those features are routing
+            // around.
+            //
+            // The exception was not a fix for anything: it dates from the
+            // initial commit, and the accelerator problem it looked like it
+            // might belong to is a different one — accelerators match by process
+            // name, which is why #37 renames the exe. Checked on a machine
+            // running AK and LeiGod together: GitHub still served its own
+            // Sectigo certificate and validated. An accelerator that does
+            // intercept installs its root in the Windows store, which native-tls
+            // reads, so those users validate too — against what their own
+            // machine already trusts.
+            //
+            // A connect timeout, and deliberately not a total one: this client
+            // carries the 12 MB update, and reqwest's `timeout` covers the body
+            // too — which is how a 300-second cap came to cut off mainland users
+            // who were downloading perfectly well, just slowly. Opening a
+            // connection is the part that should be quick; the download names
+            // its own deadlines, per chunk.
             let http_client = reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
+                .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("failed to build HTTP client");
             let update_client = http_client.clone();

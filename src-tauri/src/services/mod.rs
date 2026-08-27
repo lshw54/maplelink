@@ -16,6 +16,7 @@ pub mod game_launch_service;
 pub mod ggm_hotfix;
 pub mod ggm_launch;
 pub mod github_hosts;
+pub mod http_util;
 pub mod local_proxy;
 pub mod log_service;
 pub mod lr_service;
