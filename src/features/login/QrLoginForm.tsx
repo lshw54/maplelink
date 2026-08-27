@@ -7,6 +7,28 @@ import { useConfigStore } from "../../lib/stores/config-store";
 import { autoLaunchGameIfEnabled } from "../../lib/hooks/use-auth";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
 
+/**
+ * The QR image as a PNG blob, decoded from the `data:` URL it arrives in.
+ *
+ * Decoded rather than fetched, and synchronously, because `clipboard.write`
+ * needs the click that called it to still be in progress. Awaiting a `fetch`
+ * first — even of a `data:` URL, even for microseconds — spends that activation,
+ * and Chromium then rejects the write with `NotAllowedError`. That was the whole
+ * bug: the button worked exactly as written and the browser refused it.
+ */
+function pngFromDataUrl(url: string): Blob | null {
+  const comma = url.indexOf(",");
+  if (comma < 0 || !url.startsWith("data:image/png;base64,")) return null;
+  try {
+    const binary = atob(url.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: "image/png" });
+  } catch {
+    return null;
+  }
+}
+
 interface QrLoginFormProps {
   onBack: () => void;
 }
@@ -25,6 +47,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   const [enlarged, setEnlarged] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
+  /** Consecutive failed polls, to tell a blink apart from a dead session. */
+  const failures = useRef(0);
   const sessionIdRef = useRef<string | null>(useUiStore.getState().qrSessionId);
 
   function stopPolling() {
@@ -36,6 +60,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
   function startPolling(sessionId: string, data: QrCodeData) {
     stopPolling();
+    failures.current = 0;
     intervalRef.current = setInterval(async () => {
       try {
         const result: QrPollResult = await commands.qrLoginPoll(
@@ -73,8 +98,17 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           setStatus("expired");
           useUiStore.setState({ qrSessionId: null, qrData: null });
         }
+        failures.current = 0;
       } catch {
-        // Poll error — ignore, will retry
+        // One failed poll is nothing — the network blinks. A run of them means
+        // the session is no longer answering, and saying so is more honest than
+        // showing a code that cannot be scanned.
+        failures.current += 1;
+        if (failures.current >= 5) {
+          stopPolling();
+          setStatus("expired");
+          useUiStore.setState({ qrSessionId: null, qrData: null });
+        }
       }
     }, 2000);
   }
@@ -119,7 +153,11 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   }
 
   function handleRefresh() {
+    stopPolling();
     sessionIdRef.current = null;
+    // Cleared, not just replaced: if the new code never arrives, the old one
+    // must not sit there next to an error message looking scannable.
+    setQrData(null);
     useUiStore.setState({ qrSessionId: null, qrData: null });
     startedRef.current = false;
     startQr();
@@ -188,15 +226,18 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             <button
               type="button"
               onClick={async () => {
-                if (!qrData?.qrImageUrl) return;
+                const blob = qrData?.qrImageUrl ? pngFromDataUrl(qrData.qrImageUrl) : null;
+                if (!blob) return;
                 try {
-                  const resp = await fetch(qrData.qrImageUrl);
-                  const blob = await resp.blob();
-                  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1500);
-                } catch {
-                  /* clipboard write failed */
+                } catch (e) {
+                  // Silence here is why this went unreported as broken for so
+                  // long: the button simply did nothing.
+                  commands
+                    .logFrontendError("warn", "QrLoginForm", `copying the QR image failed: ${e}`)
+                    .catch(() => {});
                 }
               }}
               title={t("login.qr.copy")}
@@ -326,15 +367,23 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
       </div>
 
-      {status === "expired" && (
-        <button
-          type="button"
-          onClick={handleRefresh}
-          className="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-[var(--on-accent)] uppercase hover:opacity-90"
-        >
-          {t("login.qr.refresh")}
-        </button>
-      )}
+      {/* Always offered, not only once the poll has noticed the code is dead.
+          A code goes stale on its own after a while, and the poll cannot always
+          say so — the session may simply stop answering — which left the window
+          showing a QR that looked fine and could not be scanned, with no way to
+          ask for another. The old client kept this button visible too. */}
+      <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={status === "loading"}
+        className={`mt-4 w-full rounded-lg px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] uppercase transition-opacity ${
+          status === "expired" || status === "error"
+            ? "bg-accent text-[var(--on-accent)] hover:opacity-90"
+            : "border border-border bg-transparent text-text-dim hover:border-accent hover:text-accent"
+        } disabled:cursor-default disabled:opacity-40`}
+      >
+        {t("login.qr.refresh")}
+      </button>
 
       <button
         type="button"
