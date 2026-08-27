@@ -58,6 +58,24 @@ fn download_buffer_capacity(declared: u64) -> usize {
 /// mirror answering the API with something else.
 const MAX_RELEASE_JSON_BYTES: u64 = 8 * 1024 * 1024;
 
+/// How long the download may go without producing a byte.
+///
+/// This replaces a 300-second cap on the request *as a whole*, which is a
+/// different thing entirely: 11.8 MB inside 300 s demands a sustained 40 KB/s,
+/// and a mainland user on a slow ghproxy mirror is often under that. Those
+/// downloads were being cut off at five minutes for making steady progress —
+/// exactly the users the mirrors exist for.
+///
+/// What deserves a deadline is silence, not slowness. A mirror that stops
+/// sending is finished with us; one that trickles is still working.
+const DOWNLOAD_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A ceiling on the download regardless of progress, so a mirror sending one
+/// byte a minute cannot hold the update open indefinitely. Thirty minutes is
+/// about 6 KB/s for a 12 MB build — slower than anything worth waiting for, and
+/// far below what the old total timeout demanded.
+const DOWNLOAD_TOTAL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
 /// Read a release listing, bounded.
 async fn read_release_json(response: reqwest::Response) -> Result<serde_json::Value, UpdateError> {
     let body = http_util::read_capped(response, MAX_RELEASE_JSON_BYTES)
@@ -509,7 +527,7 @@ pub async fn download_update_with_progress(
     let response = client
         .get(download_url)
         .header("User-Agent", "MapleLink-Updater")
-        .timeout(std::time::Duration::from_secs(300))
+        // No total timeout: the deadlines that apply here are per-chunk, below.
         .send()
         .await
         .map_err(|e| UpdateError::DownloadFailed {
@@ -536,7 +554,27 @@ pub async fn download_update_with_progress(
         let mut last_emit = std::time::Instant::now();
         let mut stream_failed = false;
 
-        while let Some(chunk_result) = stream.next().await {
+        while let Some(chunk_result) =
+            match tokio::time::timeout(DOWNLOAD_IDLE_TIMEOUT, stream.next()).await {
+                Ok(next) => next,
+                Err(_) => {
+                    return Err(UpdateError::DownloadFailed {
+                        reason: format!(
+                            "the mirror stopped sending for {} seconds",
+                            DOWNLOAD_IDLE_TIMEOUT.as_secs()
+                        ),
+                    })
+                }
+            }
+        {
+            if start.elapsed() > DOWNLOAD_TOTAL_LIMIT {
+                return Err(UpdateError::DownloadFailed {
+                    reason: format!(
+                        "the download was still going after {} minutes",
+                        DOWNLOAD_TOTAL_LIMIT.as_secs() / 60
+                    ),
+                });
+            }
             match chunk_result {
                 Ok(chunk) => {
                     // The clamp only bounds the reservation. A sender free to
@@ -587,7 +625,8 @@ pub async fn download_update_with_progress(
             let fallback_resp = client
                 .get(download_url)
                 .header("User-Agent", "MapleLink-Updater")
-                .timeout(std::time::Duration::from_secs(300))
+                // Bounded by `DOWNLOAD_TOTAL_LIMIT` below rather than by a cap
+                // a slow mirror would trip while working.
                 .send()
                 .await
                 .map_err(|e| UpdateError::DownloadFailed {
@@ -596,11 +635,20 @@ pub async fn download_update_with_progress(
 
             // Same mirror, same ceiling — `bytes()` would read whatever it is
             // given.
-            let bytes = http_util::read_capped(fallback_resp, MAX_UPDATE_BYTES)
-                .await
-                .map_err(|reason| UpdateError::DownloadFailed {
-                    reason: format!("fallback read error: {reason}"),
-                })?;
+            let bytes = tokio::time::timeout(
+                DOWNLOAD_TOTAL_LIMIT,
+                http_util::read_capped(fallback_resp, MAX_UPDATE_BYTES),
+            )
+            .await
+            .map_err(|_| UpdateError::DownloadFailed {
+                reason: format!(
+                    "the download was still going after {} minutes",
+                    DOWNLOAD_TOTAL_LIMIT.as_secs() / 60
+                ),
+            })?
+            .map_err(|reason| UpdateError::DownloadFailed {
+                reason: format!("fallback read error: {reason}"),
+            })?;
 
             let _ = app_handle.emit(
                 "update-download-progress",
