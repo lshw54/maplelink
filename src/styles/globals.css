@@ -73,7 +73,11 @@
   body {
     background: var(--bg);
     color: var(--text);
+    /* The bundled Noto Sans TC renders every script (Latin included) so the
+       look no longer depends on which CJK font a machine happens to have —
+       the system stack below is only a safety net. */
     font-family:
+      "Noto Sans TC Variable",
       "Segoe UI",
       "Microsoft JhengHei UI",
       "Microsoft JhengHei",
