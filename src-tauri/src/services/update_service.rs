@@ -684,52 +684,95 @@ pub async fn download_update_with_progress(
 
     // Verified here rather than by the caller, so that no path to a downloaded
     // update exists that skips it.
-    let signature = fetch_signature(client, download_url).await?;
-    update_signature::verify(&buf, &signature)?;
-    tracing::info!("update signature verified");
+    verify_published_signature(client, download_url, &buf).await?;
 
     Ok(buf)
 }
 
-/// Fetch the `.sig` published beside the asset.
+/// Minisign signatures are a few hundred bytes.
+const MAX_SIGNATURE_BYTES: u64 = 8 * 1024;
+
+/// Where the `.sig` might be found, in the order worth trying.
 ///
-/// Asked for through the same URL the bytes came from, mirror prefix and all:
-/// there is no advantage in a different route, since the signature is checked
-/// against a key compiled in here rather than against whoever served it. A
-/// mirror can withhold it or corrupt it, and then the update does not happen —
-/// which is the correct outcome for bytes we cannot identify.
-async fn fetch_signature(
+/// The route the bytes arrived by goes first — it answered a moment ago, so it
+/// is the one most likely to answer again. After that, every other route to the
+/// same file: a mirror that serves a 12 MB asset and 404s the few hundred bytes
+/// beside it is an ordinary thing for a cache to do, and it should not be able
+/// to fail an update whose download already succeeded.
+///
+/// Asking several sources costs nothing in trust. The signature is checked
+/// against a key compiled into this binary, so a source can hand over something
+/// useless but never something that passes — which is why the download must come
+/// from one route and the signature may come from any.
+fn signature_candidates(download_url: &str) -> Vec<String> {
+    let direct = PROXY_MIRRORS
+        .iter()
+        .find_map(|mirror| download_url.strip_prefix(*mirror))
+        .unwrap_or(download_url);
+
+    let mut urls = vec![format!("{download_url}.sig")];
+    for candidate in std::iter::once(direct.to_string())
+        .chain(PROXY_MIRRORS.iter().map(|m| format!("{m}{direct}")))
+        .map(|u| format!("{u}.sig"))
+    {
+        if !urls.contains(&candidate) {
+            urls.push(candidate);
+        }
+    }
+    urls
+}
+
+/// Prove `bytes` are ours, using whichever published signature can be reached.
+///
+/// Each source is tried until one produces a signature that verifies. A
+/// signature that does not verify is not a reason to stop: the source may be
+/// serving a stale copy from a previous release, and the next one may hold the
+/// current one. Nothing is accepted that fails.
+async fn verify_published_signature(
     client: &reqwest::Client,
     download_url: &str,
-) -> Result<String, UpdateError> {
-    /// Minisign signatures are a few hundred bytes.
-    const MAX_SIGNATURE_BYTES: u64 = 8 * 1024;
+    bytes: &[u8],
+) -> Result<(), UpdateError> {
+    let mut refused: Option<UpdateError> = None;
 
-    let url = format!("{download_url}.sig");
-    let response = client
-        .get(&url)
-        .header("User-Agent", "MapleLink-Updater")
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|e| UpdateError::DownloadFailed {
-            reason: format!("could not fetch the update signature: {e}"),
-        })?;
-
-    if !response.status().is_success() {
-        return Err(UpdateError::DownloadFailed {
-            reason: format!(
-                "the update signature is missing (HTTP {} from {url})",
-                response.status()
-            ),
-        });
+    for url in signature_candidates(download_url) {
+        let Some(signature) = fetch_signature(client, &url).await else {
+            continue;
+        };
+        match update_signature::verify(bytes, &signature) {
+            Ok(()) => {
+                tracing::info!(%url, "update signature verified");
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::warn!(%url, "signature did not match the download: {e}");
+                refused = Some(e);
+            }
+        }
     }
 
-    http_util::read_capped_text(response, MAX_SIGNATURE_BYTES)
+    // A signature that was found and rejected says more than one that was never
+    // found, so it wins the error.
+    Err(refused.unwrap_or(UpdateError::DownloadFailed {
+        reason: "no source served a signature for this update".to_string(),
+    }))
+}
+
+/// Fetch one `.sig`. `None` for anything that isn't a body we can read — the
+/// caller has other places to look.
+async fn fetch_signature(client: &reqwest::Client, url: &str) -> Option<String> {
+    let response = client
+        .get(url)
+        .header("User-Agent", "MapleLink-Updater")
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
         .await
-        .ok_or_else(|| UpdateError::DownloadFailed {
-            reason: "the update signature could not be read".to_string(),
-        })
+        .ok()?;
+    if !response.status().is_success() {
+        tracing::debug!(%url, status = %response.status(), "no signature here");
+        return None;
+    }
+    http_util::read_capped_text(response, MAX_SIGNATURE_BYTES).await
 }
 
 /// Download, self-replace, and prompt restart.
@@ -1013,6 +1056,54 @@ mod tests {
         #[test]
         fn prop_enabled_auto_update_allows_background_check(_dummy in 0u8..10) {
             prop_assert!(should_check(false, true));
+        }
+    }
+
+    // ----- where a signature may be looked for -------------------------
+
+    /// A download that came straight from GitHub still gets every mirror as a
+    /// second chance.
+    #[test]
+    fn a_direct_download_can_still_look_at_the_mirrors() {
+        let urls = signature_candidates("https://github.com/lshw54/maplelink/x/MapleLink.exe");
+
+        assert_eq!(
+            urls[0],
+            "https://github.com/lshw54/maplelink/x/MapleLink.exe.sig"
+        );
+        assert_eq!(urls.len(), 1 + PROXY_MIRRORS.len(), "{urls:#?}");
+        assert!(urls.iter().all(|u| u.ends_with(".sig")));
+    }
+
+    /// A download that came through a mirror asks that mirror first — it
+    /// answered a moment ago — then GitHub itself, then the rest.
+    #[test]
+    fn a_mirrored_download_asks_that_mirror_first_then_the_others() {
+        let direct = "https://github.com/lshw54/maplelink/x/MapleLink.exe";
+        let urls = signature_candidates(&format!("https://ghproxy.net/{direct}"));
+
+        assert_eq!(urls[0], format!("https://ghproxy.net/{direct}.sig"));
+        assert_eq!(urls[1], format!("{direct}.sig"));
+        // The mirror it arrived by is not asked twice.
+        assert_eq!(urls.len(), 1 + PROXY_MIRRORS.len());
+        assert_eq!(
+            urls.iter().filter(|u| u.contains("ghproxy.net")).count(),
+            1,
+            "{urls:#?}"
+        );
+    }
+
+    /// Every route to the file, and no duplicates among them.
+    #[test]
+    fn no_source_is_asked_twice() {
+        for url in [
+            "https://github.com/x/MapleLink.exe",
+            "https://ghproxy.net/https://github.com/x/MapleLink.exe",
+            "https://ghfast.top/https://github.com/x/MapleLink.exe",
+        ] {
+            let urls = signature_candidates(url);
+            let unique: std::collections::HashSet<_> = urls.iter().collect();
+            assert_eq!(unique.len(), urls.len(), "{url} produced {urls:#?}");
         }
     }
 
