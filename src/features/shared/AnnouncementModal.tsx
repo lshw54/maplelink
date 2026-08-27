@@ -80,7 +80,7 @@ export function AnnouncementModal({
             <button
               disabled={locked}
               onClick={onMarkSeen}
-              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {locked
                 ? t("announcement.reading", { seconds: String(secondsLeft) })
@@ -89,7 +89,7 @@ export function AnnouncementModal({
           ) : (
             <button
               onClick={onClose}
-              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("announcement.close")}
             </button>

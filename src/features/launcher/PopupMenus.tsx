@@ -6,7 +6,7 @@ import { useConfigStore } from "../../lib/stores/config-store";
 const MENU_BASE =
   "z-50 animate-[ctxIn_0.15s_ease] rounded-[10px] border border-border bg-[var(--tb-card)] shadow-[0_8px_32px_rgba(0,0,0,0.3)]";
 const ITEM_BASE =
-  "flex w-full items-center text-left text-[var(--text)] transition-colors hover:bg-[rgba(232,162,58,0.08)] hover:text-accent";
+  "flex w-full items-center text-left text-[var(--text)] transition-colors hover:bg-[rgba(var(--accent-rgb),0.08)] hover:text-accent";
 
 /** Menu / item classes; the compact launcher gets a tighter menu so it doesn't
  *  dwarf the little window it pops over. */

@@ -78,7 +78,7 @@ export function BeanfunRenameDialog({
                 onConfirm();
               }}
               disabled={working}
-              className="flex-1 rounded-lg bg-accent py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex-1 rounded-lg bg-accent py-2 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {working ? t("beanfun_rename.renaming") : t("beanfun_rename.confirm")}
             </button>

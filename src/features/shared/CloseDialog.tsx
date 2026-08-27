@@ -51,7 +51,7 @@ export function CloseDialog({
             </button>
             <button
               onClick={() => onChoose("quit", remember)}
-              className="flex-1 rounded-lg bg-accent py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="flex-1 rounded-lg bg-accent py-2 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("close_dialog.quit")}
             </button>

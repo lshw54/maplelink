@@ -352,7 +352,7 @@ export function MainPage() {
             </button>
             <button
               onClick={handleConfirmRelaunch}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("launcher.relaunch_confirm")}
             </button>
@@ -446,7 +446,7 @@ export function MainPage() {
                     onClick={() => setClassicGame(classic)}
                     className={`rounded-full px-4 py-1.5 text-[12px] font-bold tracking-[1px] transition-all ${
                       classicGame === classic
-                        ? "bg-gradient-to-br from-[#c46a00] to-accent text-white shadow-[0_2px_10px_var(--accent-glow)]"
+                        ? "bg-gradient-to-br from-[var(--accent-deep)] to-accent text-[var(--on-accent)] shadow-[0_2px_10px_var(--accent-glow)]"
                         : "text-text-dim hover:text-[var(--text)]"
                     }`}
                   >
@@ -505,7 +505,7 @@ export function MainPage() {
             <button
               onClick={handlePlayClick}
               disabled={launching}
-              className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[#c46a00] to-accent text-[12px] font-extrabold tracking-[3px] text-white uppercase shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(232,162,58,0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(232,162,58,0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
+              className="relative mt-1 flex h-[72px] w-[72px] items-center justify-center rounded-full border-none bg-gradient-to-br from-[var(--accent-deep)] to-accent text-[12px] font-extrabold tracking-[3px] text-[var(--on-accent)] uppercase shadow-[0_4px_24px_var(--accent-glow),0_0_0_3px_rgba(var(--accent-rgb),0.1)] transition-all hover:scale-[1.08] hover:shadow-[0_6px_32px_rgba(var(--accent-rgb),0.5)] active:scale-[0.93] disabled:transform-none disabled:opacity-40"
             >
               {launching ? "..." : t("launcher.play")}
             </button>
@@ -543,7 +543,7 @@ export function MainPage() {
           {/* Top bar */}
           <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
             <div className="flex items-center gap-1.5 text-[12px] text-text-dim">
-              <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[12px] font-bold text-white">
+              <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[12px] font-bold text-[var(--on-accent)]">
                 {session?.accountName?.charAt(0)?.toUpperCase() ?? "?"}
               </div>
               <span className={`max-w-[200px] truncate ${nameMask}`}>
@@ -555,7 +555,7 @@ export function MainPage() {
               <span
                 ref={beansRef}
                 onClick={() => setBeansMenuOpen(!beansMenuOpen)}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[rgba(232,162,58,0.15)] bg-[rgba(232,162,58,0.08)] px-2 py-0.5 text-[12px] whitespace-nowrap transition-all hover:bg-[rgba(232,162,58,0.14)]"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb),0.15)] bg-[rgba(var(--accent-rgb),0.08)] px-2 py-0.5 text-[12px] whitespace-nowrap transition-all hover:bg-[rgba(var(--accent-rgb),0.14)]"
               >
                 <span className="font-semibold text-accent">
                   {t("launcher.beans")}: <b>{remainPoint}</b>

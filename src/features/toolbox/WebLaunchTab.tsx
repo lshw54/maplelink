@@ -256,7 +256,7 @@ export function WebLaunchTab() {
       <div
         className={`flex items-center justify-between rounded-[12px] border px-4 py-3.5 transition-colors ${
           enabled
-            ? "border-[rgba(232,162,58,0.4)] bg-[rgba(232,162,58,0.06)]"
+            ? "border-[rgba(var(--accent-rgb),0.4)] bg-[rgba(var(--accent-rgb),0.06)]"
             : "border-[var(--tb-border)] bg-[var(--tb-card)]"
         }`}
       >
@@ -376,7 +376,7 @@ export function WebLaunchTab() {
               !status?.gamaniaInstalled && (
                 <button
                   onClick={() => openExternal(GAMANIA_DOWNLOAD_URL)}
-                  className="shrink-0 rounded-lg border border-accent px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-[rgba(232,162,58,0.08)]"
+                  className="shrink-0 rounded-lg border border-accent px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-[rgba(var(--accent-rgb),0.08)]"
                 >
                   {t("web_launch.gamania_download")}
                 </button>
@@ -408,7 +408,7 @@ export function WebLaunchTab() {
           <button
             onClick={handleTest}
             disabled={testing !== null}
-            className="mt-0.5 self-start rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-95 disabled:opacity-50"
+            className="mt-0.5 self-start rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95 disabled:opacity-50"
           >
             {testing !== null
               ? testing === "game"

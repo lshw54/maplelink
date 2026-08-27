@@ -330,7 +330,7 @@ export function NormalLoginForm({
           <button
             type="button"
             onClick={() => setShowCheckDetail(true)}
-            className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(232,162,58,0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(232,162,58,0.12)]"
+            className="mb-3 flex w-full items-center gap-2 rounded-lg bg-[rgba(var(--accent-rgb),0.08)] px-3 py-2 text-left text-[11px] transition-colors hover:bg-[rgba(var(--accent-rgb),0.12)]"
           >
             {classicCheck === null ? (
               <span className="text-text-dim">{t("login.classic_checking")}</span>
@@ -366,7 +366,7 @@ export function NormalLoginForm({
             autoCorrect="off"
             data-form-type="other"
             spellCheck={false}
-            className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 pr-8 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
+            className="w-full rounded-lg border border-border bg-[var(--surface)] px-3.5 py-2.5 pr-8 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(var(--accent-rgb),0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
           />
           {savedAccounts.length > 0 && (
             <button
@@ -399,8 +399,8 @@ export function NormalLoginForm({
                   }}
                   className={`group flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--text)] transition-colors ${
                     idx === highlightIdx
-                      ? "bg-[rgba(232,162,58,0.12)]"
-                      : "hover:bg-[rgba(232,162,58,0.08)]"
+                      ? "bg-[rgba(var(--accent-rgb),0.12)]"
+                      : "hover:bg-[rgba(var(--accent-rgb),0.08)]"
                   }`}
                 >
                   <button
@@ -451,7 +451,7 @@ export function NormalLoginForm({
           placeholder={t("login.password_placeholder")}
           autoComplete="new-password"
           data-form-type="other"
-          className="w-full rounded-lg border border-border bg-[var(--surface)] py-2.5 pr-9 pl-3.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(232,162,58,0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-border bg-[var(--surface)] py-2.5 pr-9 pl-3.5 text-[13px] text-[var(--text)] placeholder:text-[12px] placeholder:text-text-dim focus:border-[rgba(var(--accent-rgb),0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none disabled:opacity-50"
         />
       </div>
 
@@ -502,8 +502,8 @@ export function NormalLoginForm({
       <label
         className={`mb-3 flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
           cafeMode
-            ? "border-[rgba(232,162,58,0.45)] bg-[rgba(232,162,58,0.08)]"
-            : "border-border bg-[var(--surface)] hover:border-[rgba(232,162,58,0.3)]"
+            ? "border-[rgba(var(--accent-rgb),0.45)] bg-[rgba(var(--accent-rgb),0.08)]"
+            : "border-border bg-[var(--surface)] hover:border-[rgba(var(--accent-rgb),0.3)]"
         }`}
       >
         <input
@@ -532,7 +532,7 @@ export function NormalLoginForm({
         <button
           type="submit"
           disabled={isLoading || !account.trim() || !password.trim()}
-          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-5 py-2.5 text-[11px] font-bold tracking-[2px] text-white uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex-1 rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-5 py-2.5 text-[11px] font-bold tracking-[2px] text-[var(--on-accent)] uppercase shadow-[0_2px_12px_var(--accent-glow)] transition-all hover:translate-y-[-1px] hover:shadow-[0_4px_20px_var(--accent-glow)] active:scale-95 disabled:transform-none disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isLoading
             ? t("login.logging_in")
@@ -747,7 +747,7 @@ export function NormalLoginForm({
               <button
                 type="button"
                 onClick={() => commands.openExternal(NGM_DOWNLOAD_URL).catch(() => {})}
-                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[12px] font-bold text-white shadow-[0_2px_10px_var(--accent-glow)] transition-opacity hover:opacity-90"
+                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[12px] font-bold text-[var(--on-accent)] shadow-[0_2px_10px_var(--accent-glow)] transition-opacity hover:opacity-90"
               >
                 ⬇ {t("login.classic_download")}
                 <span className="text-[10px] opacity-80">↗</span>
@@ -772,7 +772,7 @@ export function NormalLoginForm({
             <button
               type="button"
               onClick={() => setShowCheckDetail(false)}
-              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("common.ok")}
             </button>

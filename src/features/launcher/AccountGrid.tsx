@@ -294,7 +294,7 @@ function CardItem({
         isDragging ? "opacity-50" : ""
       } ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
-          ? "border-accent bg-[rgba(232,162,58,0.05)] shadow-[0_0_20px_rgba(232,162,58,0.15)]"
+          ? "border-accent bg-[rgba(var(--accent-rgb),0.05)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.15)]"
           : "border-border bg-[var(--surface)] hover:border-[var(--border)] hover:bg-[var(--surface-hover)]"
       }`}
     >
@@ -375,8 +375,8 @@ function ListItem({
       } ${isDragging ? "opacity-50" : ""} ${isBumped ? "animate-[dragBump_0.2s_ease]" : ""} ${
         isSelected
           ? compact
-            ? "border-[rgba(232,162,58,0.55)] bg-[rgba(232,162,58,0.08)]"
-            : "border-accent bg-[rgba(232,162,58,0.05)]"
+            ? "border-[rgba(var(--accent-rgb),0.55)] bg-[rgba(var(--accent-rgb),0.08)]"
+            : "border-accent bg-[rgba(var(--accent-rgb),0.05)]"
           : compact
             ? "border-transparent hover:bg-[var(--surface-hover)]"
             : "border-border bg-[var(--surface)] hover:bg-[var(--surface-hover)]"

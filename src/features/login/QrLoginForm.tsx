@@ -330,7 +330,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         <button
           type="button"
           onClick={handleRefresh}
-          className="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-white uppercase hover:opacity-90"
+          className="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] text-[var(--on-accent)] uppercase hover:opacity-90"
         >
           {t("login.qr.refresh")}
         </button>

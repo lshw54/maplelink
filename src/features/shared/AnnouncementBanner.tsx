@@ -15,7 +15,7 @@ export function AnnouncementBanner({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-[28px] shrink-0 items-center gap-2 border-b border-[rgba(232,162,58,0.2)] bg-[rgba(232,162,58,0.1)] pr-2 pl-3">
+    <div className="flex h-[28px] shrink-0 items-center gap-2 border-b border-[rgba(var(--accent-rgb),0.2)] bg-[rgba(var(--accent-rgb),0.1)] pr-2 pl-3">
       <button
         onClick={onOpen}
         className="flex min-w-0 flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80"

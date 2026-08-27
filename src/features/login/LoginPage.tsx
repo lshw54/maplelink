@@ -288,7 +288,7 @@ export function LoginPage() {
                 }
                 await doDirectLaunch();
               }}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("launcher.relaunch_confirm")}
             </button>

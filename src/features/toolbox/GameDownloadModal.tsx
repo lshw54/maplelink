@@ -36,7 +36,7 @@ function DownloadRow({ item }: { item: GameDownloadDto }) {
           </button>
           <button
             onClick={() => openExternal(item.url)}
-            className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-95"
+            className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-2.5 py-1 text-[11px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
           >
             {t("toolbox.download.download")}
           </button>

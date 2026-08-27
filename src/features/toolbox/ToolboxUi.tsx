@@ -47,7 +47,9 @@ export function Row({
 }) {
   const inner = (
     <>
-      <div className="min-w-0 flex-1">
+      {/* min-w keeps a long right-side value (a wrapping path) from crushing
+          the label into a one-character-per-line column. */}
+      <div className="min-w-[76px] flex-1">
         <div className="text-[11.5px] font-medium text-[var(--text)]">{label}</div>
         {hint && <div className="mt-0.5 text-[10.5px] leading-snug text-text-faint">{hint}</div>}
       </div>
@@ -87,7 +89,7 @@ export function Segmented<T extends string>({
             i < options.length - 1 ? "border-r border-[var(--tb-border)]" : ""
           } ${
             value === o.value
-              ? "bg-gradient-to-br from-accent to-[#c47a1a] text-white"
+              ? "bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[var(--on-accent)]"
               : "bg-transparent text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
           }`}
         >
@@ -125,10 +127,16 @@ export function RowButton({
   );
 }
 
-/** A value shown on a row's right side (paths, read-only info). */
+/** A value shown on a row's right side (paths, read-only info). Wraps rather
+ *  than truncates — a game path is only useful when all of it is readable. */
 export function RowValue({ children, mono }: { children: ReactNode; mono?: boolean }) {
   return (
-    <span className={`max-w-[220px] truncate text-[11px] text-text-dim ${mono ? "font-mono" : ""}`}>
+    <span
+      title={typeof children === "string" ? children : undefined}
+      className={`max-w-[300px] min-w-0 text-right text-[11px] leading-snug break-all text-text-dim ${
+        mono ? "font-mono" : ""
+      }`}
+    >
       {children}
     </span>
   );

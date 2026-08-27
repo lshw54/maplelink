@@ -111,6 +111,9 @@ pub struct AppConfig {
     /// covering it. Every other page keeps its size. Default: off.
     #[serde(default)]
     pub compact_ui: bool,
+    /// UI accent colour as `#rrggbb`. Empty = the built-in maple orange.
+    #[serde(default)]
+    pub accent_color: String,
 }
 
 fn default_true() -> bool {
@@ -159,6 +162,7 @@ impl Default for AppConfig {
             default_login_view: DefaultLoginView::Normal,
             github_hosts: true,
             compact_ui: false,
+            accent_color: String::new(),
         }
     }
 }

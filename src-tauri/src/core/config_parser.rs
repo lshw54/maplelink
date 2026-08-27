@@ -142,6 +142,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("compact_ui") {
             config.compact_ui = parse_bool(v, "compact_ui", defaults.compact_ui);
         }
+        if let Some(v) = general.get("accent_color") {
+            config.accent_color = v.clone();
+        }
     }
 
     // --- [game] ---
@@ -263,6 +266,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     ));
     out.push_str(&format!("github_hosts = {}\n", config.github_hosts));
     out.push_str(&format!("compact_ui = {}\n", config.compact_ui));
+    out.push_str(&format!("accent_color = {}\n", config.accent_color));
     out.push('\n');
 
     // [game]
@@ -614,6 +618,7 @@ x = not_a_number
             default_login_view: DefaultLoginView::Qr,
             github_hosts: false,
             compact_ui: true,
+            accent_color: "#3b82f6".into(),
         };
         let ini = serialize_ini(&original);
         let parsed = parse_ini(&ini).unwrap();

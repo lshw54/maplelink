@@ -3110,8 +3110,8 @@ mod tests {
         let cipher = des::Des::new_from_slice(key.as_bytes()).unwrap();
         let mut padded = plaintext.as_bytes().to_vec();
         padded.resize(padded.len().div_ceil(8) * 8, 0);
-        for chunk in padded.chunks_exact_mut(8) {
-            let block: &mut des::cipher::Array<u8, _> = chunk.try_into().unwrap();
+        for chunk in padded.as_chunks_mut::<8>().0 {
+            let block: &mut des::cipher::Array<u8, _> = chunk.as_mut_slice().try_into().unwrap();
             cipher.encrypt_block(block);
         }
         let cipher_hex: String = padded.iter().map(|b| format!("{b:02x}")).collect();

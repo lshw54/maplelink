@@ -31,7 +31,7 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             type="button"
             onClick={() => setAutoInput(!autoInput)}
             className={`relative h-[18px] w-8 shrink-0 rounded-[9px] transition-colors ${
-              autoInput ? "bg-[rgba(232,162,58,0.3)]" : "bg-[var(--surface-hover)]"
+              autoInput ? "bg-[rgba(var(--accent-rgb),0.3)]" : "bg-[var(--surface-hover)]"
             }`}
           >
             <span
@@ -53,8 +53,8 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
             copied
               ? "border-[rgba(74,222,128,0.4)] bg-[rgba(74,222,128,0.04)] text-green-400"
               : credentials
-                ? "border-[rgba(232,162,58,0.08)] bg-[rgba(232,162,58,0.04)] text-accent shadow-[0_0_20px_rgba(232,162,58,0.06)_inset,0_2px_8px_rgba(0,0,0,0.3)_inset] hover:border-[rgba(232,162,58,0.2)] hover:bg-[rgba(232,162,58,0.06)]"
-                : "cursor-default border-[rgba(232,162,58,0.08)] bg-[rgba(232,162,58,0.04)] text-text-faint"
+                ? "border-[rgba(var(--accent-rgb),0.08)] bg-[rgba(var(--accent-rgb),0.04)] text-accent shadow-[0_0_20px_rgba(var(--accent-rgb),0.06)_inset,0_2px_8px_rgba(0,0,0,0.3)_inset] hover:border-[rgba(var(--accent-rgb),0.2)] hover:bg-[rgba(var(--accent-rgb),0.06)]"
+                : "cursor-default border-[rgba(var(--accent-rgb),0.08)] bg-[rgba(var(--accent-rgb),0.04)] text-text-faint"
           }`}
         >
           {credentials?.otp ?? "••••••••••"}
@@ -95,33 +95,41 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           </span>
         </button>
 
-        {/* Split button: fetch, and a ▾ with copy one-time credentials */}
-        <div className="relative flex shrink-0 shadow-[0_2px_10px_var(--accent-glow)] transition-shadow hover:shadow-[0_4px_16px_var(--accent-glow)]">
-          <button
-            onClick={getOtp}
-            disabled={!selectedAccountId || busy}
-            title={t("launcher.get_otp")}
-            className="flex h-10 w-10 items-center justify-center rounded-l-[10px] bg-gradient-to-br from-accent to-[#c47a1a] text-base text-white transition-all active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
+        {/* Split button: fetch, and a ▾ with copy one-time credentials. One
+            gradient across the pair (per-half gradients restart at the seam,
+            which saturated accents make very visible). */}
+        <div className="relative shrink-0">
+          <div
+            className={`flex overflow-hidden rounded-[10px] bg-gradient-to-br from-accent to-[var(--accent-dark)] shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:shadow-[0_4px_16px_var(--accent-glow)] ${
+              !selectedAccountId ? "opacity-40" : ""
+            }`}
           >
-            ↻
-          </button>
-          <button
-            onClick={() => setMoreOpen(!moreOpen)}
-            disabled={!selectedAccountId}
-            aria-label="More"
-            className="flex h-10 w-5 items-center justify-center rounded-r-[10px] border-l border-white/25 bg-gradient-to-br from-accent to-[#c47a1a] text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <svg
-              width="9"
-              height="9"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
+            <button
+              onClick={getOtp}
+              disabled={!selectedAccountId || busy}
+              title={t("launcher.get_otp")}
+              className="flex h-10 w-10 items-center justify-center text-base text-[var(--on-accent)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
             >
-              <path d="M2 4l3 3 3-3" />
-            </svg>
-          </button>
+              ↻
+            </button>
+            <button
+              onClick={() => setMoreOpen(!moreOpen)}
+              disabled={!selectedAccountId}
+              aria-label="More"
+              className="flex h-10 w-5 items-center justify-center border-l border-white/25 text-[var(--on-accent)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
+            >
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M2 4l3 3 3-3" />
+              </svg>
+            </button>
+          </div>
           {moreOpen && (
             <OtpMoreMenu
               onClose={() => setMoreOpen(false)}

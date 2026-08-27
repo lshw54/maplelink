@@ -58,6 +58,7 @@ const KEY_MAP: Record<string, string> = {
   defaultLoginView: "default_login_view",
   githubHosts: "github_hosts",
   compactUi: "compact_ui",
+  accentColor: "accent_color",
   __reset__: "__reset__",
 };
 

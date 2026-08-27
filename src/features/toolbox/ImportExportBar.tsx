@@ -177,7 +177,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
             <button
               onClick={doExport}
               disabled={busy}
-              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {t("data.export_btn")}
             </button>
@@ -226,7 +226,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
             <button
               onClick={() => disposalPath && runImport(disposalPath, disposal)}
               disabled={busy}
-              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {t("data.import_btn")}
             </button>
@@ -264,7 +264,7 @@ export function ImportExportBar({ onImported }: { onImported: () => void }) {
             <button
               onClick={() => importPath && runImport(importPath, disposal, importPass)}
               disabled={busy || !importPass}
-              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {t("data.import_btn")}
             </button>

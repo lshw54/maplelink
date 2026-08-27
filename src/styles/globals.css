@@ -14,41 +14,54 @@
 
 @layer base {
   :root {
+    /* Accent family. `--accent-rgb` is the same colour as a bare triplet so
+       Tailwind arbitrary values can do rgba(var(--accent-rgb),0.08). The
+       darker pair ends the gradients. All four are overridden at runtime by
+       applyAccent() when the user picks their own colour. */
     --accent: #e8a23a;
-    --accent-glow: rgba(232, 162, 58, 0.35);
+    --accent-rgb: 232, 162, 58;
+    --accent-dark: #c47a1a;
+    --accent-deep: #c46a00;
+    /* Text on top of an accent fill — white for the default orange, flipped
+       to dark by applyAccent() for light accents. */
+    --on-accent: #ffffff;
+    --accent-glow: rgba(var(--accent-rgb), 0.35);
     --danger: #e81123;
     --radius: 10px;
-    --bg: #090b0f;
+    /* Solid backgrounds go through a *-user indirection: applyAccent() fills
+       the user vars with hue-tinted values (per theme), and clearing the
+       accent removes them so these defaults win again. */
+    --bg: var(--bg-user, #090b0f);
     --surface: rgba(255, 255, 255, 0.04);
     --surface-hover: rgba(255, 255, 255, 0.07);
     --border: rgba(255, 255, 255, 0.08);
     --text: rgba(255, 255, 255, 0.88);
     --text-dim: rgba(255, 255, 255, 0.45);
     --text-faint: rgba(255, 255, 255, 0.22);
-    --glow-bg: rgba(232, 162, 58, 0.06);
-    --input-focus-ring: rgba(232, 162, 58, 0.08);
-    --tb-bg: #090b0f;
-    --tb-nav-bg: #0a0c10;
-    --tb-card: #141619;
+    --glow-bg: rgba(var(--accent-rgb), 0.06);
+    --input-focus-ring: rgba(var(--accent-rgb), 0.08);
+    --tb-bg: var(--bg-user, #090b0f);
+    --tb-nav-bg: var(--nav-user, #0a0c10);
+    --tb-card: var(--card-user, #141619);
     --tb-border: rgba(255, 255, 255, 0.1);
-    --tb-input-bg: #0f1114;
+    --tb-input-bg: var(--input-user, #0f1114);
   }
 
   .light {
-    --bg: #f5f5f7;
+    --bg: var(--bg-user-light, #f5f5f7);
     --surface: rgba(0, 0, 0, 0.03);
     --surface-hover: rgba(0, 0, 0, 0.05);
     --border: rgba(0, 0, 0, 0.1);
     --text: #1d1d1f;
     --text-dim: #86868b;
     --text-faint: #b0b0b5;
-    --glow-bg: rgba(232, 162, 58, 0.04);
-    --input-focus-ring: rgba(232, 162, 58, 0.12);
-    --tb-bg: #f5f5f7;
-    --tb-nav-bg: #e4e4e8;
-    --tb-card: #ffffff;
+    --glow-bg: rgba(var(--accent-rgb), 0.04);
+    --input-focus-ring: rgba(var(--accent-rgb), 0.12);
+    --tb-bg: var(--bg-user-light, #f5f5f7);
+    --tb-nav-bg: var(--nav-user-light, #e4e4e8);
+    --tb-card: var(--card-user-light, #ffffff);
     --tb-border: rgba(0, 0, 0, 0.1);
-    --tb-input-bg: #f8f8fa;
+    --tb-input-bg: var(--input-user-light, #f8f8fa);
   }
 
   * {
@@ -60,11 +73,22 @@
   body {
     background: var(--bg);
     color: var(--text);
+    /* The bundled Noto Sans TC renders every script (Latin included) so the
+       look no longer depends on which CJK font a machine happens to have —
+       the system stack below is only a safety net. */
     font-family:
+      "Noto Sans TC Variable",
       "Segoe UI",
+      "Microsoft JhengHei UI",
+      "Microsoft JhengHei",
+      "Microsoft YaHei UI",
+      "Microsoft YaHei",
+      "PingFang TC",
+      "Noto Sans TC",
       system-ui,
       -apple-system,
       sans-serif;
+    -webkit-font-smoothing: antialiased;
     font-size: 15px;
     height: 100vh;
     overflow: hidden;

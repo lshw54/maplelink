@@ -38,7 +38,7 @@ export function OnboardingModal({ onClose }: OnboardingModalProps) {
       </div>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[rgba(232,162,58,0.12)] text-[26px]">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[rgba(var(--accent-rgb),0.12)] text-[26px]">
           {page.icon}
         </div>
         <h2 className="max-w-[420px] text-[15px] font-bold text-[var(--text)]">
@@ -86,7 +86,7 @@ export function OnboardingModal({ onClose }: OnboardingModalProps) {
         <button
           type="button"
           onClick={() => (last ? onClose() : setIndex((i) => i + 1))}
-          className="rounded-lg bg-gradient-to-br from-accent to-[#c47a1a] px-4 py-1.5 text-[12px] font-bold text-white shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] active:scale-95"
+          className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[12px] font-bold text-[var(--on-accent)] shadow-[0_2px_10px_var(--accent-glow)] transition-all hover:translate-y-[-1px] active:scale-95"
         >
           {last ? t("onboarding.done") : t("onboarding.next")}
         </button>

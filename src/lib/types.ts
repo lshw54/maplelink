@@ -82,6 +82,7 @@ export interface AppConfigDto {
   defaultLoginView: "normal" | "qr";
   githubHosts: boolean;
   compactUi: boolean;
+  accentColor: string;
 }
 
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */

@@ -18,6 +18,7 @@ import { useErrorToastStore } from "./lib/stores/error-toast-store";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
 import { useConfigStore } from "./lib/stores/config-store";
 import { ONBOARDING_ID } from "./lib/onboarding";
+import { applyAccent } from "./lib/accent";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -74,6 +75,7 @@ function useInitialConfigSync() {
     if (!config) return;
     setTheme(config.theme);
     setLanguage(config.language);
+    applyAccent(config.accentColor ?? "");
   }, [config, setTheme, setLanguage]);
 
   return isLoading;
@@ -335,7 +337,7 @@ export function App() {
         <AnnouncementBanner onOpen={openAnnouncement} onClose={hideAnnouncementBanner} />
       )}
       {showBanner && (
-        <div className="flex shrink-0 items-center justify-between bg-[rgba(232,162,58,0.12)] px-3 py-1.5 backdrop-blur-sm">
+        <div className="flex shrink-0 items-center justify-between bg-[rgba(var(--accent-rgb),0.12)] px-3 py-1.5 backdrop-blur-sm">
           <button
             onClick={() => setPendingUpdate(availableUpdate)}
             className="flex-1 text-left text-[11px] text-accent transition-opacity hover:opacity-80"
@@ -403,7 +405,7 @@ export function App() {
             )}
             {classicStatus === "launched" && <span className="text-[22px]">✓</span>}
             {classicStatus === "needs_login" && (
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(232,162,58,0.14)] text-[17px]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(var(--accent-rgb),0.14)] text-[17px]">
                 🔑
               </span>
             )}
@@ -502,7 +504,7 @@ export function App() {
                   commands.openExternal("https://maplestory.beanfun.com/download").catch(() => {});
                   setPatcherInfo(null);
                 }}
-                className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
               >
                 {t("launcher.patcher_download")}
               </button>

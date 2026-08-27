@@ -74,7 +74,7 @@ export function AccountManagerTab() {
                   onClick={() => setExpandedId(isExpanded ? null : key)}
                   className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[var(--surface-hover)]"
                 >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-[#c47a1a] text-[11px] font-bold text-white">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-[var(--accent-dark)] text-[11px] font-bold text-[var(--on-accent)]">
                     {a.account.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -91,7 +91,7 @@ export function AccountManagerTab() {
                     </span>
                   )}
                   {a.rememberPassword && (
-                    <span className="shrink-0 rounded bg-[rgba(232,162,58,0.1)] px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
+                    <span className="shrink-0 rounded bg-[rgba(var(--accent-rgb),0.1)] px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
                       💾
                     </span>
                   )}
