@@ -92,9 +92,20 @@ impl SessionState {
         let http_client = reqwest::Client::builder()
             .cookie_provider(cookie_jar.clone())
             .default_headers(default_headers)
+            // Certificates are verified. This connection carries the account
+            // name, the password and the one-time password, so an unverified
+            // one means anybody on the path can read them — a worse outcome
+            // than the update path, where the worst case is a substituted
+            // executable.
+            //
+            // The exception this replaces dates from the initial commit and was
+            // never a fix for anything. Checked on machines running AK, UU and
+            // LeiGod: every beanfun host served its own Amazon-issued
+            // certificate and validated. An accelerator that does intercept
+            // installs its root in the Windows store, which native-tls reads,
+            // so those users validate too.
             .http1_only()
             .timeout(Duration::from_secs(30))
-            .danger_accept_invalid_certs(true)
             .build()
             .expect("failed to build HTTP client");
 
