@@ -124,7 +124,10 @@ async fn fetch(client: &reqwest::Client) -> Option<(String, String)> {
         if !response.status().is_success() {
             continue;
         }
-        let Ok(body) = response.text().await else {
+        // The real file is under 200 bytes, and every source is a mirror of
+        // one repository — anything substantial is answering something else.
+        let Some(body) = crate::services::http_util::read_capped_text(response, 64 * 1024).await
+        else {
             continue;
         };
         let Some(pair) = parse(&body) else {

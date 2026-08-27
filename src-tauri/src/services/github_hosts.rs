@@ -100,6 +100,11 @@ const ALLOWED_SUFFIXES: &[&str] = &["github.com", "githubusercontent.com", "gith
 /// many.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
 
+/// How much of a hosts list is worth reading. The real one is a few hundred KB;
+/// this leaves it room to grow several times over and still stops a mirror that
+/// answers with something else.
+const MAX_LIST_BYTES: u64 = 4 * 1024 * 1024;
+
 /// A domain → IPs mapping parsed out of a hosts file.
 pub type HostsMap = HashMap<String, Vec<IpAddr>>;
 
@@ -275,7 +280,9 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     if !response.status().is_success() {
         return None;
     }
-    response.text().await.ok()
+    // Every source here is replaceable, so one answering with something
+    // enormous is dropped rather than parsed.
+    crate::services::http_util::read_capped_text(response, MAX_LIST_BYTES).await
 }
 
 /// Download the list.

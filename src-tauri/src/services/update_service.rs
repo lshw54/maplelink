@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use crate::core::error::UpdateError;
 use crate::models::update::UpdateInfo;
-use crate::services::github_hosts;
+use crate::services::{github_hosts, http_util};
 
 /// GitHub API endpoint for latest release.
 const GITHUB_API_URL: &str = "https://api.github.com/repos/lshw54/maplelink/releases/latest";
@@ -53,23 +53,19 @@ fn download_buffer_capacity(declared: u64) -> usize {
     declared.min(MAX_UPDATE_BYTES) as usize
 }
 
-/// Read a response body, stopping at `limit` rather than at whatever the sender
-/// decides to send.
-async fn read_capped(response: reqwest::Response, limit: u64) -> Result<Vec<u8>, String> {
-    use futures_util::StreamExt;
+/// How much release metadata is worth reading. Thirty releases with their
+/// assets is well under a megabyte; this is room to spare, and a stop on a
+/// mirror answering the API with something else.
+const MAX_RELEASE_JSON_BYTES: u64 = 8 * 1024 * 1024;
 
-    let mut body: Vec<u8> = Vec::with_capacity(download_buffer_capacity(
-        response.content_length().unwrap_or(0),
-    ));
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("{e}"))?;
-        if body.len() as u64 + chunk.len() as u64 > limit {
-            return Err(format!("the body ran past {limit} bytes"));
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
+/// Read a release listing, bounded.
+async fn read_release_json(response: reqwest::Response) -> Result<serde_json::Value, UpdateError> {
+    let body = http_util::read_capped(response, MAX_RELEASE_JSON_BYTES)
+        .await
+        .map_err(|reason| UpdateError::CheckFailed { reason })?;
+    serde_json::from_slice(&body).map_err(|e| UpdateError::CheckFailed {
+        reason: format!("invalid response: {e}"),
+    })
 }
 
 /// Cached connectivity probe result.
@@ -323,13 +319,7 @@ pub async fn check_for_update(
         let list_url =
             maybe_proxy_url("https://api.github.com/repos/lshw54/maplelink/releases?per_page=30");
         if let Some(response) = github_get(client, &list_url).await? {
-            let body: serde_json::Value =
-                response
-                    .json()
-                    .await
-                    .map_err(|e| UpdateError::CheckFailed {
-                        reason: format!("invalid response: {e}"),
-                    })?;
+            let body: serde_json::Value = read_release_json(response).await?;
             for release in body.as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
                 let tag = release["tag_name"]
                     .as_str()
@@ -347,13 +337,7 @@ pub async fn check_for_update(
         // Newest stable — covers the list-omission quirk above.
         let latest_url = maybe_proxy_url(GITHUB_API_URL);
         if let Some(response) = github_get(client, &latest_url).await? {
-            let release: serde_json::Value =
-                response
-                    .json()
-                    .await
-                    .map_err(|e| UpdateError::CheckFailed {
-                        reason: format!("invalid response: {e}"),
-                    })?;
+            let release: serde_json::Value = read_release_json(response).await?;
             if !release.is_null() {
                 let tag = release["tag_name"]
                     .as_str()
@@ -382,13 +366,7 @@ pub async fn check_for_update(
             None => return Ok(None),
         };
 
-        let release: serde_json::Value =
-            response
-                .json()
-                .await
-                .map_err(|e| UpdateError::CheckFailed {
-                    reason: format!("invalid response: {e}"),
-                })?;
+        let release: serde_json::Value = read_release_json(response).await?;
 
         if release.is_null() {
             return Ok(None);
@@ -618,7 +596,7 @@ pub async fn download_update_with_progress(
 
             // Same mirror, same ceiling — `bytes()` would read whatever it is
             // given.
-            let bytes = read_capped(fallback_resp, MAX_UPDATE_BYTES)
+            let bytes = http_util::read_capped(fallback_resp, MAX_UPDATE_BYTES)
                 .await
                 .map_err(|reason| UpdateError::DownloadFailed {
                     reason: format!("fallback read error: {reason}"),
