@@ -56,7 +56,18 @@ pub fn register() -> std::io::Result<()> {
             "game path not set — set the game path first",
         )
     })?;
-    let exe = std::env::current_exe()?.to_string_lossy().into_owned();
+    // `cmd.exe` reads a .bat byte-by-byte under the console's OEM code page, not
+    // UTF-8, so a per-user install under a non-ASCII profile name would reach
+    // `start` mangled. Write the 8.3 alias instead — same exe, pure ASCII.
+    let exe_path = std::env::current_exe()?;
+    let exe = crate::utils::ascii_path::ascii_safe_str(&exe_path);
+    if !exe.is_ascii() {
+        tracing::warn!(
+            path = %exe,
+            "MapleLink is installed under a non-ASCII path with no 8.3 alias; \
+             the web-launch helper .bat may not find it"
+        );
+    }
 
     // beanfun passes: <server> <port> BeanFun <account> <otp> → %4/%5. We echo
     // those (console, for scripts) and forward everything to MapleLink, tagged
@@ -751,11 +762,10 @@ fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
 /// app data dir once any normal launch has run).
 fn lr_proc_path() -> Option<std::path::PathBuf> {
     let appdata = std::env::var("APPDATA").ok()?;
-    let p = std::path::Path::new(&appdata)
-        .join("com.maplelink.app")
-        .join("lr")
-        .join("LRProc.exe");
-    p.exists().then_some(p)
+    let app_data_dir = std::path::Path::new(&appdata).join("com.maplelink.app");
+    // Not always `<app_data>/lr` — a non-ASCII profile name pushes the files
+    // elsewhere. See `lr_service::lr_dir_candidates`.
+    crate::services::lr_service::find_lr_proc(&app_data_dir)
 }
 
 /// Spawn `program` with `args`, cwd = the game folder. Returns whether spawn
