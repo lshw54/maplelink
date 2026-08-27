@@ -71,19 +71,7 @@ fn schedule_webview_wipe() {
         return;
     }
 
-    // Single-quote the paths for PowerShell; a data-dir path can't contain a
-    // single quote (it's under a fixed identifier), so no escaping is needed.
-    let removes = targets
-        .iter()
-        .map(|t| {
-            format!("Remove-Item -LiteralPath '{t}' -Recurse -Force -ErrorAction SilentlyContinue")
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    // Wait for us (and the webview children that exit with us) to release the
-    // lock, then remove the folders. The brief sleep covers child teardown.
-    let script =
-        format!("Wait-Process -Id {pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800; {removes}");
+    let script = webview_wipe_script(pid, &targets);
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -109,3 +97,72 @@ fn schedule_webview_wipe() {
 
 #[cfg(not(target_os = "windows"))]
 fn schedule_webview_wipe() {}
+
+/// The PowerShell one-liner the wipe helper runs: wait for us to exit, let the
+/// webview children follow, then delete each folder.
+///
+/// Paths are single-quoted, and any single quote inside them is doubled — the
+/// literal-string escape. The tail of each path is a fixed identifier but the
+/// head is the user profile, which can hold anything a Windows account name can,
+/// apostrophes included. Unescaped, the script is a *parse* error: PowerShell
+/// then runs none of it, not even the removes that would have been fine.
+fn webview_wipe_script(pid: u32, targets: &[String]) -> String {
+    let removes = targets
+        .iter()
+        .map(|t| {
+            let quoted = t.replace('\'', "''");
+            format!(
+                "Remove-Item -LiteralPath '{quoted}' -Recurse -Force -ErrorAction SilentlyContinue"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    format!(
+        "Wait-Process -Id {pid} -ErrorAction SilentlyContinue; \
+         Start-Sleep -Milliseconds 800; {removes}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wipe_script_quotes_each_target() {
+        let script = webview_wipe_script(
+            42,
+            &[r"C:\Users\bob\AppData\Local\com.maplelink.app\EBWebView".to_string()],
+        );
+        assert!(script.contains("Wait-Process -Id 42"));
+        assert!(script
+            .contains(r"-LiteralPath 'C:\Users\bob\AppData\Local\com.maplelink.app\EBWebView'"));
+    }
+
+    #[test]
+    fn wipe_script_escapes_an_apostrophe_in_the_profile_name() {
+        let script = webview_wipe_script(1, &[r"C:\Users\O'Brien\AppData\Local\x".to_string()]);
+        assert!(
+            script.contains(r"'C:\Users\O''Brien\AppData\Local\x'"),
+            "apostrophe not doubled: {script}"
+        );
+        // Every quote in the script must pair up, or PowerShell won't parse it.
+        assert_eq!(script.matches('\'').count() % 2, 0, "unbalanced: {script}");
+    }
+
+    #[test]
+    fn wipe_script_keeps_non_ascii_profile_names_verbatim() {
+        // The command line reaches PowerShell as UTF-16, so CJK and full-width
+        // punctuation need no special handling — but they must not be mangled.
+        let path = r"C:\Users\简体（管理員）\AppData\Local\com.maplelink.app\EBWebView";
+        let script = webview_wipe_script(1, &[path.to_string()]);
+        assert!(script.contains(path), "path altered: {script}");
+    }
+
+    #[test]
+    fn wipe_script_joins_multiple_targets() {
+        let script = webview_wipe_script(1, &["a".to_string(), "b".to_string()]);
+        assert_eq!(script.matches("Remove-Item").count(), 2);
+        assert!(script.contains("SilentlyContinue; Remove-Item -LiteralPath 'b'"));
+    }
+}

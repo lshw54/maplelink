@@ -11,6 +11,15 @@ use crate::core::error::ProcessError;
 /// The LR profile GUID for "Run in Taiwan (Admin)" in `LRConfig.xml`.
 pub const LR_PROFILE_GUID: &str = "ef3e7b42-a87c-4c07-ae3e-eeebeef12762";
 
+/// Environment roots that are ASCII on every Windows install, used when the
+/// user profile isn't — see [`lr_dir_candidates`]. `%ProgramData%` first: it is
+/// writable without elevation and is where shared app data belongs.
+const ASCII_ROOTS: [&str; 3] = ["ProgramData", "ALLUSERSPROFILE", "SystemDrive"];
+
+/// Folder we create under an [`ASCII_ROOTS`] entry. Kept in sync with the
+/// uninstaller (`installer/hooks.nsh`), which deletes it.
+const ASCII_FALLBACK_DIR: &str = "MapleLink";
+
 /// Embedded LR files — compiled directly into the binary so a standalone
 /// `maplelink.exe` works without needing a `resources/lr/` folder alongside it.
 const EMBEDDED_LR: &[(&str, &[u8])] = &[
@@ -147,8 +156,16 @@ async fn sync_lr_file(
 ///
 /// So: `<app_data_dir>/lr` when the profile name is ASCII (nearly everyone,
 /// unchanged); its 8.3 short form next, which names the very same directory and
-/// so needs no migration; and finally two roots that are ASCII on every Windows
-/// install, for volumes with 8.3 name creation switched off.
+/// so needs no migration; and then [`ASCII_ROOTS`], which are ASCII on every
+/// Windows install.
+///
+/// Do not count on the short form. Windows only generates an 8.3 alias for a
+/// name it cannot already express in the *OEM* code page — and on exactly the
+/// machines that hit this bug (a Chinese Windows, OEM 936/950) a Chinese folder
+/// name is expressible, so `GetShortPathNameW` hands the name straight back
+/// unchanged. `C:\Users\小明` shortens to `C:\Users\C3DD~1` on an English
+/// install and to `C:\Users\小明` on a Chinese one. The [`ASCII_ROOTS`] fallback
+/// is what actually carries these users.
 ///
 /// The plain long path is always last so a failure is a failed launch with the
 /// real path in the log, not an empty candidate list.
@@ -162,13 +179,13 @@ pub fn lr_dir_candidates(app_data_dir: &std::path::Path) -> Vec<PathBuf> {
 
     let mut candidates = Vec::new();
     // Same directory, ASCII alias — only exists once `primary` does, which is
-    // why the caller creates it before asking.
+    // why the caller creates it before asking. Often absent; see above.
     if let Some(short) = ascii_path::ascii_safe(&primary) {
         candidates.push(short);
     }
-    for var in ["ProgramData", "SystemDrive"] {
+    for var in ASCII_ROOTS {
         if let Some(root) = ascii_path::env_root(var) {
-            let dir = root.join("MapleLink").join("lr");
+            let dir = root.join(ASCII_FALLBACK_DIR).join("lr");
             if ascii_path::is_ascii(&dir) && !candidates.contains(&dir) {
                 candidates.push(dir);
             }
@@ -262,8 +279,18 @@ async fn pick_lr_dir(
 /// the same candidates [`ensure_lr_files`] would have written to and returns the
 /// first that is actually there.
 pub fn find_lr_proc(app_data_dir: &std::path::Path) -> Option<PathBuf> {
-    lr_dir_candidates(app_data_dir)
-        .into_iter()
+    lr_proc_in(&lr_dir_candidates(app_data_dir))
+}
+
+/// First `LRProc.exe` that exists across `candidates`.
+///
+/// Order matters on an upgrade: a user whose profile is not ASCII may still
+/// have last version's copy sitting in the app data dir, and picking that one
+/// would put us straight back into the rundll32 failure. Candidates are already
+/// ordered ASCII-first, so the fresh copy wins.
+fn lr_proc_in(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
         .map(|dir| dir.join("LRProc.exe"))
         .find(|exe| exe.is_file())
 }
@@ -351,19 +378,85 @@ mod tests {
         );
     }
 
+    /// The profile names actually seen in the wild: Simplified, Traditional,
+    /// mixed script, full-width punctuation, Latin-plus-Chinese.
+    const NON_ASCII_PROFILES: [&str; 5] = [
+        "小明",
+        "简体（管理員）",
+        "Dj小明",
+        "测试 user",
+        "ＭａｐｌｅＬｉｎｋ",
+    ];
+
     #[test]
     fn a_non_ascii_profile_falls_back_to_ascii_roots() {
-        let requested = std::path::Path::new(r"C:\Users\小明\AppData\Roaming\app");
-        let dirs = lr_dir_candidates(requested);
+        for profile in NON_ASCII_PROFILES {
+            let requested = PathBuf::from(format!(
+                r"C:\Users\{profile}\AppData\Roaming\com.maplelink.app"
+            ));
+            let dirs = lr_dir_candidates(&requested);
 
-        // Every usable fallback must survive LR's ANSI round-trip...
-        assert!(
-            dirs.iter().any(|p| crate::utils::ascii_path::is_ascii(p)),
-            "no ASCII candidate offered: {dirs:?}"
+            // Everything we would actually use has to survive LR's ANSI
+            // round-trip — the last entry is the log-only fallback.
+            let (log_only, usable) = dirs.split_last().unwrap();
+            assert!(
+                !usable.is_empty(),
+                "{profile}: no candidate but the original"
+            );
+            for dir in usable {
+                assert!(
+                    crate::utils::ascii_path::is_ascii(dir),
+                    "{profile}: non-ASCII candidate {}",
+                    dir.display()
+                );
+            }
+
+            // 8.3 aliases are unreliable on Chinese Windows, so an ASCII root
+            // must always be offered, not just a short name.
+            assert!(
+                usable.iter().any(|d| d.starts_with(r"C:\")
+                    && d.components().any(|c| c.as_os_str() == ASCII_FALLBACK_DIR)),
+                "{profile}: no ASCII-root fallback in {usable:?}"
+            );
+
+            // The original stays last so a total failure logs what was wanted.
+            assert_eq!(log_only, &requested.join("lr"));
+        }
+    }
+
+    #[test]
+    fn candidates_are_free_of_duplicates() {
+        // ProgramData and ALLUSERSPROFILE are the same directory on every
+        // modern Windows; offering it twice would double every retry.
+        let dirs = lr_dir_candidates(std::path::Path::new(r"C:\Users\小明\AppData\Roaming\app"));
+        let mut seen = dirs.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), dirs.len(), "duplicate candidate in {dirs:?}");
+    }
+
+    #[test]
+    fn a_stale_copy_in_the_non_ascii_dir_never_wins() {
+        let root = scratch("stale");
+        let ascii = root.join("ProgramData").join("MapleLink").join("lr");
+        let non_ascii = root.join("小明").join("lr");
+        for dir in [&ascii, &non_ascii] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("LRProc.exe"), b"stub").unwrap();
+        }
+
+        // Candidate order is ASCII-first, so an upgrade doesn't get dragged
+        // back to last version's unusable copy.
+        assert_eq!(
+            lr_proc_in(&[ascii.clone(), non_ascii.clone()]),
+            Some(ascii.join("LRProc.exe"))
         );
-
-        // ...and the original path stays last, so a failure logs what was wanted.
-        assert_eq!(dirs.last().unwrap(), &requested.join("lr"));
+        // ...but a lone old copy is still better than refusing to launch.
+        assert_eq!(
+            lr_proc_in(&[root.join("nope"), non_ascii.clone()]),
+            Some(non_ascii.join("LRProc.exe"))
+        );
+        assert_eq!(lr_proc_in(&[root.join("nope")]), None);
     }
 
     #[tokio::test]

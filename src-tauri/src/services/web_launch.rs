@@ -56,18 +56,11 @@ pub fn register() -> std::io::Result<()> {
             "game path not set — set the game path first",
         )
     })?;
-    // `cmd.exe` reads a .bat byte-by-byte under the console's OEM code page, not
-    // UTF-8, so a per-user install under a non-ASCII profile name would reach
-    // `start` mangled. Write the 8.3 alias instead — same exe, pure ASCII.
+    // Prefer the 8.3 alias: a pure-ASCII path is immune to however cmd.exe
+    // decodes the file. On a Chinese Windows there often isn't one, so the
+    // encoding below has to carry it instead.
     let exe_path = std::env::current_exe()?;
     let exe = crate::utils::ascii_path::ascii_safe_str(&exe_path);
-    if !exe.is_ascii() {
-        tracing::warn!(
-            path = %exe,
-            "MapleLink is installed under a non-ASCII path with no 8.3 alias; \
-             the web-launch helper .bat may not find it"
-        );
-    }
 
     // beanfun passes: <server> <port> BeanFun <account> <otp> → %4/%5. We echo
     // those (console, for scripts) and forward everything to MapleLink, tagged
@@ -84,7 +77,7 @@ pub fn register() -> std::io::Result<()> {
          echo MapleLink is launching the game...\r\n\
          pause>nul\r\n"
     );
-    std::fs::write(&bat, script)?;
+    std::fs::write(&bat, helper_bat_bytes(&script)?)?;
     let bat_str = bat.to_string_lossy().into_owned();
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -99,6 +92,28 @@ pub fn register() -> std::io::Result<()> {
     key.set_value(PATH_VALUE, &bat_str)?;
     tracing::info!("web-launch interception registered: {bat_str}");
     Ok(())
+}
+
+/// Encode the helper script the way `cmd.exe` will read it back.
+///
+/// A `.bat` is not a UTF-8 file: cmd decodes it byte-by-byte in the console's
+/// code page, so writing `start "" "C:\Users\小明\...\maplelink.exe"` as UTF-8
+/// hands `start` a mangled path and the web launch quietly does nothing. Almost
+/// every script here is pure ASCII and encodes identically either way; this only
+/// bites when MapleLink is installed per-user under a non-ASCII profile name and
+/// the volume has no 8.3 alias to fall back on.
+///
+/// Refuses rather than writes a script that cannot work, so the caller reports a
+/// failed registration instead of a helper that silently never launches.
+#[cfg(target_os = "windows")]
+fn helper_bat_bytes(script: &str) -> std::io::Result<Vec<u8>> {
+    crate::utils::ascii_path::oem_bytes(script).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "MapleLink's install path cannot be written to a .bat on this PC; \
+             reinstall it to a folder with an English name",
+        )
+    })
 }
 
 /// Point the Gamania key straight at MapleLink, with no console helper in

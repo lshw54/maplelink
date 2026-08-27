@@ -11,8 +11,17 @@
 //!   page, not UTF-8.
 //!
 //! Neither can be fixed where it happens, so the paths we hand them have to be
-//! ASCII. Windows already keeps an ASCII alias for most files — the 8.3 short
-//! name — so [`ascii_safe`] uses that when the real path isn't ASCII.
+//! ASCII. Windows keeps an ASCII alias for many files — the 8.3 short name — so
+//! [`ascii_safe`] uses that when the real path isn't ASCII.
+//!
+//! Do not lean on it, though. Windows only bothers generating an 8.3 alias for a
+//! name it cannot already express in the OEM code page, and on a Chinese Windows
+//! (OEM 936/950) a Chinese folder name *is* expressible: `GetShortPathNameW`
+//! then hands the name straight back. `C:\Users\小明` shortens on an English
+//! install and does not on a Chinese one — which is to say, not on the machines
+//! that need it. Callers need a second way out: somewhere else to put the file
+//! (see `lr_service::lr_dir_candidates`) or, for text a narrow reader will
+//! decode anyway, writing it in that reader's code page ([`oem_bytes`]).
 
 use std::path::{Path, PathBuf};
 
@@ -81,6 +90,83 @@ pub fn ascii_safe_str(path: &Path) -> String {
         .into_owned()
 }
 
+/// Encode `text` in the OEM code page — the encoding `cmd.exe` assumes when it
+/// reads a `.bat`, and the one a console inherits by default.
+///
+/// Writing a batch file as UTF-8 mangles every non-ASCII byte in it; a game
+/// folder or an install path under a Chinese profile name then never reaches
+/// `start`. Pure-ASCII text encodes identically either way, so this is a no-op
+/// for almost every user.
+///
+/// Returns `None` when the text cannot be represented in that code page at all,
+/// which is the caller's cue that no batch file will carry it.
+#[cfg(target_os = "windows")]
+pub fn oem_bytes(text: &str) -> Option<Vec<u8>> {
+    use windows_sys::Win32::Globalization::{GetOEMCP, WideCharToMultiByte};
+
+    if text.is_ascii() {
+        return Some(text.as_bytes().to_vec());
+    }
+
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let code_page = unsafe { GetOEMCP() };
+
+    // A UTF code page rejects the substitution-character arguments below, and
+    // needs none of them — everything round-trips.
+    const CP_UTF7: u32 = 65000;
+    const CP_UTF8: u32 = 65001;
+    let unicode_cp = matches!(code_page, CP_UTF7 | CP_UTF8);
+
+    let len = unsafe {
+        WideCharToMultiByte(
+            code_page,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        )
+    };
+    if len <= 0 {
+        return None;
+    }
+
+    let mut buf = vec![0u8; len as usize];
+    // Ask whether anything had to be replaced by a substitute character: a
+    // lossy encoding is a path that will not resolve, so report it as failure
+    // rather than write a file that silently points nowhere.
+    let mut used_default: i32 = 0;
+    let written = unsafe {
+        WideCharToMultiByte(
+            code_page,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            buf.as_mut_ptr(),
+            len,
+            std::ptr::null(),
+            if unicode_cp {
+                std::ptr::null_mut()
+            } else {
+                &mut used_default
+            },
+        )
+    };
+    if written <= 0 || used_default != 0 {
+        return None;
+    }
+
+    buf.truncate(written as usize);
+    Some(buf)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn oem_bytes(text: &str) -> Option<Vec<u8>> {
+    Some(text.as_bytes().to_vec())
+}
+
 /// An environment-variable directory root, normalised for [`Path::join`].
 ///
 /// `%SystemDrive%` is `C:` with no separator; joining onto that yields the
@@ -144,6 +230,29 @@ mod tests {
         }
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn ascii_text_encodes_byte_for_byte() {
+        // Every code page agrees on ASCII, so the common case must be untouched.
+        let script = "@echo off\r\nstart \"\" \"C:\\Program Files\\MapleLink\\maplelink.exe\"\r\n";
+        assert_eq!(oem_bytes(script).unwrap(), script.as_bytes());
+    }
+
+    #[test]
+    fn a_non_ascii_script_is_encoded_or_refused_never_mangled() {
+        // What `register` writes when MapleLink sits under a Chinese profile.
+        let script = "start \"\" \"C:\\Users\\简体（管理員）\\maplelink.exe\" --web-launch %*\r\n";
+        // Latin Windows (OEM 437/850) refuses outright, so the caller reports a
+        // failure instead of writing a dud helper. Chinese Windows (OEM 936/950)
+        // encodes it, and then cmd must read the ASCII scaffolding as written.
+        if let Some(bytes) = oem_bytes(script) {
+            assert!(bytes.starts_with(b"start \"\" \"C:\\Users\\"));
+            assert!(bytes.ends_with(b"\\maplelink.exe\" --web-launch %*\r\n"));
+            // A substituted character would be a path that resolves to nothing;
+            // the input has no '?' of its own.
+            assert!(!bytes.contains(&b'?'), "lossy encoding slipped through");
+        }
     }
 
     #[test]
