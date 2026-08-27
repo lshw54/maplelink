@@ -28,7 +28,10 @@
     --accent-glow: rgba(var(--accent-rgb), 0.35);
     --danger: #e81123;
     --radius: 10px;
-    --bg: #090b0f;
+    /* Solid backgrounds go through a *-user indirection: applyAccent() fills
+       the user vars with hue-tinted values (per theme), and clearing the
+       accent removes them so these defaults win again. */
+    --bg: var(--bg-user, #090b0f);
     --surface: rgba(255, 255, 255, 0.04);
     --surface-hover: rgba(255, 255, 255, 0.07);
     --border: rgba(255, 255, 255, 0.08);
@@ -37,15 +40,15 @@
     --text-faint: rgba(255, 255, 255, 0.22);
     --glow-bg: rgba(var(--accent-rgb), 0.06);
     --input-focus-ring: rgba(var(--accent-rgb), 0.08);
-    --tb-bg: #090b0f;
-    --tb-nav-bg: #0a0c10;
-    --tb-card: #141619;
+    --tb-bg: var(--bg-user, #090b0f);
+    --tb-nav-bg: var(--nav-user, #0a0c10);
+    --tb-card: var(--card-user, #141619);
     --tb-border: rgba(255, 255, 255, 0.1);
-    --tb-input-bg: #0f1114;
+    --tb-input-bg: var(--input-user, #0f1114);
   }
 
   .light {
-    --bg: #f5f5f7;
+    --bg: var(--bg-user-light, #f5f5f7);
     --surface: rgba(0, 0, 0, 0.03);
     --surface-hover: rgba(0, 0, 0, 0.05);
     --border: rgba(0, 0, 0, 0.1);
@@ -54,11 +57,11 @@
     --text-faint: #b0b0b5;
     --glow-bg: rgba(var(--accent-rgb), 0.04);
     --input-focus-ring: rgba(var(--accent-rgb), 0.12);
-    --tb-bg: #f5f5f7;
-    --tb-nav-bg: #e4e4e8;
-    --tb-card: #ffffff;
+    --tb-bg: var(--bg-user-light, #f5f5f7);
+    --tb-nav-bg: var(--nav-user-light, #e4e4e8);
+    --tb-card: var(--card-user-light, #ffffff);
     --tb-border: rgba(0, 0, 0, 0.1);
-    --tb-input-bg: #f8f8fa;
+    --tb-input-bg: var(--input-user-light, #f8f8fa);
   }
 
   * {

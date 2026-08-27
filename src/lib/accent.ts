@@ -46,7 +46,34 @@ function luminance([r, g, b]: Rgb): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-const VARS = ["--accent", "--accent-rgb", "--accent-dark", "--accent-deep", "--on-accent"];
+/** Hue in degrees (0..360) of an sRGB colour. */
+function hue([r, g, b]: Rgb): number {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return 0;
+  const d = max - min;
+  let h: number;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return Math.round(((h * 60) % 360 < 0 ? h * 60 + 360 : h * 60) * 10) / 10;
+}
+
+const VARS = [
+  "--accent",
+  "--accent-rgb",
+  "--accent-dark",
+  "--accent-deep",
+  "--on-accent",
+  "--bg-user",
+  "--nav-user",
+  "--card-user",
+  "--input-user",
+  "--bg-user-light",
+  "--nav-user-light",
+  "--card-user-light",
+  "--input-user-light",
+];
 
 /** Apply an accent colour app-wide; empty or invalid restores the default. */
 export function applyAccent(hex: string): void {
@@ -63,4 +90,19 @@ export function applyAccent(hex: string): void {
   root.style.setProperty("--accent-deep", toHex(darken(rgb, 0.25)));
   // Light accents (yellow, lime…) need dark text on top to stay legible.
   root.style.setProperty("--on-accent", luminance(rgb) > 0.55 ? "#1d1d1f" : "#ffffff");
+
+  // Tint the solid backgrounds with the accent's hue. Saturation/lightness
+  // mirror the default palette (whose near-blacks carry S≈25%, L≈5%), so only
+  // the temperature changes — contrast stays exactly as designed.
+  const h = hue(rgb);
+  const set = (name: string, s: number, l: number) =>
+    root.style.setProperty(name, `hsl(${h} ${s}% ${l}%)`);
+  set("--bg-user", 25, 4.7);
+  set("--nav-user", 23, 5.1);
+  set("--card-user", 11, 8.8);
+  set("--input-user", 14, 6.9);
+  set("--bg-user-light", 11, 96.5);
+  set("--nav-user-light", 8, 90);
+  set("--card-user-light", 20, 99);
+  set("--input-user-light", 20, 97.5);
 }
