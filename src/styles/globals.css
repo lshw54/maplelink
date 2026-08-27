@@ -75,9 +75,16 @@
     color: var(--text);
     font-family:
       "Segoe UI",
+      "Microsoft JhengHei UI",
+      "Microsoft JhengHei",
+      "Microsoft YaHei UI",
+      "Microsoft YaHei",
+      "PingFang TC",
+      "Noto Sans TC",
       system-ui,
       -apple-system,
       sans-serif;
+    -webkit-font-smoothing: antialiased;
     font-size: 15px;
     height: 100vh;
     overflow: hidden;
