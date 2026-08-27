@@ -11,6 +11,15 @@ use crate::core::error::ProcessError;
 /// The LR profile GUID for "Run in Taiwan (Admin)" in `LRConfig.xml`.
 pub const LR_PROFILE_GUID: &str = "ef3e7b42-a87c-4c07-ae3e-eeebeef12762";
 
+/// Environment roots that are ASCII on every Windows install, used when the
+/// user profile isn't — see [`lr_dir_candidates`]. `%ProgramData%` first: it is
+/// writable without elevation and is where shared app data belongs.
+const ASCII_ROOTS: [&str; 3] = ["ProgramData", "ALLUSERSPROFILE", "SystemDrive"];
+
+/// Folder we create under an [`ASCII_ROOTS`] entry. Kept in sync with the
+/// uninstaller (`installer/hooks.nsh`), which deletes it.
+const ASCII_FALLBACK_DIR: &str = "MapleLink";
+
 /// Embedded LR files — compiled directly into the binary so a standalone
 /// `maplelink.exe` works without needing a `resources/lr/` folder alongside it.
 const EMBEDDED_LR: &[(&str, &[u8])] = &[
@@ -134,10 +143,64 @@ async fn sync_lr_file(
     }
 }
 
-/// Extract embedded LR files to the app data directory.
+/// Every directory the LR files may live in, best first.
 ///
-/// Returns the path to `LRProc.exe`. All LR files are placed in
-/// `<app_data_dir>/lr/` so they are co-located as required by LRProc.
+/// **LR cannot be given a non-ASCII path.** It bridges 32/64-bit by reading its
+/// own DLL path back with `GetModuleFileNameA` and formatting it into
+/// `rundll32.exe "%hs",#1` — a narrow string, converted under the code page LR
+/// has itself just spoofed to 950. A profile name outside that code page (a
+/// Chinese account name, Simplified or Traditional; a full-width symbol) comes
+/// back mangled, and rundll32 pops "the specified module could not be found".
+/// The conversion lives inside LR's shipped binaries, so the only lever we have
+/// is where we put the files.
+///
+/// So: `<app_data_dir>/lr` when the profile name is ASCII (nearly everyone,
+/// unchanged); its 8.3 short form next, which names the very same directory and
+/// so needs no migration; and then [`ASCII_ROOTS`], which are ASCII on every
+/// Windows install.
+///
+/// Do not count on the short form. Windows only generates an 8.3 alias for a
+/// name it cannot already express in the *OEM* code page — and on exactly the
+/// machines that hit this bug (a Chinese Windows, OEM 936/950) a Chinese folder
+/// name is expressible, so `GetShortPathNameW` hands the name straight back
+/// unchanged. `C:\Users\小明` shortens to `C:\Users\C3DD~1` on an English
+/// install and to `C:\Users\小明` on a Chinese one. The [`ASCII_ROOTS`] fallback
+/// is what actually carries these users.
+///
+/// The plain long path is always last so a failure is a failed launch with the
+/// real path in the log, not an empty candidate list.
+pub fn lr_dir_candidates(app_data_dir: &std::path::Path) -> Vec<PathBuf> {
+    use crate::utils::ascii_path;
+
+    let primary = app_data_dir.join("lr");
+    if ascii_path::is_ascii(&primary) {
+        return vec![primary];
+    }
+
+    let mut candidates = Vec::new();
+    // Same directory, ASCII alias — only exists once `primary` does, which is
+    // why the caller creates it before asking. Often absent; see above.
+    if let Some(short) = ascii_path::ascii_safe(&primary) {
+        candidates.push(short);
+    }
+    for var in ASCII_ROOTS {
+        if let Some(root) = ascii_path::env_root(var) {
+            let dir = root.join(ASCII_FALLBACK_DIR).join("lr");
+            if ascii_path::is_ascii(&dir) && !candidates.contains(&dir) {
+                candidates.push(dir);
+            }
+        }
+    }
+    candidates.push(primary);
+    candidates
+}
+
+/// Extract embedded LR files to an ASCII-safe directory.
+///
+/// Returns the path to `LRProc.exe`. All LR files are placed in one directory
+/// so they are co-located as required by LRProc — normally `<app_data_dir>/lr/`,
+/// but see [`lr_dir_candidates`] for why a non-ASCII user profile forces us
+/// somewhere else.
 ///
 /// Every file is re-extracted on each call (see [`sync_lr_file`]) rather than
 /// compared first, so the shipped binaries always win over whatever is on disk.
@@ -152,19 +215,84 @@ pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, P
             reason: format!("Failed to resolve app data directory: {e}"),
         })?;
 
-    let lr_dir = app_data_dir.join("lr");
-    tokio::fs::create_dir_all(&lr_dir)
-        .await
-        .map_err(|e| ProcessError::SpawnFailed {
-            path: lr_dir.display().to_string(),
-            reason: format!("Failed to create LR directory: {e}"),
-        })?;
+    // Create the normal location first: a short name can only be read back off
+    // a directory that exists, and this is where the files go anyway when the
+    // path is already ASCII.
+    let primary = app_data_dir.join("lr");
+    let primary_err = tokio::fs::create_dir_all(&primary).await.err();
+
+    let candidates = lr_dir_candidates(&app_data_dir);
+    let lr_dir = pick_lr_dir(&candidates, primary_err).await?;
+
+    if lr_dir != primary {
+        tracing::info!(
+            requested = %primary.display(),
+            using = %lr_dir.display(),
+            "user profile is not ASCII — extracting LR somewhere Locale Remulator can name"
+        );
+    }
 
     for &(filename, data) in EMBEDDED_LR {
         sync_lr_file(&lr_dir, filename, data).await?;
     }
 
     Ok(lr_dir.join("LRProc.exe"))
+}
+
+/// First candidate we can actually create, or a spawn error naming them all.
+///
+/// `primary_err` is the failure from creating the first candidate, if any — it
+/// is the most useful thing to report when nothing works.
+async fn pick_lr_dir(
+    candidates: &[PathBuf],
+    primary_err: Option<std::io::Error>,
+) -> Result<PathBuf, ProcessError> {
+    let mut last_err = primary_err;
+
+    for dir in candidates {
+        match tokio::fs::create_dir_all(dir).await {
+            Ok(()) => return Ok(dir.clone()),
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), "could not create LR directory: {e}");
+                last_err = Some(e);
+            }
+        }
+    }
+
+    let tried = candidates
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(ProcessError::SpawnFailed {
+        path: tried,
+        reason: match last_err {
+            Some(e) => format!("Failed to create LR directory: {e}"),
+            None => "Failed to create LR directory".to_string(),
+        },
+    })
+}
+
+/// Locate an already-extracted `LRProc.exe` without an `AppHandle`.
+///
+/// Used by the headless web-launch path, which runs before Tauri starts. Walks
+/// the same candidates [`ensure_lr_files`] would have written to and returns the
+/// first that is actually there.
+pub fn find_lr_proc(app_data_dir: &std::path::Path) -> Option<PathBuf> {
+    lr_proc_in(&lr_dir_candidates(app_data_dir))
+}
+
+/// First `LRProc.exe` that exists across `candidates`.
+///
+/// Order matters on an upgrade: a user whose profile is not ASCII may still
+/// have last version's copy sitting in the app data dir, and picking that one
+/// would put us straight back into the rundll32 failure. Candidates are already
+/// ordered ASCII-first, so the fresh copy wins.
+fn lr_proc_in(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .map(|dir| dir.join("LRProc.exe"))
+        .find(|exe| exe.is_file())
 }
 
 /// Check if the system locale is Traditional Chinese.
@@ -239,6 +367,121 @@ mod tests {
         let out = sync_lr_file(&dir, "f.bin", b"BBBB").await.unwrap();
         assert_eq!(out, SyncOutcome::Written);
         assert_eq!(std::fs::read(dir.join("f.bin")).unwrap(), b"BBBB");
+    }
+
+    #[test]
+    fn an_ascii_profile_keeps_the_files_in_app_data() {
+        let dirs = lr_dir_candidates(std::path::Path::new(r"C:\Users\bob\AppData\Roaming\app"));
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from(r"C:\Users\bob\AppData\Roaming\app\lr")]
+        );
+    }
+
+    /// The profile names actually seen in the wild: Simplified, Traditional,
+    /// mixed script, full-width punctuation, Latin-plus-Chinese.
+    const NON_ASCII_PROFILES: [&str; 5] = [
+        "小明",
+        "简体（管理員）",
+        "Dj小明",
+        "测试 user",
+        "ＭａｐｌｅＬｉｎｋ",
+    ];
+
+    #[test]
+    fn a_non_ascii_profile_falls_back_to_ascii_roots() {
+        for profile in NON_ASCII_PROFILES {
+            let requested = PathBuf::from(format!(
+                r"C:\Users\{profile}\AppData\Roaming\com.maplelink.app"
+            ));
+            let dirs = lr_dir_candidates(&requested);
+
+            // Everything we would actually use has to survive LR's ANSI
+            // round-trip — the last entry is the log-only fallback.
+            let (log_only, usable) = dirs.split_last().unwrap();
+            assert!(
+                !usable.is_empty(),
+                "{profile}: no candidate but the original"
+            );
+            for dir in usable {
+                assert!(
+                    crate::utils::ascii_path::is_ascii(dir),
+                    "{profile}: non-ASCII candidate {}",
+                    dir.display()
+                );
+            }
+
+            // 8.3 aliases are unreliable on Chinese Windows, so an ASCII root
+            // must always be offered, not just a short name.
+            assert!(
+                usable.iter().any(|d| d.starts_with(r"C:\")
+                    && d.components().any(|c| c.as_os_str() == ASCII_FALLBACK_DIR)),
+                "{profile}: no ASCII-root fallback in {usable:?}"
+            );
+
+            // The original stays last so a total failure logs what was wanted.
+            assert_eq!(log_only, &requested.join("lr"));
+        }
+    }
+
+    #[test]
+    fn candidates_are_free_of_duplicates() {
+        // ProgramData and ALLUSERSPROFILE are the same directory on every
+        // modern Windows; offering it twice would double every retry.
+        let dirs = lr_dir_candidates(std::path::Path::new(r"C:\Users\小明\AppData\Roaming\app"));
+        let mut seen = dirs.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), dirs.len(), "duplicate candidate in {dirs:?}");
+    }
+
+    #[test]
+    fn a_stale_copy_in_the_non_ascii_dir_never_wins() {
+        let root = scratch("stale");
+        let ascii = root.join("ProgramData").join("MapleLink").join("lr");
+        let non_ascii = root.join("小明").join("lr");
+        for dir in [&ascii, &non_ascii] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("LRProc.exe"), b"stub").unwrap();
+        }
+
+        // Candidate order is ASCII-first, so an upgrade doesn't get dragged
+        // back to last version's unusable copy.
+        assert_eq!(
+            lr_proc_in(&[ascii.clone(), non_ascii.clone()]),
+            Some(ascii.join("LRProc.exe"))
+        );
+        // ...but a lone old copy is still better than refusing to launch.
+        assert_eq!(
+            lr_proc_in(&[root.join("nope"), non_ascii.clone()]),
+            Some(non_ascii.join("LRProc.exe"))
+        );
+        assert_eq!(lr_proc_in(&[root.join("nope")]), None);
+    }
+
+    #[tokio::test]
+    async fn pick_lr_dir_skips_candidates_it_cannot_create() {
+        let good = scratch("pick").join("lr");
+        // A path under a *file* can never be created.
+        let blocked = scratch("pick_blocked").join("wall");
+        std::fs::write(&blocked, b"x").unwrap();
+
+        let chosen = pick_lr_dir(&[blocked.join("lr"), good.clone()], None)
+            .await
+            .unwrap();
+        assert_eq!(chosen, good);
+        assert!(good.is_dir());
+    }
+
+    #[tokio::test]
+    async fn pick_lr_dir_reports_every_path_it_tried() {
+        let blocked = scratch("pick_none").join("wall");
+        std::fs::write(&blocked, b"x").unwrap();
+        let err = pick_lr_dir(&[blocked.join("a"), blocked.join("b")], None)
+            .await
+            .unwrap_err();
+        let ProcessError::SpawnFailed { path, .. } = err;
+        assert!(path.contains("a") && path.contains("b"), "got {path}");
     }
 
     #[tokio::test]

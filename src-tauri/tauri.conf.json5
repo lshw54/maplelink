@@ -54,7 +54,10 @@
     "windows": {
       "nsis": {
         "installMode": "both",
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        // Removes the ASCII fallback dir the LR extraction may create outside
+        // $INSTDIR (non-ASCII Windows profile names). See the file's header.
+        "installerHooks": "../installer/hooks.nsh"
       }
     }
   }
