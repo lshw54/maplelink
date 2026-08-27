@@ -452,8 +452,27 @@ pub fn run() {
             let announcement_dismissed = !config.announcement_dismissed_id.is_empty();
             let update_channel = config.update_channel.clone();
             let github_hosts_enabled = config.github_hosts;
+            // Certificates are verified here. This client carries the update —
+            // the release listing, and the executable that replaces the running
+            // one, which is then written over it unsigned. Accepting any
+            // certificate meant anything on the path could answer in GitHub's
+            // place, and for the users the mirrors and the hosts override exist
+            // for, "anything on the path" is what those features are routing
+            // around.
+            //
+            // The exception was not a fix for anything: it dates from the
+            // initial commit, and the accelerator problem it looked like it
+            // might belong to is a different one — accelerators match by process
+            // name, which is why #37 renames the exe. Checked on a machine
+            // running AK and LeiGod together: GitHub still served its own
+            // Sectigo certificate and validated. An accelerator that does
+            // intercept installs its root in the Windows store, which native-tls
+            // reads, so those users validate too — against what their own
+            // machine already trusts.
+            //
+            // beanfun's own clients keep their exception. Nothing here talks to
+            // beanfun, and its certificates have not been checked the same way.
             let http_client = reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
                 .build()
                 .expect("failed to build HTTP client");
             let update_client = http_client.clone();

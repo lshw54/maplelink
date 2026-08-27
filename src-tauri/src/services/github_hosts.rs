@@ -17,9 +17,9 @@
 //! - addresses that arrive over DNS rather than from the curated list must sit
 //!   inside GitHub's own address blocks, which is also what makes a poisoned
 //!   answer detectable;
-//! - the client built here validates certificates, unlike the app-wide one, so
-//!   a wrong or hostile IP fails the handshake and we fall back to the mirrors
-//!   rather than downloading an exe from it.
+//! - certificates are validated, so an override says which address to dial and
+//!   never who may answer: a wrong or hostile IP fails the handshake and we fall
+//!   back to the mirrors rather than downloading an exe from it.
 //!
 //! Where the list comes from matters as much as what's in it: the users who
 //! need it are exactly the ones who cannot fetch it from GitHub. So several
