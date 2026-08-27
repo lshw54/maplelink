@@ -29,6 +29,15 @@ function pngFromDataUrl(url: string): Blob | null {
   }
 }
 
+/**
+ * How long to keep asking whether a code has been scanned.
+ *
+ * Generous — a real code expires well before this — because the cost of being
+ * wrong is one press of a refresh button that is now always on screen, while
+ * the cost of no limit at all is an open window polling beanfun forever.
+ */
+const POLL_LIFETIME_MS = 10 * 60 * 1000;
+
 interface QrLoginFormProps {
   onBack: () => void;
 }
@@ -61,7 +70,20 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   function startPolling(sessionId: string, data: QrCodeData) {
     stopPolling();
     failures.current = 0;
+    const startedAt = Date.now();
     intervalRef.current = setInterval(async () => {
+      // A code does not live this long, and asking after it does is not free:
+      // every two seconds is thirty requests a minute to beanfun, and a window
+      // left open all afternoon was sending thousands. That is a plausible way
+      // to end up throttled — which would also explain normal login failing
+      // afterwards, since it reaches the same host, and throttling follows the
+      // address rather than the session.
+      if (Date.now() - startedAt > POLL_LIFETIME_MS) {
+        stopPolling();
+        setStatus("expired");
+        useUiStore.setState({ qrSessionId: null, qrData: null });
+        return;
+      }
       try {
         const result: QrPollResult = await commands.qrLoginPoll(
           sessionId,
