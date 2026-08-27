@@ -28,8 +28,8 @@ pub fn des_ecb_decrypt_hex(hex_ciphertext: &str, key_ascii: &str) -> Option<Stri
     }
 
     let mut plaintext = ciphertext;
-    for chunk in plaintext.chunks_exact_mut(8) {
-        let block: &mut des::cipher::Array<u8, _> = chunk.try_into().unwrap();
+    for chunk in plaintext.as_chunks_mut::<8>().0 {
+        let block: &mut des::cipher::Array<u8, _> = chunk.as_mut_slice().try_into().unwrap();
         cipher.decrypt_block(block);
     }
 
