@@ -47,6 +47,17 @@ const POLL_LIFETIME_MS = 5 * 60 * 1000;
  */
 const QR_LIFETIME_MS = 3 * 60 * 1000;
 
+/**
+ * How much of beanfun's quiet zone to crop away.
+ *
+ * Their PNG carries far more white around the code than the standard's four
+ * modules, and that white scales with the image — so a bigger code is a bigger
+ * margin, not a fuller one. Clipping 6.5% from each edge leaves well over the
+ * required quiet zone on every code size seen, and is the only thing that
+ * changes the proportion rather than the size.
+ */
+const QR_ZOOM = 1.15;
+
 /** `m:ss`, or `0:00` once there is nothing left. */
 function asClock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -236,8 +247,12 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   // (still comfortably scannable; "enlarge" is a click away).
   const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   const expired = status === "expired" || status === "error";
-  const qrBox = enlarged ? "p-4" : compact ? "h-[172px] w-[172px] p-2" : "h-[228px] w-[228px] p-2";
-  const qrPx = enlarged ? 396 : compact ? 156 : 212;
+  const qrBox = enlarged
+    ? "p-4"
+    : compact
+      ? "h-[172px] w-[172px] p-2.5"
+      : "h-[228px] w-[228px] p-3";
+  const qrPx = enlarged ? 392 : compact ? 152 : 204;
 
   return (
     <div className="flex w-full flex-col items-center">
@@ -269,16 +284,29 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           {status === "loading" ? (
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
           ) : qrData?.qrImageUrl ? (
-            <img
-              src={qrData.qrImageUrl}
-              alt="QR Code"
-              className={`block rounded transition-all ${expired ? "opacity-25 blur-[2px]" : ""}`}
-              style={{
-                width: qrPx,
-                height: qrPx,
-                imageRendering: "pixelated",
-              }}
-            />
+            <div
+              className="overflow-hidden rounded"
+              style={{ width: qrPx, height: qrPx }}
+              aria-hidden={false}
+            >
+              <img
+                src={qrData.qrImageUrl}
+                alt="QR Code"
+                className={`block transition-all ${expired ? "opacity-25 blur-[2px]" : ""}`}
+                style={{
+                  width: qrPx,
+                  height: qrPx,
+                  // Scaled inside a clipped box rather than made larger: most of
+                  // the white is beanfun's own quiet zone, which grows with the
+                  // image, so enlarging changes nothing about the proportion.
+                  // The standard asks for four modules of quiet zone and this
+                  // leaves far more than that — the crop only takes back what
+                  // was spare.
+                  transform: `scale(${QR_ZOOM})`,
+                  imageRendering: "pixelated",
+                }}
+              />
+            </div>
           ) : (
             <div className="text-xs text-text-faint">—</div>
           )}
@@ -441,24 +469,28 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           </div>
         )}
 
-        {!enlarged && (
-          <div className="flex flex-col items-center gap-0.5">
-            <div className="animate-pulse text-[12px] tracking-[1px] text-text-dim">
-              {status === "expired"
-                ? t("login.qr.expired")
-                : status === "error"
-                  ? (error ?? "Error")
-                  : t("login.qr.waiting")}
-            </div>
-            {/* Steady, unlike the line above it: a clock that fades in and out
-                is harder to read than one that does not. */}
-            {status === "pending" && remaining !== null && remaining > 0 && (
-              <div className="text-[11px] tracking-[0.5px] text-text-faint tabular-nums">
-                {t("login.qr.valid_for")}: {asClock(remaining)}
-              </div>
-            )}
+        {/* One typographic block, not two lines that happen to sit together: a
+            different size or letter-spacing on each shifts their optical centres
+            apart, and centred text then reads as misaligned.
+
+            Shown when enlarged too — the code is what the enlarged view is for,
+            and hiding how long it has left was the one thing worth knowing. */}
+        <div className="flex flex-col items-center gap-0.5 text-[12px] tracking-[1px] text-text-dim">
+          <div className="animate-pulse">
+            {status === "expired"
+              ? t("login.qr.expired")
+              : status === "error"
+                ? (error ?? "Error")
+                : t("login.qr.waiting")}
           </div>
-        )}
+          {/* Steady, unlike the line above it: a clock that fades in and out
+                is harder to read than one that does not. */}
+          {status === "pending" && remaining !== null && remaining > 0 && (
+            <div className="text-text-faint tabular-nums">
+              {t("login.qr.valid_for")}: {asClock(remaining)}
+            </div>
+          )}
+        </div>
       </div>
 
       <button
