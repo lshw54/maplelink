@@ -165,6 +165,12 @@ pub async fn resize_window(
         // button; the compact window grows to fit them rather than scroll.
         "login-classic" if compact => (350.0, 570.0 + bar),
         "login" | "login-classic" => (350.0, 620.0 + bar),
+        // The QR view is taller than the form it replaces: a code, a row of
+        // actions, and two lines saying what is happening and how long is left.
+        // Sharing the login height meant the compact window scrolled, and the
+        // back button sat on top of the status line.
+        "login-qr" if compact => (350.0, 545.0 + bar),
+        "login-qr" => (350.0, 650.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
         "main" if compact => (340.0, 340.0 + bar),
         "main" => (760.0, 530.0 + bar),

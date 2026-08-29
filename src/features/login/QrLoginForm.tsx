@@ -218,6 +218,16 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     return stopPolling;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The window is sized for the form this view replaces, which is shorter than
+  // it — so it is asked for the right height on the way in rather than left to
+  // whatever the previous page needed, and given back on the way out.
+  useEffect(() => {
+    commands.resizeWindow("login-qr").catch(() => {});
+    return () => {
+      commands.resizeWindow("login").catch(() => {});
+    };
+  }, []);
+
   // The clock, ticking off the issue time rather than off a counter, so leaving
   // the view and coming back shows what is actually left rather than restarting
   // at three minutes.
@@ -398,7 +408,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                     commands.resizeWindow("login-enlarged").catch(() => {});
                     setEnlarged(true);
                   } else {
-                    commands.resizeWindow("login").catch(() => {});
+                    commands.resizeWindow("login-qr").catch(() => {});
                     setEnlarged(false);
                   }
                 }
