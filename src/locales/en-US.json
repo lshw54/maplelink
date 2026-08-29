@@ -45,6 +45,7 @@
   "login.classic_pick_account_hint": "This GamaPass account has more than one game account. Pick the one to sign in to Classic with.",
   "login.username": "Username",
   "login.password": "Password",
+  "login.error.required": "Please enter your {{field}}",
   "login.username_placeholder": "Enter your username",
   "login.password_placeholder": "Enter your password",
   "login.submit": "Sign In",

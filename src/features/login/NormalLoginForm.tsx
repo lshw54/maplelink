@@ -54,6 +54,8 @@ export function NormalLoginForm({
   const [cafeConfirm, setCafeConfirm] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
   const [showCheckDetail, setShowCheckDetail] = useState(false);
+  /** Why a press did nothing, when it never got as far as the mutation. */
+  const [formError, setFormError] = useState<string | null>(null);
 
   async function runClassicCheck() {
     try {
@@ -268,7 +270,23 @@ export function NormalLoginForm({
 
   function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
-    if (!account.trim() || !password.trim()) return;
+    // Said out loud rather than returned from silently. A press that produces
+    // no request, no message and no log entry is indistinguishable from a
+    // failed login, and was reported as one — the debug log showed the attempt
+    // never reaching the backend at all, with nothing to say why.
+    if (!account.trim() || !password.trim()) {
+      const missing = !account.trim() ? t("login.username") : t("login.password");
+      setFormError(t("login.error.required", { field: missing }));
+      commands
+        .logFrontendError(
+          "warn",
+          "NormalLoginForm",
+          `submit ignored: ${!account.trim() ? "account" : "password"} is empty`,
+        )
+        .catch(() => {});
+      return;
+    }
+    setFormError(null);
 
     // Classic: if this account is already logged in, reuse that session's cookies
     // to open the portal instead of logging in again. beanfun allows one session
@@ -523,8 +541,8 @@ export function NormalLoginForm({
         </span>
       </label>
 
-      {login.error && (
-        <p className="mb-2 text-[12px] text-[var(--danger)]">{login.error.message}</p>
+      {(formError ?? login.error) && (
+        <p className="mb-2 text-[12px] text-[var(--danger)]">{formError ?? login.error?.message}</p>
       )}
 
       {/* Actions row: Sign In + QR button (QR only for TW) */}

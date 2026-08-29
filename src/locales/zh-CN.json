@@ -45,6 +45,7 @@
   "login.classic_pick_account_hint": "此 GamaPass 账号下有多个游戏账号，请选择要用来登录经典版的一个。",
   "login.username": "账号",
   "login.password": "密码",
+  "login.error.required": "请输入{{field}}",
   "login.username_placeholder": "输入你的账号",
   "login.password_placeholder": "输入你的密码",
   "login.submit": "登录",
