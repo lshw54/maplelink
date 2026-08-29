@@ -39,6 +39,20 @@ function pngFromDataUrl(url: string): Blob | null {
  */
 const POLL_LIFETIME_MS = 5 * 60 * 1000;
 
+/**
+ * How long a code is good for. Measured, not guessed: issued 04:42:03, refused
+ * at 04:45:03. beanfun says so itself by answering `Token Expired`, and the two
+ * agree — this is what lets the window count down rather than only find out
+ * afterwards.
+ */
+const QR_LIFETIME_MS = 3 * 60 * 1000;
+
+/** `m:ss`, or `0:00` once there is nothing left. */
+function asClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
 interface QrLoginFormProps {
   onBack: () => void;
 }
@@ -59,6 +73,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   const startedRef = useRef(false);
   /** Consecutive failed polls, to tell a blink apart from a dead session. */
   const failures = useRef(0);
+  /** Milliseconds left on the current code, or null when there isn't one. */
+  const [remaining, setRemaining] = useState<number | null>(null);
   const sessionIdRef = useRef<string | null>(useUiStore.getState().qrSessionId);
 
   function stopPolling() {
@@ -80,7 +96,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       if (Date.now() - startedAt > POLL_LIFETIME_MS) {
         stopPolling();
         setStatus("expired");
-        useUiStore.setState({ qrSessionId: null, qrData: null });
+        useUiStore.setState({ qrSessionId: null, qrData: null, qrIssuedAt: null });
         return;
       }
       try {
@@ -106,6 +122,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             useUiStore.setState({
               qrSessionId: null,
               qrData: null,
+              qrIssuedAt: null,
               loginView: "normal",
               addingSession: false,
             });
@@ -117,7 +134,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         } else if (result.status === "expired") {
           stopPolling();
           setStatus("expired");
-          useUiStore.setState({ qrSessionId: null, qrData: null });
+          useUiStore.setState({ qrSessionId: null, qrData: null, qrIssuedAt: null });
         }
         failures.current = 0;
       } catch {
@@ -128,7 +145,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         if (failures.current >= 5) {
           stopPolling();
           setStatus("expired");
-          useUiStore.setState({ qrSessionId: null, qrData: null });
+          useUiStore.setState({ qrSessionId: null, qrData: null, qrIssuedAt: null });
         }
       }
     }, 2000);
@@ -159,7 +176,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       setStatus("pending");
 
       // Persist for session resume
-      useUiStore.setState({ qrSessionId: sessionId, qrData: data });
+      useUiStore.setState({ qrSessionId: sessionId, qrData: data, qrIssuedAt: Date.now() });
 
       startPolling(sessionId, data);
     } catch (err) {
@@ -179,7 +196,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     // Cleared, not just replaced: if the new code never arrives, the old one
     // must not sit there next to an error message looking scannable.
     setQrData(null);
-    useUiStore.setState({ qrSessionId: null, qrData: null });
+    useUiStore.setState({ qrSessionId: null, qrData: null, qrIssuedAt: null });
     startedRef.current = false;
     startQr();
   }
@@ -189,6 +206,31 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     startQr();
     return stopPolling;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The clock, ticking off the issue time rather than off a counter, so leaving
+  // the view and coming back shows what is actually left rather than restarting
+  // at three minutes.
+  useEffect(() => {
+    const tick = () => {
+      const issuedAt = useUiStore.getState().qrIssuedAt;
+      if (issuedAt === null) {
+        setRemaining(null);
+        return;
+      }
+      const left = issuedAt + QR_LIFETIME_MS - Date.now();
+      setRemaining(left);
+      // Said here as well as by the server: beanfun answers `Token Expired` at
+      // the same moment, but only when asked, and the window should not show a
+      // live-looking code for the two seconds until the next poll.
+      if (left <= 0) {
+        stopPolling();
+        setStatus("expired");
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [status, qrData]);
 
   // Compact UI: the shorter window drops the logo and shows a smaller code
   // (still comfortably scannable; "enlarge" is a click away).
@@ -400,12 +442,21 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
 
         {!enlarged && (
-          <div className="animate-pulse text-[12px] tracking-[1px] text-text-dim">
+          {/* The pulse is there to say "still working" while nothing else
+              moves. A ticking clock already says that, and digits that fade in
+              and out are harder to read than digits that don't. */}
+          <div
+            className={`text-[12px] tracking-[1px] text-text-dim ${
+              remaining !== null && remaining > 0 && status === "pending" ? "" : "animate-pulse"
+            }`}
+          >
             {status === "expired"
               ? t("login.qr.expired")
               : status === "error"
                 ? (error ?? "Error")
-                : t("login.qr.waiting")}
+                : remaining !== null && remaining > 0
+                  ? `${t("login.qr.waiting")}  ${asClock(remaining)}`
+                  : t("login.qr.waiting")}
           </div>
         )}
       </div>
