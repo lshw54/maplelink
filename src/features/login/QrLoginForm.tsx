@@ -236,8 +236,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   // (still comfortably scannable; "enlarge" is a click away).
   const compact = useConfigStore((s) => s.config?.compactUi ?? false);
   const expired = status === "expired" || status === "error";
-  const qrBox = enlarged ? "p-5" : compact ? "h-[172px] w-[172px] p-3" : "h-[228px] w-[228px] p-4";
-  const qrPx = enlarged ? 380 : compact ? 148 : 196;
+  const qrBox = enlarged ? "p-4" : compact ? "h-[172px] w-[172px] p-2" : "h-[228px] w-[228px] p-2";
+  const qrPx = enlarged ? 396 : compact ? 156 : 212;
 
   return (
     <div className="flex w-full flex-col items-center">
@@ -442,21 +442,21 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         )}
 
         {!enlarged && (
-          {/* The pulse is there to say "still working" while nothing else
-              moves. A ticking clock already says that, and digits that fade in
-              and out are harder to read than digits that don't. */}
-          <div
-            className={`text-[12px] tracking-[1px] text-text-dim ${
-              remaining !== null && remaining > 0 && status === "pending" ? "" : "animate-pulse"
-            }`}
-          >
-            {status === "expired"
-              ? t("login.qr.expired")
-              : status === "error"
-                ? (error ?? "Error")
-                : remaining !== null && remaining > 0
-                  ? `${t("login.qr.waiting")}  ${asClock(remaining)}`
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="animate-pulse text-[12px] tracking-[1px] text-text-dim">
+              {status === "expired"
+                ? t("login.qr.expired")
+                : status === "error"
+                  ? (error ?? "Error")
                   : t("login.qr.waiting")}
+            </div>
+            {/* Steady, unlike the line above it: a clock that fades in and out
+                is harder to read than one that does not. */}
+            {status === "pending" && remaining !== null && remaining > 0 && (
+              <div className="text-[11px] tracking-[0.5px] text-text-faint tabular-nums">
+                {t("login.qr.valid_for")}: {asClock(remaining)}
+              </div>
+            )}
           </div>
         )}
       </div>

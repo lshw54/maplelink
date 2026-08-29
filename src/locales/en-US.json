@@ -69,6 +69,7 @@
   "login.qr.scanned": "Scanned, confirming...",
   "login.qr.expired": "QR code expired. Please refresh.",
   "login.qr.refresh": "Refresh QR Code",
+  "login.qr.valid_for": "Valid for",
   "login.qr.expired_short": "Expired",
   "login.qr.copy": "Copy QR",
   "login.qr.enlarge": "Enlarge",
