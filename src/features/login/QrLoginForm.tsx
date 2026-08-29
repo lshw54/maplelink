@@ -32,11 +32,12 @@ function pngFromDataUrl(url: string): Blob | null {
 /**
  * How long to keep asking whether a code has been scanned.
  *
- * Generous — a real code expires well before this — because the cost of being
- * wrong is one press of a refresh button that is now always on screen, while
- * the cost of no limit at all is an open window polling beanfun forever.
+ * A code lasts three minutes — measured, not guessed: issued 04:42:03, refused
+ * at 04:45:03 — and beanfun says so itself, answering `Token Expired`, which is
+ * what normally ends the polling. This is the backstop for the case where that
+ * answer never arrives, with enough headroom that it never fires first.
  */
-const POLL_LIFETIME_MS = 10 * 60 * 1000;
+const POLL_LIFETIME_MS = 5 * 60 * 1000;
 
 interface QrLoginFormProps {
   onBack: () => void;
@@ -72,12 +73,10 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     failures.current = 0;
     const startedAt = Date.now();
     intervalRef.current = setInterval(async () => {
-      // A code does not live this long, and asking after it does is not free:
-      // every two seconds is thirty requests a minute to beanfun, and a window
-      // left open all afternoon was sending thousands. That is a plausible way
-      // to end up throttled — which would also explain normal login failing
-      // afterwards, since it reaches the same host, and throttling follows the
-      // address rather than the session.
+      // Normally unreachable: beanfun answers `Token Expired` at three minutes
+      // and the poll stops there. This catches the case where it never says so
+      // — a request that keeps failing, or an answer that never comes — which
+      // would otherwise leave this running for as long as the window is open.
       if (Date.now() - startedAt > POLL_LIFETIME_MS) {
         stopPolling();
         setStatus("expired");
@@ -194,6 +193,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   // Compact UI: the shorter window drops the logo and shows a smaller code
   // (still comfortably scannable; "enlarge" is a click away).
   const compact = useConfigStore((s) => s.config?.compactUi ?? false);
+  const expired = status === "expired" || status === "error";
   const qrBox = enlarged ? "p-5" : compact ? "h-[172px] w-[172px] p-3" : "h-[228px] w-[228px] p-4";
   const qrPx = enlarged ? 380 : compact ? 148 : 196;
 
@@ -222,7 +222,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         className={`flex w-full flex-col items-center gap-3 rounded-[14px] border border-border bg-[var(--surface)] ${compact ? "p-3" : "p-5"}`}
       >
         <div
-          className={`flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${qrBox}`}
+          className={`relative flex items-center justify-center rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] ${qrBox}`}
         >
           {status === "loading" ? (
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -230,7 +230,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             <img
               src={qrData.qrImageUrl}
               alt="QR Code"
-              className="block rounded"
+              className={`block rounded transition-all ${expired ? "opacity-25 blur-[2px]" : ""}`}
               style={{
                 width: qrPx,
                 height: qrPx,
@@ -239,6 +239,27 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
             />
           ) : (
             <div className="text-xs text-text-faint">—</div>
+          )}
+
+          {/* An expired code is answered where it is, rather than by a button
+              further down the window — which is also how the old client did it,
+              and which stops the layout growing a row it did not have. */}
+          {expired && (
+            <button
+              type="button"
+              onClick={handleRefresh}
+              title={t("login.qr.refresh")}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-[var(--on-accent)] shadow-md transition-transform hover:scale-105">
+                <svg width="26" height="26" viewBox="0 0 44 44" fill="currentColor">
+                  <path d="M32.4,11.6C29.7,9,26.1,7.3,22,7.3C13.9,7.3,7.4,13.9,7.4,22c0,8.1,6.5,14.7,14.6,14.7 c6.8,0,12.5-4.7,14.2-11h-3.8C30.9,29.9,26.8,33,22,33c-6.1,0-11-4.9-11-11c0-6.1,4.9-11,11-11c3,0,5.8,1.3,7.7,3.3l-5.9,5.9h12.8 V7.3L32.4,11.6z" />
+                </svg>
+              </span>
+              <span className="text-[11px] font-semibold text-[#555]">
+                {t("login.qr.expired_short")}
+              </span>
+            </button>
           )}
         </div>
 
@@ -388,24 +409,6 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           </div>
         )}
       </div>
-
-      {/* Always offered, not only once the poll has noticed the code is dead.
-          A code goes stale on its own after a while, and the poll cannot always
-          say so — the session may simply stop answering — which left the window
-          showing a QR that looked fine and could not be scanned, with no way to
-          ask for another. The old client kept this button visible too. */}
-      <button
-        type="button"
-        onClick={handleRefresh}
-        disabled={status === "loading"}
-        className={`mt-4 w-full rounded-lg px-4 py-2.5 text-[12px] font-semibold tracking-[1.5px] uppercase transition-opacity ${
-          status === "expired" || status === "error"
-            ? "bg-accent text-[var(--on-accent)] hover:opacity-90"
-            : "border border-border bg-transparent text-text-dim hover:border-accent hover:text-accent"
-        } disabled:cursor-default disabled:opacity-40`}
-      >
-        {t("login.qr.refresh")}
-      </button>
 
       <button
         type="button"

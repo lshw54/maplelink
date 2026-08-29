@@ -69,6 +69,7 @@
   "login.qr.scanned": "已掃描，確認中...",
   "login.qr.expired": "QR Code 已過期，請重新整理。",
   "login.qr.refresh": "重新整理 QR Code",
+  "login.qr.expired_short": "已過期",
   "login.qr.copy": "複製 QR",
   "login.qr.enlarge": "放大",
   "login.qr.copy_deeplink": "複製連結",
