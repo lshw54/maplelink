@@ -54,6 +54,12 @@ export interface UiState {
   /** Persisted QR login state so it survives qr-viewer round-trip. */
   qrSessionId: string | null;
   qrData: { sessionKey: string; qrImageUrl: string; verificationToken: string } | null;
+  /**
+   * When the current code was issued, so the countdown survives leaving the QR
+   * view and coming back — without it, a code with thirty seconds left would
+   * come back showing a fresh three minutes.
+   */
+  qrIssuedAt: number | null;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
@@ -81,6 +87,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   loginView: "",
   qrSessionId: null,
   qrData: null,
+  qrIssuedAt: null,
   setPage: (page) => {
     const current = get().currentPage;
     // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.
