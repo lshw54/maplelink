@@ -12,6 +12,7 @@ use tauri::Manager;
 use crate::models::app_state::AppState;
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::models::session::Region;
+use crate::models::session_state::SessionState;
 use crate::services::cookie_native;
 use crate::services::webview_util::WEBVIEW_USER_AGENT;
 
@@ -31,7 +32,7 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 /// rather than `_self`: a link inside a frame would otherwise navigate that
 /// frame, and sites like `accounts.gamania.com` refuse to be framed
 /// (`frame-ancestors 'none'`).
-const KEEP_LINKS_IN_WINDOW: &str = r#"
+pub const KEEP_LINKS_IN_WINDOW: &str = r#"
 (function () {
   document.addEventListener('click', function (e) {
     for (var n = e.target; n; n = n.parentElement) {
@@ -69,6 +70,56 @@ pub async fn web_token_from_jar(
     Ok(token)
 }
 
+/// The host and URL path segment beanfun uses for a region.
+pub fn region_web_host(region: &Region) -> (&'static str, &'static str) {
+    match region {
+        Region::HK => ("bfweb.hk.beanfun.com", "HK"),
+        Region::TW => ("tw.beanfun.com", "TW"),
+    }
+}
+
+/// The region of the account being viewed, falling back to the global toggle.
+///
+/// Never the global toggle on its own: a TW account opened against HK URLs is
+/// seeded with the TW session's cookies, so beanfun answers with its logged-out
+/// page — which reads to the user as a spontaneous logout.
+pub async fn session_region(ss: &SessionState, state: &AppState) -> Region {
+    match ss.session.read().await.as_ref() {
+        Some(s) => s.region.clone(),
+        None => state.config.read().await.region.clone(),
+    }
+}
+
+/// The member centre's landing page for a region — also the page an
+/// authenticated window lands on before going anywhere else.
+pub fn member_landing(region: &Region) -> &'static str {
+    match region {
+        Region::HK => "default.aspx?service_code=999999&service_region=T0",
+        Region::TW => "index_new.aspx",
+    }
+}
+
+/// beanfun's `auth.aspx` hop, which trades a `bfWebToken` for a real
+/// server-side web session.
+///
+/// Until a webview has been through it, beanfun's other hosts — the event
+/// subdomains especially — answer with their logged-out page. So every
+/// authenticated window starts here, whatever it actually means to show.
+/// `page_and_query` is given unencoded; it is escaped on the way in.
+pub fn auth_url(
+    host: &str,
+    region_path: &str,
+    channel: &str,
+    page_and_query: &str,
+    token: &str,
+) -> String {
+    format!(
+        "https://{host}/{region_path}/auth.aspx?channel={channel}&page_and_query={}&web_token={}",
+        urlencoding::encode(page_and_query),
+        urlencoding::encode(token)
+    )
+}
+
 /// Open the gash (top-up / buy points) popup with native COM cookie seeding.
 pub async fn open_gash_popup(
     session_id: String,
@@ -91,29 +142,26 @@ pub async fn open_gash_popup(
     // Use the SESSION's region (the account being viewed), NOT the global config
     // toggle — otherwise a TW account opens HK URLs (seeded with the TW session's
     // cookies → beanfun serves a logged-out page = a fake logout).
-    let region = match ss.session.read().await.as_ref() {
-        Some(s) => s.region.clone(),
-        None => state.config.read().await.region.clone(),
-    };
-    let (host, region_path) = match region {
-        Region::HK => ("bfweb.hk.beanfun.com", "HK"),
-        Region::TW => ("tw.beanfun.com", "TW"),
-    };
+    let region = session_region(&ss, state).await;
+    let (host, region_path) = region_web_host(&region);
 
     // Step 1: Call auth.aspx via reqwest to establish server-side session
-    let auth_url = format!("https://{host}/{region_path}/auth.aspx");
+    let warmup_url = format!("https://{host}/{region_path}/auth.aspx");
     let _ = ss
         .http_client
-        .get(&auth_url)
+        .get(&warmup_url)
         .header(header::USER_AGENT, WEBVIEW_USER_AGENT)
         .send()
         .await;
 
     // Build gash URL with web_token
     let token = web_token_from_jar(&ss.cookie_jar, state).await?;
-    let gash_url = format!(
-        "https://{host}/{region_path}/auth.aspx?channel=gash&page_and_query=default.aspx%3Fservice_code%3D999999%26service_region%3DT0&web_token={}",
-        urlencoding::encode(&token)
+    let gash_url = auth_url(
+        host,
+        region_path,
+        "gash",
+        "default.aspx?service_code=999999&service_region=T0",
+        &token,
     );
 
     // Collect cookies from reqwest jar for native seeding
@@ -186,7 +234,7 @@ pub async fn open_gash_popup(
     // Step 3: Register native NewWindowRequested handler (COM event)
     // This intercepts target="_blank" / window.open() at the WebView2 level,
     // redirecting popups to navigate the same window. Bypasses wry completely.
-    if let Err(e) = cookie_native::register_new_window_handler(&window) {
+    if let Err(e) = cookie_native::register_new_window_handler(window.as_ref()) {
         tracing::warn!("NewWindowRequested handler failed: {e}, falling back to JS intercept");
         // Fallback: inject JS-based window.open intercept
         let _ = window.eval(
@@ -207,7 +255,7 @@ pub async fn open_gash_popup(
     // This sets HttpOnly cookies (bfWebToken, ASP.NET_SessionId, etc.) that
     // document.cookie cannot access. Domain=.beanfun.com with leading dot
     // ensures subdomain matching (bfweb.hk.beanfun.com, etc.)
-    if let Err(e) = cookie_native::seed_cookies_native(&window, &seed_cookies) {
+    if let Err(e) = cookie_native::seed_cookies_native(window.as_ref(), &seed_cookies) {
         tracing::warn!("Native cookie seeding failed: {e}, falling back to JS injection");
         // Fallback: navigate to host first, then inject via document.cookie
         let seed_url = format!("https://{host}/");
@@ -237,7 +285,7 @@ pub async fn open_gash_popup(
     }
 
     // Step 5: Register NavigationCompleted handler BEFORE navigating
-    let nav_rx = cookie_native::on_navigation_completed(&window).ok();
+    let nav_rx = cookie_native::on_navigation_completed(window.as_ref()).ok();
 
     // Step 6: Navigate to gash auth page (carries seeded cookies)
     // No flush delay needed — native CookieManager is synchronous.
@@ -287,128 +335,17 @@ pub async fn open_gash_popup(
     Ok(())
 }
 
-/// Open the member center popup (same native COM cookie seeding as gash).
-pub async fn open_member_popup(
-    session_id: String,
-    app: tauri::AppHandle,
-    state: &AppState,
-) -> Result<(), ErrorDto> {
-    use tauri::WebviewWindowBuilder;
-
-    let ss = state.require_session(&session_id).await?;
-
-    let label = "member-popup";
-
-    if let Some(existing) = app.get_webview_window(label) {
-        let _ = existing.destroy();
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    }
-
-    // Session's region, not the global config toggle (see open_gash_popup).
-    let region = match ss.session.read().await.as_ref() {
-        Some(s) => s.region.clone(),
-        None => state.config.read().await.region.clone(),
-    };
-    let (host, region_path, page_query) = match region {
-        Region::HK => (
-            "bfweb.hk.beanfun.com",
-            "HK",
-            "default.aspx%3Fservice_code%3D999999%26service_region%3DT0",
-        ),
-        Region::TW => ("tw.beanfun.com", "TW", "index_new.aspx"),
-    };
-
-    let token = web_token_from_jar(&ss.cookie_jar, state).await?;
-    let url = format!(
-        "https://{host}/{region_path}/auth.aspx?channel=member&page_and_query={page_query}&web_token={}",
-        urlencoding::encode(&token)
-    );
-
-    // Collect cookies for native seeding
-    let seed_cookies = cookie_native::cookies_from_jar(
-        &ss.cookie_jar,
-        &[&format!("https://{host}/"), "https://beanfun.com/"],
-    );
-
-    let data_dir = app.path().app_data_dir().map_err(|e| ErrorDto {
-        code: "SYS_PATH_ERROR".to_string(),
-        message: format!("Failed to get app data dir: {e}"),
-        category: ErrorCategory::Process,
-        details: None,
-    })?;
-
-    // Build on about:blank (hidden)
-    let win = WebviewWindowBuilder::new(
-        &app,
-        label,
-        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
-    )
-    .title("Beanfun 會員中心")
-    .inner_size(1024.0, 720.0)
-    .min_inner_size(400.0, 300.0)
-    .decorations(true)
-    .resizable(true)
-    .center()
-    .visible(false)
-    .data_directory(data_dir)
-    .user_agent(WEBVIEW_USER_AGENT)
-    .initialization_script(KEEP_LINKS_IN_WINDOW)
-    .devtools(true)
-    .build()
-    .map_err(|e| ErrorDto {
-        code: "SYS_POPUP_FAILED".to_string(),
-        message: format!("Failed to open member popup: {e}"),
-        category: ErrorCategory::Process,
-        details: None,
-    })?;
-
-    // Register native NewWindowRequested handler
-    if let Err(e) = cookie_native::register_new_window_handler(&win) {
-        tracing::warn!("member popup: NewWindowRequested handler failed: {e}");
-    }
-
-    // Seed cookies via native COM CookieManager
-    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
-        tracing::warn!("member popup: native cookie seeding failed: {e}");
-    }
-
-    // Register NavigationCompleted handler BEFORE navigating
-    let nav_rx = cookie_native::on_navigation_completed(&win).ok();
-
-    // Navigate (no flush delay — native CookieManager is synchronous)
-    let _ = win.eval(format!("window.location.href = '{}';", url));
-
-    // Wait for NavigationCompleted event (or 5s safety timeout), then show
-    let win_clone = win.clone();
-    let url_log = url.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Some(rx) = nav_rx {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await;
-        } else {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-        }
-
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let _ = win_clone.show();
-        let _ = win_clone.set_focus();
-        tracing::info!("member popup opened: {url_log}");
-    });
-
-    Ok(())
-}
-
-/// Open the region-appropriate customer-service page in a public popup.
+/// Open the region-appropriate customer-service page in the Beanfun browser.
+///
+/// Signed in, and with a toolbar: a support page is exactly where someone ends
+/// up needing to get back to the member centre.
 pub async fn open_customer_service(
     session_id: String,
     app: tauri::AppHandle,
     state: &AppState,
 ) -> Result<(), ErrorDto> {
-    // Region from the active session, not the global config toggle.
     let region = match state.get_session(&session_id).await {
-        Some(ss) => match ss.session.read().await.as_ref() {
-            Some(s) => s.region.clone(),
-            None => state.config.read().await.region.clone(),
-        },
+        Some(ss) => session_region(&ss, state).await,
         None => state.config.read().await.region.clone(),
     };
     let url = match region {
@@ -417,7 +354,7 @@ pub async fn open_customer_service(
     }
     .to_string();
 
-    open_web_popup(url, "客服中心".to_string(), app).await
+    crate::services::browser_window::open(session_id, Some(url), app, state).await
 }
 
 /// Open an authenticated WebView popup with cookie seeding (e.g. report pages).
@@ -438,12 +375,9 @@ pub async fn open_auth_popup(
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
 
-    let config = state.config.read().await;
-    let host = match config.region {
-        Region::HK => "bfweb.hk.beanfun.com",
-        Region::TW => "tw.beanfun.com",
-    };
-    drop(config);
+    // The session's region, not the global toggle — see `session_region`.
+    let region = session_region(&ss, state).await;
+    let (host, _) = region_web_host(&region);
 
     // Seed cookies from the session jar — covers all beanfun domains
     let seed_cookies = cookie_native::cookies_from_jar(
@@ -487,15 +421,15 @@ pub async fn open_auth_popup(
         details: None,
     })?;
 
-    if let Err(e) = cookie_native::register_new_window_handler(&win) {
+    if let Err(e) = cookie_native::register_new_window_handler(win.as_ref()) {
         tracing::warn!("auth popup: NewWindowRequested handler failed: {e}");
     }
 
-    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+    if let Err(e) = cookie_native::seed_cookies_native(win.as_ref(), &seed_cookies) {
         tracing::warn!("auth popup: native cookie seeding failed: {e}");
     }
 
-    let nav_rx = cookie_native::on_navigation_completed(&win).ok();
+    let nav_rx = cookie_native::on_navigation_completed(win.as_ref()).ok();
     let _ = win.eval(format!("window.location.href = '{}';", url));
 
     let win_clone = win.clone();

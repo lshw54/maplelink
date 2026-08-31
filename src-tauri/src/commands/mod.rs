@@ -3,6 +3,7 @@
 
 pub mod account;
 pub mod auth;
+pub mod browser;
 pub mod config;
 pub mod launcher;
 pub mod system;

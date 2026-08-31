@@ -17,6 +17,9 @@ import type {
   GameDownloadDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
+  BrowserBookmark,
+  BrowserConnectionInfo,
+  BrowserNavState,
 } from "./types";
 
 /** Typed Tauri command invoker — all backend IPC goes through here. */
@@ -157,10 +160,24 @@ export const commands = {
 
   // Beanfun points (session-specific)
   openGashPopup: (sessionId: string) => invoke("open_gash_popup", { sessionId }),
-  openMemberPopup: (sessionId: string) => invoke("open_member_popup", { sessionId }),
   openCustomerService: (sessionId: string) => invoke("open_customer_service", { sessionId }),
   openAuthPopup: (sessionId: string, url: string, title: string) =>
     invoke("open_auth_popup", { sessionId, url, title }),
+
+  // Beanfun browser — one window, a toolbar webview above the content webview
+  openBeanfunBrowser: (sessionId: string, url?: string) =>
+    invoke("open_beanfun_browser", { sessionId, url: url ?? null }),
+  closeBeanfunBrowser: () => invoke("close_beanfun_browser"),
+  browserNavigate: (url: string) => invoke("browser_navigate", { url }),
+  browserBack: () => invoke("browser_back"),
+  browserForward: () => invoke("browser_forward"),
+  browserReload: () => invoke("browser_reload"),
+  browserState: () => invoke<BrowserNavState>("browser_state"),
+  browserBookmarks: () => invoke<BrowserBookmark[]>("browser_bookmarks"),
+  browserToolbarReady: () => invoke("browser_toolbar_ready"),
+  browserOpenExternal: (url: string) => invoke("browser_open_external", { url }),
+  browserConnectionInfo: () => invoke<BrowserConnectionInfo>("browser_connection_info"),
+  browserSetChromeHeight: (height: number) => invoke("browser_set_chrome_height", { height }),
   pingSession: (sessionId: string) => invoke<boolean>("ping_session", { sessionId }),
   getRemainPoint: (sessionId: string) => invoke<number>("get_remain_point", { sessionId }),
 

@@ -424,7 +424,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
   }
 
   function handleMemberCenter() {
-    commands.openMemberPopup(useAuthStore.getState().activeSessionId ?? "").catch(() => {});
+    commands.openBeanfunBrowser(useAuthStore.getState().activeSessionId ?? "").catch(() => {});
     onClose();
   }
 
@@ -433,8 +433,15 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     onClose();
   }
 
+  /** In our own browser, not the system one: there the site is signed in, which
+   *  is what makes its event pages reachable without logging in a second time. */
   function handleWebsite() {
-    commands.openExternal("https://maplestory.beanfun.com/").catch(() => {});
+    commands
+      .openBeanfunBrowser(
+        useAuthStore.getState().activeSessionId ?? "",
+        "https://maplestory.beanfun.com/",
+      )
+      .catch(() => {});
     onClose();
   }
 

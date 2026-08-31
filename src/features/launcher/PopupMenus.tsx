@@ -120,7 +120,7 @@ export function MorePopupMenu({
     <div ref={menuRef} className={`absolute top-full right-0 mt-1 ${cls.menu}`}>
       <button
         onClick={() => {
-          commands.openMemberPopup(sessionId).catch(() => {});
+          commands.openBeanfunBrowser(sessionId).catch(() => {});
           onClose();
         }}
         className={cls.item}

@@ -182,6 +182,25 @@
     }
   }
 
+  /* The Beanfun browser's indeterminate load bar: a sliver sweeping the toolbar's
+     bottom edge, since WebView2 reports no progress figure to fill against. */
+  @keyframes browserLoad {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+
+  /* The address bar is the one place in the app where selecting text is the
+     point, so it opts out of the app-wide `user-select: none`. */
+  input[type="text"],
+  input:not([type]) {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

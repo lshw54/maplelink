@@ -440,11 +440,21 @@ pub async fn refresh_advance_check_captcha(
 
 /// Log out — clear all in-memory credentials for this session (Req 1.8, 13.3).
 #[tauri::command]
-pub async fn logout(session_id: String, state: State<'_, AppState>) -> Result<(), ErrorDto> {
+pub async fn logout(
+    session_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
     // Try to call beanfun logout endpoint before removing the session
     if let Some(ss) = state.get_session(&session_id).await {
         let region = state.config.read().await.region.clone();
         let _ = beanfun_service::logout(&ss.http_client, &region).await;
+    }
+
+    // A browser window still showing this account's member centre would outlive
+    // the account it belongs to, cookies and all.
+    if crate::services::browser_window::current_session().as_deref() == Some(session_id.as_str()) {
+        crate::services::browser_window::close(&app).await;
     }
 
     state.remove_session(&session_id).await;

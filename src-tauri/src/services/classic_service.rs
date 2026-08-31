@@ -535,16 +535,16 @@ pub async fn open_classic_login(
     // flow against a dead window and time out much later. It doubles as the
     // liveness probe for the sessionless path, where there are no cookies to
     // seed and seeding would return Ok without touching the webview at all.
-    if let Err(e) = cookie_native::register_new_window_handler(&win) {
+    if let Err(e) = cookie_native::register_new_window_handler(win.as_ref()) {
         tracing::warn!("classic portal: webview looks dead ({e}) — rebuilding the window");
         let _ = win.destroy();
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         win = build_portal(data_dir)?;
-        if let Err(e) = cookie_native::register_new_window_handler(&win) {
+        if let Err(e) = cookie_native::register_new_window_handler(win.as_ref()) {
             tracing::warn!("classic portal: NewWindowRequested handler failed again: {e}");
         }
     }
-    if let Err(e) = cookie_native::seed_cookies_native(&win, &seed_cookies) {
+    if let Err(e) = cookie_native::seed_cookies_native(win.as_ref(), &seed_cookies) {
         tracing::warn!("classic portal: native cookie seeding failed: {e}");
     }
 

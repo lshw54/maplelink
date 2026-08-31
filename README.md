@@ -58,6 +58,7 @@
 | 🎮 啟動 | OTP 一鍵取得 | 取得後自動複製或貼入遊戲視窗 |
 | | 區域模擬 | 透過 [Locale Remulator](https://github.com/InWILL/Locale_Remulator) 自動注入 |
 | | 阻止自動更新 | 可選擇自動關閉 Patcher.exe |
+| 🌐 網頁 | Beanfun 瀏覽器 | 內建網址列、前進後退與常用連結，登入一次即可走到官網與活動頁 |
 | 🌍 地區 | HK + TW | 完整支援兩個地區 |
 | 🎨 介面 | 主題切換 | 深色 / 淺色 / 跟隨系統 |
 | | 多語言 | English、繁體中文、简体中文 |

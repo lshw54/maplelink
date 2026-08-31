@@ -85,6 +85,51 @@ export interface AppConfigDto {
   accentColor: string;
 }
 
+/** A shortcut in the Beanfun browser's toolbar menu. `key` is a translation key. */
+export interface BrowserBookmark {
+  key: string;
+  url: string;
+}
+
+/** Where the Beanfun browser's content view is, and where it can go. */
+export interface BrowserNavState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
+/** The leaf certificate a host is serving, reduced to what is worth reading. */
+export interface BrowserCertificateInfo {
+  subject: string;
+  issuer: string;
+  /** RFC 2822 — `Date.parse` accepts it. */
+  validFrom: string;
+  validTo: string;
+  fingerprint: string;
+  serial: string;
+}
+
+/** What the Beanfun browser's padlock shows. */
+export interface BrowserConnectionInfo {
+  host: string;
+  port: number;
+  encrypted: boolean;
+  /** Null when the handshake failed; `error` then says why. */
+  certificate: BrowserCertificateInfo | null;
+  error: string | null;
+}
+
+/** A `browser:nav` event — the nav state plus how the toolbar should draw it. */
+export interface BrowserNavEvent extends BrowserNavState {
+  loading: boolean;
+  /**
+   * True while only the URL is known. The history flags arrive a moment later,
+   * so the toolbar keeps its previous ones rather than blinking the arrows off.
+   */
+  partial: boolean;
+}
+
 /** Result of the startup "rename exe to Beanfun.exe" check (China-IP users). */
 export interface BeanfunRenameCheck {
   suggest: boolean;
