@@ -680,16 +680,6 @@ pub async fn resize_gash_popup(
     Ok(())
 }
 
-/// Open the member center in a popup WebviewWindow.
-#[tauri::command]
-pub async fn open_member_popup(
-    session_id: String,
-    app: tauri::AppHandle,
-    state: tauri::State<'_, crate::models::app_state::AppState>,
-) -> Result<(), ErrorDto> {
-    web_popup_service::open_member_popup(session_id, app, state.inner()).await
-}
-
 /// Open the region-appropriate customer-service page in a public popup.
 #[tauri::command]
 pub async fn open_customer_service(

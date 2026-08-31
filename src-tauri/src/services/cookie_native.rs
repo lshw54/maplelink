@@ -12,22 +12,24 @@
 //!    that intercepts `target="_blank"` / `window.open()` popups and redirects
 //!    them to navigate the same WebView2 window. WebView2 blocks popup windows
 //!    by default; this handler mirrors the WPF `WebBrowser.xaml.cs` approach.
+//!
+//! Both take a `&tauri::Webview` rather than a `&WebviewWindow`, so the Beanfun
+//! browser's child webview — which shares its window with the toolbar and so has
+//! no window of its own — can use them. `WebviewWindow` is `AsRef<Webview>`, so
+//! an ordinary popup passes `.as_ref()`.
 
 use std::sync::Arc;
 
 /// A cookie to seed into WebView2: (name, value, domain, path).
 pub type SeedCookie = (String, String, String, String);
 
-/// Seed cookies into a WebView2 window using the native CookieManager COM API.
+/// Seed cookies into a WebView2 webview using the native CookieManager COM API.
 ///
 /// Unlike `document.cookie` JS injection, this can set HttpOnly cookies and
 /// correctly handles `Domain=.beanfun.com` (with leading dot) for subdomain
 /// matching.
 #[cfg(target_os = "windows")]
-pub fn seed_cookies_native(
-    webview_window: &tauri::WebviewWindow,
-    cookies: &[SeedCookie],
-) -> Result<(), String> {
+pub fn seed_cookies_native(webview: &tauri::Webview, cookies: &[SeedCookie]) -> Result<(), String> {
     use std::sync::Mutex;
 
     if cookies.is_empty() {
@@ -38,7 +40,7 @@ pub fn seed_cookies_native(
     let (tx, rx) = std::sync::mpsc::channel::<Result<usize, String>>();
     let tx = Arc::new(Mutex::new(Some(tx)));
 
-    let result = webview_window.with_webview(move |wv| {
+    let result = webview.with_webview(move |wv| {
         use webview2_com::Microsoft::Web::WebView2::Win32::*;
         use windows_core::Interface;
 
@@ -93,26 +95,72 @@ pub fn seed_cookies_native(
 
 #[cfg(not(target_os = "windows"))]
 pub fn seed_cookies_native(
-    _webview_window: &tauri::WebviewWindow,
+    _webview: &tauri::Webview,
     _cookies: &[SeedCookie],
 ) -> Result<(), String> {
     Ok(())
 }
 
-/// Register a native `NewWindowRequested` event handler on a WebView2 window.
+/// Delete every cookie in this webview's WebView2 profile.
+///
+/// Called when the browser closes on logout. The profile outlives the window —
+/// it is a folder on disk — so without this a signed-out account's session
+/// cookies would still be sitting there for the next window that opens against
+/// the same profile.
+#[cfg(target_os = "windows")]
+pub fn clear_cookies_native(webview: &tauri::Webview) -> Result<(), String> {
+    use std::sync::Mutex;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+
+    let result = webview.with_webview(move |wv| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use windows_core::Interface;
+
+        let outcome = unsafe {
+            wv.controller()
+                .CoreWebView2()
+                .and_then(|core| core.cast::<ICoreWebView2_2>())
+                .and_then(|core2| core2.CookieManager())
+                .and_then(|manager| manager.DeleteAllCookies())
+                .map_err(|e| format!("DeleteAllCookies failed: {e}"))
+        };
+
+        if let Some(sender) = tx.lock().unwrap().take() {
+            let _ = sender.send(outcome);
+        }
+    });
+
+    if result.is_err() {
+        return Err("with_webview failed for cookie clearing".to_string());
+    }
+
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(inner) => inner,
+        Err(_) => Err("cookie clearing timed out".to_string()),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_cookies_native(_webview: &tauri::Webview) -> Result<(), String> {
+    Ok(())
+}
+
+/// Register a native `NewWindowRequested` event handler on a WebView2 webview.
 ///
 /// When the page tries to open a popup (via `target="_blank"`, `window.open()`,
 /// etc.), this handler intercepts the request and navigates the current window
 /// to the popup URL instead. Completely bypasses wry and mirrors the WPF
 /// `WebBrowser.xaml.cs` `NewWindowRequested` handler.
 #[cfg(target_os = "windows")]
-pub fn register_new_window_handler(webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn register_new_window_handler(webview: &tauri::Webview) -> Result<(), String> {
     use std::sync::Mutex;
 
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let tx = Arc::new(Mutex::new(Some(tx)));
 
-    let result = webview_window.with_webview(move |wv| {
+    let result = webview.with_webview(move |wv| {
         use webview2_com::Microsoft::Web::WebView2::Win32::*;
 
         unsafe {
@@ -171,7 +219,7 @@ pub fn register_new_window_handler(webview_window: &tauri::WebviewWindow) -> Res
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn register_new_window_handler(_webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn register_new_window_handler(_webview: &tauri::Webview) -> Result<(), String> {
     Ok(())
 }
 
@@ -354,7 +402,7 @@ pub fn register_native_popup_handler(_webview_window: &tauri::WebviewWindow) -> 
 /// itself after the first fire.
 #[cfg(target_os = "windows")]
 pub fn on_navigation_completed(
-    webview_window: &tauri::WebviewWindow,
+    webview: &tauri::Webview,
 ) -> Result<tokio::sync::oneshot::Receiver<bool>, String> {
     use std::sync::Mutex;
 
@@ -364,7 +412,7 @@ pub fn on_navigation_completed(
     let (reg_tx, reg_rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let reg_tx = Arc::new(Mutex::new(Some(reg_tx)));
 
-    let result = webview_window.with_webview(move |wv| {
+    let result = webview.with_webview(move |wv| {
         use webview2_com::Microsoft::Web::WebView2::Win32::*;
 
         unsafe {
@@ -418,7 +466,7 @@ pub fn on_navigation_completed(
 
 #[cfg(not(target_os = "windows"))]
 pub fn on_navigation_completed(
-    _webview_window: &tauri::WebviewWindow,
+    _webview: &tauri::Webview,
 ) -> Result<tokio::sync::oneshot::Receiver<bool>, String> {
     let (_tx, rx) = tokio::sync::oneshot::channel::<bool>();
     Ok(rx)

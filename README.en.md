@@ -58,6 +58,7 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 | 🎮 Launch | One-click OTP | Auto-copy or auto-paste into game window |
 | | Locale emulation | Auto-inject via [Locale Remulator](https://github.com/InWILL/Locale_Remulator) |
 | | Block auto-update | Optionally kill Patcher.exe on launch |
+| 🌐 Web | Beanfun browser | Address bar, history and shortcuts — one sign-in reaches the official site and its event pages |
 | 🌍 Region | HK + TW | Full support for both regions |
 | 🎨 UI | Themes | Dark / Light / System |
 | | Languages | English, 繁體中文, 简体中文 |

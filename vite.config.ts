@@ -24,6 +24,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, "index.html"),
         debug: resolve(import.meta.dirname, "debug.html"),
+        browser: resolve(import.meta.dirname, "browser.html"),
       },
     },
   },

@@ -1,13 +1,15 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for MapleLink",
+  "description": "Default capabilities for MapleLink. The Beanfun browser's toolbar is listed by webview label; its sibling bf-browser-view is deliberately absent, since that one loads beanfun's own pages and must reach no command at all.",
   "windows": [
     "main",
     "debug-console",
     "gamepass-login",
     "recaptcha_window",
-    "web-login"
+    "web-login",
+    "bf-browser"
   ],
+  "webviews": ["bf-browser-bar"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
