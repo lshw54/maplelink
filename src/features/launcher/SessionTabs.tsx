@@ -148,6 +148,11 @@ export function SessionTabs() {
         compact ? "min-h-[26px]" : ""
       }`}
     >
+      {/* Icon boxes stay 16px (12px glyph + the p-0.5 around it) and the add
+          button 24px, which is what a tab already measures. Both were reported
+          as too small to see; both could only grow into the space they already
+          had, because this strip's height sets where everything below it sits
+          and the window heights are fixed in Rust. */}
       {entries.map((entry, idx) => {
         const isActive = entry.sessionId === activeSessionId;
         const isEditing = editingId === entry.sessionId;
@@ -203,8 +208,8 @@ export function SessionTabs() {
                 title="Rename"
               >
                 <svg
-                  width="10"
-                  height="10"
+                  width="12"
+                  height="12"
                   viewBox="0 0 16 16"
                   fill="none"
                   stroke="currentColor"
@@ -226,12 +231,12 @@ export function SessionTabs() {
                 title="Close"
               >
                 <svg
-                  width="8"
-                  height="8"
+                  width="12"
+                  height="12"
                   viewBox="0 0 12 12"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.5"
+                  strokeWidth="1.75"
                   strokeLinecap="round"
                 >
                   <path d="M3 3L9 9M9 3L3 9" />
@@ -243,7 +248,7 @@ export function SessionTabs() {
       })}
       <button
         onClick={handleAdd}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] text-text-faint transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[15px] leading-none text-text-faint transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
         title={t("launcher.add_session")}
       >
         +
