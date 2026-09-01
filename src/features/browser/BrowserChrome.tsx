@@ -13,6 +13,9 @@ const BAR_HEIGHT = 46;
 /** How tall the toolbar grows while the padlock panel is open. */
 const PANEL_HEIGHT = 300;
 
+/** The notice row's height, added on top of whatever else is open. */
+const NOTICE_HEIGHT = 26;
+
 const BUTTON =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[15px] text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-25";
 
@@ -76,6 +79,18 @@ export function BrowserChrome() {
   const [connection, setConnection] = useState<BrowserConnectionInfo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Ask the backend for the height everything currently open needs.
+   *
+   * The panel and the notice can be up at the same time, and each needs its
+   * own space — this webview paints nothing outside its bounds, so anything
+   * that overlaps is drawn on top of the controls rather than beside them.
+   */
+  const applyChromeHeight = useCallback((withPanel: boolean, withNotice: boolean) => {
+    const wanted = (withPanel ? PANEL_HEIGHT : BAR_HEIGHT) + (withNotice ? NOTICE_HEIGHT : 0);
+    commands.browserSetChromeHeight(wanted).catch(() => {});
+  }, []);
+
   useEffect(() => {
     // First, before anything that can throw. `listen` reaches into
     // `__TAURI_INTERNALS__` and throws synchronously when it is absent, which
@@ -127,10 +142,11 @@ export function BrowserChrome() {
   }, []);
 
   useEffect(() => {
+    applyChromeHeight(panelOpen, notice !== null);
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timer);
-  }, [notice]);
+  }, [notice, panelOpen, applyChromeHeight]);
 
   /** Close the panel whenever the page underneath changes out from under it. */
   useEffect(() => {
@@ -143,7 +159,7 @@ export function BrowserChrome() {
   function openPanel() {
     setConnection(null);
     setPanelOpen(true);
-    commands.browserSetChromeHeight(PANEL_HEIGHT).catch(() => {});
+    applyChromeHeight(true, notice !== null);
     commands
       .browserConnectionInfo()
       .then(setConnection)
@@ -153,7 +169,7 @@ export function BrowserChrome() {
   function closePanel() {
     setPanelOpen(false);
     setConnection(null);
-    commands.browserSetChromeHeight(BAR_HEIGHT).catch(() => {});
+    applyChromeHeight(false, notice !== null);
   }
 
   function go(url: string) {
@@ -261,20 +277,24 @@ export function BrowserChrome() {
           ↗
         </button>
 
-        {notice && (
-          <div className="absolute inset-x-0 bottom-0 flex justify-center">
-            <div className="mb-1 max-w-[90%] truncate rounded-md bg-[var(--tb-card)] px-3 py-1 text-[11px] text-[var(--text-dim)] shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
-              {t(notice)}
-            </div>
-          </div>
-        )}
-
         {nav.loading && (
           <div className="absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
             <div className="h-full w-1/3 animate-[browserLoad_1.1s_ease-in-out_infinite] bg-accent" />
           </div>
         )}
       </div>
+
+      {/* A row of its own, not an overlay: the window grew to make space for
+          it, so it covers nothing. A pill pinned to the bar's lower edge still
+          sat on top of the controls — 46px leaves no room to float in. */}
+      {notice && (
+        <div
+          className="flex shrink-0 items-center overflow-hidden border-b border-[var(--tb-border)] bg-[var(--surface)] px-3 text-[11px] text-ellipsis whitespace-nowrap text-[var(--text-dim)]"
+          style={{ height: NOTICE_HEIGHT }}
+        >
+          {t(notice)}
+        </div>
+      )}
 
       {panelOpen && <ConnectionPanel info={connection} t={t} onClose={closePanel} />}
     </div>
