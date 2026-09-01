@@ -141,6 +141,22 @@ mod win32 {
         }
     }
 
+    /// How long to wait after TAB before posting anything else.
+    ///
+    /// `clear_field` already explains why posted input needs a pause: a game
+    /// that samples input per frame does not consume the queue in one go. TAB
+    /// is worse, because what it changes is focus, and that lands at the end of
+    /// the frame that read it — anything posted in the same batch still goes to
+    /// the field we were trying to leave.
+    ///
+    /// Without this pause the backspaces meant for the password field eat the
+    /// account instead, and the OTP is appended to whatever survived: both
+    /// values in one box. That is exactly how this was reported, and it stayed
+    /// reproducible across releases for the people it happened to, because
+    /// nothing about it depends on the version — only on how fast the machine
+    /// gets round to the message queue.
+    const FOCUS_SETTLE_MS: u64 = 100;
+
     /// Sleep for the given number of milliseconds (sync, NOT tokio).
     fn sleep_ms(ms: u64) {
         std::thread::sleep(std::time::Duration::from_millis(ms));
@@ -149,12 +165,13 @@ mod win32 {
     /// Main auto-paste implementation.
     /// Auto-paste credentials into MapleStory window (HK + TW 統一版)
     ///
-    /// Timing matches the original C# Beanfun implementation:
+    /// Timing:
     /// - SetForegroundWindow → 100ms
     /// - ESC → 100ms
     /// - Click account field → 200ms
-    /// - All PostMessage calls (keys, chars) are fire-and-forget with no
-    ///   per-character delay, since PostMessage queues messages asynchronously.
+    /// - TAB to the password field → 100ms (see FOCUS_SETTLE_MS)
+    /// - Characters carry no per-character delay: PostMessage queues them and
+    ///   the game reads them in order.
     pub fn do_auto_paste(account_id: &str, otp: &str) -> bool {
         let hwnd = match find_maple_window() {
             Some(h) => h,
@@ -215,12 +232,14 @@ mod win32 {
         }
 
         // ==================== 通用步驟 (HK + TW 都一樣) ====================
-        // Original C# fires all PostMessage calls with no inter-step delays.
-        // PostMessage is async — messages queue in the target window's message
-        // loop and are processed in order, so no sleeps needed.
+        // The original C# fires these with no inter-step delays, and ordering
+        // alone is enough for anything that only writes characters: PostMessage
+        // queues them and the game reads them in order. Focus is the exception —
+        // see FOCUS_SETTLE_MS.
         clear_field(hwnd, 64); // 清空帳號欄
         type_string(hwnd, account_id); // 輸入帳號
         send_key(hwnd, VK_TAB); // 切換到密碼欄
+        sleep_ms(FOCUS_SETTLE_MS); // 等焦點真的移過去，見 FOCUS_SETTLE_MS
         clear_field(hwnd, 20); // 清空密碼欄
         type_string(hwnd, otp); // 輸入密碼
         send_key(hwnd, VK_RETURN); // 按登入
