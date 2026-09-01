@@ -27,12 +27,16 @@
 //! or redirected to — is handed to the user's own browser instead.
 //!
 //! Cookies alone would not have needed that: they are scoped by domain, so the
-//! session never reaches a third party. The renderer is the reason. Every
-//! WebView2 this app opens runs with `--no-sandbox`, and the app self-elevates,
-//! so a renderer here is an unsandboxed one holding an administrator token. That
-//! was a contained risk while these windows only ever showed beanfun. An address
-//! bar would have turned it into "any site the user can be talked into typing",
-//! which is a different thing entirely.
+//! session never reaches a third party. The renderer is the reason. This process
+//! self-elevates, so a page loaded here is rendered by a process holding an
+//! administrator token, and a sandbox escape lands on a machine rather than in a
+//! browser profile. That was a contained risk while these windows only ever
+//! showed beanfun. An address bar would have turned it into "any site the user
+//! can be talked into typing", which is a different thing entirely.
+//!
+//! (Until `webview_util::browser_args` dropped `--no-sandbox`, there was no
+//! sandbox to escape from. That is fixed; the elevation is not, and it is
+//! enough on its own to keep this window where it is.)
 //!
 //! Downloads are refused for the same reason: anything this process launches
 //! inherits its token, and this window exists for reading event pages.
