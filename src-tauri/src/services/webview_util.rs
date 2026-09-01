@@ -9,10 +9,23 @@ pub const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) 
 /// its traffic leaves through this process — see `services::local_proxy` for why
 /// that matters to accelerator users. Loopback is excluded from the proxy, or it
 /// would be asked to reach itself.
+///
+/// ## What is not here any more
+///
+/// `--no-sandbox` used to be. It turns off the thing that keeps a compromised
+/// renderer away from the rest of the machine, and this process self-elevates,
+/// so every page we loaded ran unsandboxed holding an administrator token.
+///
+/// It arrived in the initial commit with no message, no comment and no issue
+/// behind it, which is not evidence either way. What settled it is Beanfun: it
+/// passes WebView2 nothing but the Edge feature disables and an autoplay
+/// policy, and it serves the same beanfun pages, the same TW login and
+/// reCAPTCHA, to the same players running the same accelerators. The flag is
+/// not load-bearing for this workload.
 pub async fn browser_args(app: &tauri::AppHandle) -> String {
     use tauri::Manager;
 
-    const BASE: &str = "--disable-blink-features=AutomationControlled --no-sandbox";
+    const BASE: &str = "--disable-blink-features=AutomationControlled";
 
     let wanted = match app.try_state::<crate::models::app_state::AppState>() {
         Some(state) => state.config.read().await.webview_via_proxy,
