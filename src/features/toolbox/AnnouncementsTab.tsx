@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import { ANNOUNCEMENT_ARCHIVE } from "../../lib/announcement";
+import { ANNOUNCEMENT_ARCHIVE, announcementKey } from "../../lib/announcement";
 import { AnnouncementBody } from "../shared/AnnouncementBody";
 
 /**
@@ -28,7 +28,7 @@ export function AnnouncementsTab() {
           <header className="flex items-center gap-2 border-b border-[var(--tb-border)] bg-[rgba(var(--accent-rgb),0.06)] px-4 py-2.5">
             <span className="text-[13px]">📢</span>
             <span className="flex-1 text-[13px] font-bold text-[var(--text)]">
-              {t("announcement.title")}
+              {t(announcementKey(open.id, "title"))}
             </span>
             <time className="font-mono text-[11px] text-text-dim">{open.date}</time>
           </header>
@@ -60,7 +60,7 @@ export function AnnouncementsTab() {
         >
           <span className="shrink-0 text-[13px]">📢</span>
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[var(--text)]">
-            {t("announcement.title")}
+            {t(announcementKey(entry.id, "title"))}
           </span>
           <time className="shrink-0 font-mono text-[11px] text-text-dim">{entry.date}</time>
           <span className="shrink-0 text-[12px] text-text-faint">›</span>

@@ -1,4 +1,5 @@
 import { useTranslation } from "../../lib/i18n";
+import { ANNOUNCEMENT_ID, announcementKey } from "../../lib/announcement";
 
 /**
  * Permanent announcement banner (always shown, ~28px — its height is baked into
@@ -22,7 +23,7 @@ export function AnnouncementBanner({
       >
         <span className="shrink-0 text-[12px]">📢</span>
         <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-accent">
-          {t("announcement.title")}
+          {t(announcementKey(ANNOUNCEMENT_ID, "title"))}
         </span>
         <span className="shrink-0 text-[11px] font-semibold text-accent/80">
           {t("announcement.reopen")} ›
