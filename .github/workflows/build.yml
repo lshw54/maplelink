@@ -270,36 +270,40 @@ jobs:
                 || format('v{0}', steps.version.outputs.version)
             }}
           body: |
-            **Version:** v${{ steps.version.outputs.version }}
-            **Type:** ${{ github.event.inputs.release_type == 'release' && 'Release' || 'Pre-Release' }}
-            **Built:** ${{ steps.version.outputs.build_time }} UTC
+            **版本 / Version:** v${{ steps.version.outputs.version }}
+            **類型 / Type:** ${{ github.event.inputs.release_type == 'release' && '正式版 / Release' || '預先發佈 / Pre-Release' }}
+            **建置時間 / Built:** ${{ steps.version.outputs.build_time }} UTC
 
             ---
 
-            ### Download
-            **新用户（推荐 / New users）→ [MapleLink-Setup.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink-Setup.exe)** — 自解压包，附「WebView2 报错看这」说明 / self-extracting package with a WebView2 troubleshooting note
+            ### 下載 / Download
 
-            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — 单文件绿色版 / standalone, no installation needed
+            **[MapleLink-Setup.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink-Setup.exe)** — 新使用者建議下載這個。自解壓縮，內附「webview2報錯看這.txt」。
+            Recommended for new users. Self-extracting, with a note on the WebView2 error inside.
 
-            ### Changes
+            **[MapleLink.exe](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/MapleLink.exe)** — 程式本身，免安裝。自動更新更新的就是這個檔案。
+            The program on its own, nothing to install. This is the file auto-update replaces.
+
+            ### 使用方式 / Usage
+
+            1. 下載上面任一個檔案 / Download either file above
+            2. 放到任何資料夾直接執行 / Put it in any folder and run it
+            3. 首次啟動會自動解壓地區模擬檔案 / The first launch unpacks the locale-emulation files
+
+            ### 變更 / Changes
             ${{ steps.notes.outputs.commits }}
 
             (${{ steps.notes.outputs.count }} commits)
 
-            ### Usage
-            1. Download **MapleLink.exe**
-            2. Place in any folder and run
-            3. First launch will auto-extract locale emulation files
-
-            ${{ github.event.inputs.release_type == 'prerelease' && '> ⚠️ This is a pre-release. Use at your own risk.' || '' }}
+            ${{ github.event.inputs.release_type == 'prerelease' && '> ⚠️ 這是預先發佈版本，請自行評估風險。 / This is a pre-release. Use at your own risk.' || '' }}
 
             <details>
-            <summary>Details</summary>
+            <summary>詳細資訊 / Details</summary>
 
-            | Item | Value |
+            | 項目 / Item | 內容 / Value |
             |------|-------|
             | SHA256 | `${{ steps.artifact.outputs.sha256 }}` |
-            | Build Time | ${{ steps.version.outputs.build_time }} UTC |
+            | 建置時間 / Build time | ${{ steps.version.outputs.build_time }} UTC |
             | Commit | [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
 
             </details>
