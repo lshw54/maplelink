@@ -4,6 +4,7 @@ import {
   ANNOUNCEMENT_FORCED_SECONDS,
   ANNOUNCEMENT_ID,
   ANNOUNCEMENT_LEVEL,
+  announcementKey,
 } from "../../lib/announcement";
 import { AnnouncementBody } from "./AnnouncementBody";
 
@@ -51,14 +52,14 @@ export function AnnouncementModal({
       onMouseDown={dismiss}
     >
       <div
-        className="flex w-[540px] max-w-full flex-col overflow-hidden rounded-2xl border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+        className="flex max-h-full w-[540px] max-w-full flex-col overflow-hidden rounded-2xl border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-2.5 border-b border-[var(--tb-border)] px-6 py-4">
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-[var(--tb-border)] px-6 py-4">
           <span className="text-lg">📢</span>
           <span className="flex-1 text-base font-bold text-[var(--text)]">
-            {t("announcement.title")}
+            {t(announcementKey(ANNOUNCEMENT_ID, "title"))}
           </span>
           {!locked && (
             <button
@@ -71,16 +72,26 @@ export function AnnouncementModal({
           )}
         </div>
 
-        {/* Body */}
-        <div className="flex flex-col gap-4 px-6 py-5">
+        {/*
+         * Body scrolls; the header above and the action below do not.
+         *
+         * The window is enlarged for this overlay (`resize_window`, page
+         * "announcement"), but a fixed height cannot hold an announcement of
+         * unknown length — and the one thing that must never scroll out of
+         * reach is the button that dismisses it, least of all while it is
+         * counting down and the reader is looking for it.
+         */}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
           <AnnouncementBody id={ANNOUNCEMENT_ID} />
+        </div>
 
-          {/* Action */}
+        {/* Action */}
+        <div className="shrink-0 border-t border-[var(--tb-border)] px-6 py-4">
           {forced ? (
             <button
               disabled={locked}
               onClick={onMarkSeen}
-              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {locked
                 ? t("announcement.reading", { seconds: String(secondsLeft) })
@@ -89,7 +100,7 @@ export function AnnouncementModal({
           ) : (
             <button
               onClick={onClose}
-              className="mt-1 w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
+              className="w-full rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
             >
               {t("announcement.close")}
             </button>
