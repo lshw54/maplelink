@@ -9,7 +9,7 @@ export function announcementBarShown(): boolean {
   return useConfigStore.getState().config?.announcementDismissedId !== ANNOUNCEMENT_ID;
 }
 
-export type Page = "login" | "main" | "toolbox" | "web_launch";
+type Page = "login" | "main" | "toolbox" | "web_launch";
 export type ThemeMode = "system" | "dark" | "light";
 export type Language = "en-US" | "zh-TW" | "zh-CN";
 

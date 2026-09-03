@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/app-icon.png" width="80" />
+  <img src="public/app-logo.png" width="80" />
 </p>
 
 <h1 align="center">MapleLink</h1>
@@ -38,7 +38,7 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 - **Tauri v2 + WebView2** — lightweight native shell. Small binary, low memory, fast startup.
 - **React 19 + Tailwind** — clean, modern frontend with full styling freedom.
 - **Clean Architecture** — `commands/` → `core/` → `services/` → `models/`. Structured to stay maintainable as features grow.
-- **Single config** — one `config.ini` for both HK and TW regions.
+- **Settings and accounts kept apart** — settings live in `config.ini`; saved credentials are DPAPI-encrypted in `accounts.dat`. One layout for HK and TW.
 
 ## Features
 
@@ -73,7 +73,7 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 **Requirements:** Windows 10+, [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (built into Win11)
 
 1. Grab the latest build from [Releases](../../releases/latest)
-2. Install and run
+2. Unzip and run — nothing to install
 
 > The `EBWebView` folder in `%APPDATA%` is WebView2's cache — this is normal. Enable "GamaPass Incognito Mode" in settings if you don't want it saving login sessions.
 
@@ -97,8 +97,8 @@ The Rust backend owns all business logic, side effects, and data. The React/Type
 1. **Rust as single source of truth** — validation, auth, config parsing, DLL injection, process management all in Rust. Frontend does no business logic.
 2. **Layered architecture** — `commands/` → `core/` → `services/` → `models/`, following Clean Architecture.
 3. **INI config round-trip guarantee** — serialize then parse back = identical values.
-4. **In-memory-only credentials** — session tokens and passwords never touch disk. Cleared on exit/logout.
-5. **DLL integrity check** — SHA-256 verification before Locale_Remulator injection.
+4. **Sessions never touch disk** — session tokens live in memory only and are cleared on exit/logout. Saved passwords are DPAPI-encrypted, readable only by the same Windows account.
+5. **Locale_Remulator ships embedded** — the LR executable and DLLs are compiled into the binary and written out at launch, never downloaded.
 
 ### High-Level Architecture
 
@@ -169,14 +169,14 @@ src-tauri/src/
 ├── commands/
 │   ├── auth.rs                # login, logout, QR, TOTP, GamaPass, session management
 │   ├── account.rs             # game accounts, OTP retrieval, refresh
-│   ├── launcher.rs            # launch game, direct launch, process status
-│   ├── config.rs              # config read/write/reset
+│   ├── launcher.rs            # launch game, direct launch, kill game
+│   ├── config.rs              # config read/write
 │   ├── update.rs              # update check, streaming download, restart
 │   └── system.rs              # file dialog, version, logging, popup windows
-├── core/                      # Pure business logic (auth, config parser, DLL injector, error)
+├── core/                      # Pure business logic (auth, config parser, game launcher, error)
 ├── services/                  # Side effects (HTTP, file I/O, process management, updates, proxy detection)
 ├── models/                    # DTOs and domain structs (incl. SessionState for multi-session)
-└── utils/                     # Helpers (SHA-256, etc.)
+└── utils/                     # Helpers (DPAPI, DES, clipboard, short paths)
 
 src/
 ├── features/

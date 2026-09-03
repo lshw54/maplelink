@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { UpdateInfoDto } from "../types";
 
-export type DownloadStatus = "idle" | "downloading" | "done" | "error";
+type DownloadStatus = "idle" | "downloading" | "done" | "error";
 
 export interface UpdateDownloadState {
   status: DownloadStatus;

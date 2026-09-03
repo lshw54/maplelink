@@ -93,7 +93,7 @@ export interface BrowserNavState {
 }
 
 /** The leaf certificate a host is serving, reduced to what is worth reading. */
-export interface BrowserCertificateInfo {
+interface BrowserCertificateInfo {
   subject: string;
   issuer: string;
   /** RFC 2822 — `Date.parse` accepts it. */

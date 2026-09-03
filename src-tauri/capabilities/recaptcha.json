@@ -4,8 +4,7 @@
   "windows": ["recaptcha_window"],
   "remote": {
     "urls": [
-      "https://*.beanfun.com",
-      "https://login.beanfun.com"
+      "https://*.beanfun.com"
     ]
   },
   "permissions": ["core:default"]
