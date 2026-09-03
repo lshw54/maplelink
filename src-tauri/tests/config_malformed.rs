@@ -257,9 +257,7 @@ y = {window_y_val}
             prop_assert_eq!(config.window_y, Some(window_y_val.parse::<i32>().unwrap()));
         }
 
-        // game_path and locale are always set to valid values in this test,
-        // so they should always parse correctly.
+        // game_path is always set to a valid value in this test.
         prop_assert_eq!(config.game_path, "C:\\Games\\Test.exe");
-        prop_assert_eq!(config.locale, "zh-TW");
     }
 }

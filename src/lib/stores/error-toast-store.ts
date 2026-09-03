@@ -5,14 +5,12 @@ export interface Toast {
   message: string;
   category: string;
   critical: boolean;
-  createdAt: number;
 }
 
 export interface ErrorToastState {
   toasts: Toast[];
-  addToast: (toast: Omit<Toast, "id" | "createdAt">) => string;
+  addToast: (toast: Omit<Toast, "id">) => string;
   removeToast: (id: string) => void;
-  clearAll: () => void;
 }
 
 let nextId = 0;
@@ -22,7 +20,7 @@ export const useErrorToastStore = create<ErrorToastState>((set) => ({
   addToast: (toast) => {
     const id = String(++nextId);
     set((state) => ({
-      toasts: [...state.toasts, { ...toast, id, createdAt: Date.now() }],
+      toasts: [...state.toasts, { ...toast, id }],
     }));
     return id;
   },
@@ -30,5 +28,4 @@ export const useErrorToastStore = create<ErrorToastState>((set) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
-  clearAll: () => set({ toasts: [] }),
 }));

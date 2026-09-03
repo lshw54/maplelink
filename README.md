@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/app-icon.png" width="80" />
+  <img src="public/app-logo.png" width="80" />
 </p>
 
 <h1 align="center">MapleLink</h1>
@@ -38,7 +38,7 @@
 - **Tauri v2 + WebView2** — 輕量原生殼層，執行檔體積小、記憶體佔用低、啟動速度快。
 - **React 19 + Tailwind** — 簡潔現代的前端，完整的樣式自由度。
 - **Clean Architecture** — `commands/` → `core/` → `services/` → `models/`，功能增長時仍保持可維護性。
-- **單一設定檔** — 一個 `config.ini`，HK / TW 通用。
+- **設定與帳號分開存放** — 設定寫在 `config.ini`，已儲存的帳號密碼以 DPAPI 加密存於 `accounts.dat`，HK / TW 通用。
 
 ## 功能特色
 
@@ -73,7 +73,7 @@
 **系統需求：** Windows 10 以上、[WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win11 已內建）
 
 1. 前往 [Releases](../../releases/latest) 下載最新版本
-2. 安裝後直接執行即可
+2. 解壓後直接執行，無需安裝
 
 > `%APPDATA%` 中的 `EBWebView` 資料夾是 WebView2 的快取，屬於正常現象。若不想保留 GamaPass 的登入狀態，可在設定中開啟「GamaPass 無痕模式」。
 
@@ -97,8 +97,8 @@ Rust 後端負責所有業務邏輯、副作用與資料管理；React/TypeScrip
 1. **所有邏輯都在 Rust** — 驗證、認證、設定解析、DLL 注入、程序管理由後端統一處理，前端只負責畫面
 2. **分層架構** — `commands/` → `core/` → `services/` → `models/`，依照 Clean Architecture 劃分職責
 3. **設定檔讀寫一致** — INI 設定檔寫入後再讀取，內容保持不變
-4. **憑證不落地** — Session token 與密碼只存在記憶體中，登出或關閉程式時立即清除
-5. **DLL 注入前先驗證** — 注入 Locale_Remulator 前會以 SHA-256 比對已知雜湊值，確保檔案未被竄改
+4. **Session 不落地** — Session token 只存在記憶體中，登出或關閉程式時立即清除；已儲存的密碼經 DPAPI 加密，只有同一 Windows 帳戶能解開
+5. **Locale_Remulator 隨程式內嵌** — LR 執行檔與 DLL 編譯進主程式，每次啟動時才寫出，不依賴外部下載
 
 ### 整體架構圖
 
@@ -169,14 +169,14 @@ src-tauri/src/
 ├── commands/
 │   ├── auth.rs                # 登入、登出、QR、TOTP、GamaPass、session 管理
 │   ├── account.rs             # 遊戲帳號、OTP 取得、帳號刷新
-│   ├── launcher.rs            # 啟動遊戲、免登入啟動、程序狀態
-│   ├── config.rs              # 設定讀寫、重設
+│   ├── launcher.rs            # 啟動遊戲、免登入啟動、結束遊戲
+│   ├── config.rs              # 設定讀寫
 │   ├── update.rs              # 更新檢查、串流下載、重啟
 │   └── system.rs              # 檔案對話框、版本、日誌、彈出視窗
-├── core/                      # 純業務邏輯（auth、config parser、DLL injector、error）
+├── core/                      # 純業務邏輯（auth、config parser、game launcher、error）
 ├── services/                  # 副作用封裝（HTTP、檔案 I/O、程序管理、更新、代理偵測）
 ├── models/                    # DTO 與領域結構（含 SessionState 多 session 支援）
-└── utils/                     # 工具函式（SHA-256 等）
+└── utils/                     # 工具函式（DPAPI、DES、剪貼簿、短路徑等）
 
 src/
 ├── features/

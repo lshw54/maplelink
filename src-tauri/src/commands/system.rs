@@ -55,12 +55,6 @@ pub fn set_web_launch_intercept(enabled: bool) -> Result<(), ErrorDto> {
     })
 }
 
-/// Whether web-login game-launch interception is currently active.
-#[tauri::command]
-pub fn get_web_launch_intercept_status() -> Result<bool, ErrorDto> {
-    Ok(crate::services::web_launch::is_registered())
-}
-
 /// Self-check snapshot for the web-launch tool UI.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -482,21 +476,6 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Return the Windows Accessibility "Text size" percentage (default 100).
-/// The frontend uses this to apply an inverse CSS zoom so layout is not
-/// broken by text-size scaling.
-#[tauri::command]
-pub fn get_text_scale_factor() -> u32 {
-    #[cfg(target_os = "windows")]
-    {
-        crate::get_text_scale_factor()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        100
-    }
-}
-
 /// Return a human-readable platform string, e.g. "Windows 11 (x64)".
 /// Reads the actual OS build from the registry for accurate Win10/11 detection.
 #[tauri::command]
@@ -717,16 +696,6 @@ pub async fn open_web_popup(
     app: tauri::AppHandle,
 ) -> Result<(), ErrorDto> {
     web_popup_service::open_web_popup(url, title, app).await
-}
-
-/// Get the bfWebToken from the cookie jar for constructing authenticated URLs.
-#[tauri::command]
-pub async fn get_web_token(
-    session_id: String,
-    state: tauri::State<'_, crate::models::app_state::AppState>,
-) -> Result<String, ErrorDto> {
-    let ss = state.require_session(&session_id).await?;
-    web_popup_service::web_token_from_jar(&ss.cookie_jar, state.inner()).await
 }
 
 /// Act on the user's window-close choice from the "quit vs. minimize to tray"

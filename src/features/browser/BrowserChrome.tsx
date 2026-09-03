@@ -279,7 +279,7 @@ export function BrowserChrome() {
 
         {nav.loading && (
           <div className="absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
-            <div className="h-full w-1/3 animate-[browserLoad_1.1s_ease-in-out_infinite] bg-accent" />
+            <div className="h-full w-1/3 animate-[shimmer_1.1s_ease-in-out_infinite] bg-accent" />
           </div>
         )}
       </div>

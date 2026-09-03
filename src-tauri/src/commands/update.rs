@@ -2,7 +2,7 @@
 
 use tauri::{Emitter, State};
 
-use crate::core::error::AppError;
+use crate::core::error::to_dto;
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::update::UpdateInfo;
@@ -32,7 +32,7 @@ pub async fn check_update(
     let version = update_service::current_version();
     update_service::check_for_update(&client, version, include_prerelease)
         .await
-        .map_err(|e| ErrorDto::from(AppError::from(e)))
+        .map_err(to_dto)
 }
 
 /// Download and stage the update installer. Returns the installer path.
@@ -58,7 +58,7 @@ pub async fn apply_update(
 
     let bytes = update_service::download_update_with_progress(&client, &url, &app)
         .await
-        .map_err(|e| ErrorDto::from(AppError::from(e)))?;
+        .map_err(to_dto)?;
 
     let staging_dir = state
         .config_path
@@ -68,7 +68,7 @@ pub async fn apply_update(
 
     let path = update_service::apply_update(&bytes, &staging_dir)
         .await
-        .map_err(|e| ErrorDto::from(AppError::from(e)))?;
+        .map_err(to_dto)?;
 
     Ok(path.display().to_string())
 }

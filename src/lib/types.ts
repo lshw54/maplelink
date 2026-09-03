@@ -8,12 +8,6 @@ export interface SessionDto {
   expiresAt: string;
 }
 
-export interface SessionInfo {
-  id: string;
-  accountName: string;
-  region: string;
-}
-
 export interface GameAccountDto {
   id: string;
   displayName: string;
@@ -53,7 +47,6 @@ export interface ClassicCheckDto {
 
 export interface AppConfigDto {
   gamePath: string;
-  locale: string;
   theme: "system" | "dark" | "light";
   language: "en-US" | "zh-TW" | "zh-CN";
   autoUpdate: boolean;
@@ -100,7 +93,7 @@ export interface BrowserNavState {
 }
 
 /** The leaf certificate a host is serving, reduced to what is worth reading. */
-export interface BrowserCertificateInfo {
+interface BrowserCertificateInfo {
   subject: string;
   issuer: string;
   /** RFC 2822 — `Date.parse` accepts it. */

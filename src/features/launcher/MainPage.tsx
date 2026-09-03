@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { commands } from "../../lib/tauri";
+import { writeConfig } from "../../lib/hooks/use-config";
 import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
-import { useAuthStore } from "../../lib/stores/auth-store";
+import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
 import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
@@ -19,7 +20,7 @@ import type { GameAccountDto, ClassicCheckDto } from "../../lib/types";
 
 export function MainPage() {
   const { t } = useTranslation();
-  const session = useAuthStore((s) => s.session);
+  const session = useAuthStore(selectActiveSession);
   const activeSessionId = useAuthStore((s) => s.activeSessionId);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
@@ -142,11 +143,7 @@ export function MainPage() {
         .detectGamePath()
         .then((path) => {
           if (path) {
-            commands.setConfig("game_path", path).catch(() => {});
-            const current = useConfigStore.getState().config;
-            if (current) {
-              useConfigStore.getState().setConfig({ ...current, gamePath: path });
-            }
+            writeConfig("gamePath", path).catch(() => {});
           }
         })
         .catch(() => {});
@@ -170,7 +167,8 @@ export function MainPage() {
         try {
           await commands.getRemainPoint(useAuthStore.getState().activeSessionId ?? "");
         } catch {
-          useAuthStore.getState().clearSession();
+          const auth = useAuthStore.getState();
+          if (auth.activeSessionId) auth.removeSession(auth.activeSessionId);
           return;
         }
       }
@@ -398,7 +396,6 @@ export function MainPage() {
           session={session}
           activeSessionId={activeSessionId}
           region={region}
-          nameMask={nameMask}
           remainPoint={remainPoint}
           onRemainPoint={setRemainPoint}
           canClassic={canClassic}

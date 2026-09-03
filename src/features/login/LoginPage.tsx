@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { finishLogin } from "../../lib/hooks/use-auth";
 import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
@@ -19,7 +20,6 @@ type LoginView = "normal" | "qr" | "totp" | "verify" | "gamepass";
 
 export function LoginPage() {
   const { t } = useTranslation();
-  const loginError = useAuthStore((s) => s.loginError);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const queryClient = useQueryClient();
@@ -74,29 +74,9 @@ export function LoginPage() {
 
   // Listen for GamePass login completion event from backend
   useEffect(() => {
-    const unlistenComplete = listen<SessionDto>("gamepass-login-complete", async (event) => {
-      // Classic (懷舊服) via GamePass shares the same beanfun account as the
-      // regular server, so it's set up exactly like a regular GamePass login — the
-      // session joins the account list with the same polling / keep-alive — and
-      // THEN we also fire the classic portal launch below.
-      const classic = useUiStore.getState().classicMode;
-      useAuthStore.getState().addSession(event.payload, undefined, "gamepass");
-      try {
-        const accounts = await commands.getGameAccounts(event.payload.sessionId);
-        useAuthStore.getState().updateGameAccounts(event.payload.sessionId, accounts);
-      } catch {
-        /* non-critical */
-      }
-      await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      useUiStore.setState({ addingSession: false, loginView: "normal" });
-      setPage("main");
-      if (classic) {
-        useUiStore.setState({ classicStatus: "launching" });
-        commands.openClassicLogin(event.payload.sessionId).catch(() => {
-          useUiStore.setState({ classicStatus: "failed" });
-        });
-      }
-    });
+    const unlistenComplete = listen<SessionDto>("gamepass-login-complete", (event) =>
+      finishLogin(queryClient, event.payload),
+    );
 
     const unlistenError = listen<string>("gamepass-login-error", (event) => {
       useErrorToastStore.getState().addToast({
@@ -168,8 +148,6 @@ export function LoginPage() {
                 </div>
               </div>
             )}
-
-            {loginError && <p className="mb-2 w-full text-xs text-[var(--danger)]">{loginError}</p>}
 
             <NormalLoginForm
               onShowQr={() => setView("qr")}

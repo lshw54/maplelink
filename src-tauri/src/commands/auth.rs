@@ -4,13 +4,13 @@
 
 use tauri::State;
 
-use crate::core::auth::{self, SessionAction};
-use crate::core::error::{AppError, AuthError};
-use crate::models::app_state::{AppState, SessionInfo};
+use crate::core::auth;
+use crate::core::error::{to_dto, AuthError};
+use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::session::SessionDto;
 use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
-use crate::services::{recaptcha_window, session_key_fallback, webview_login};
+use crate::services::{recaptcha_window, webview_login};
 
 // ---------------------------------------------------------------------------
 // Session management commands
@@ -22,12 +22,6 @@ pub async fn create_session(state: State<'_, AppState>) -> Result<String, ErrorD
     let (id, _) = state.create_session().await;
     tracing::info!("created new session: {id}");
     Ok(id)
-}
-
-/// List all active sessions with their basic info.
-#[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, ErrorDto> {
-    Ok(state.list_sessions().await)
 }
 
 // ---------------------------------------------------------------------------
@@ -43,7 +37,6 @@ pub async fn login(
     password: String,
     recaptcha_check: Option<String>,
     recaptcha_login: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SessionDto, ErrorDto> {
     // Input validation
@@ -58,8 +51,7 @@ pub async fn login(
         login: recaptcha_login,
     };
 
-    let login_result = session_key_fallback::login_with_native_fallback(
-        &app,
+    let login_result = beanfun_service::login(
         &ss.http_client,
         &account,
         &password,
@@ -94,7 +86,7 @@ pub async fn login(
                 details: Some("advance_check_required".to_string()),
             });
         }
-        Err(e) => return Err(login_err_to_dto(e)),
+        Err(e) => return Err(to_dto(e)),
     };
 
     let dto = SessionDto::from_session(&session, &session_id);
@@ -147,7 +139,7 @@ pub async fn tw_login_check(
         &ss.cookie_jar,
     )
     .await
-    .map_err(login_err_to_dto)?;
+    .map_err(to_dto)?;
 
     *ss.pending_tw_login.write().await = Some(crate::models::session_state::PendingTwLogin {
         skey,
@@ -212,7 +204,7 @@ pub async fn tw_login_submit(
                 details: Some("advance_check_required".to_string()),
             });
         }
-        Err(e) => return Err(login_err_to_dto(e)),
+        Err(e) => return Err(to_dto(e)),
     };
 
     // Consume the pending state now that the login attempt resolved.
@@ -254,20 +246,14 @@ pub async fn tw_login_submit(
 #[tauri::command]
 pub async fn qr_login_start(
     session_id: String,
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<QrCodeData, ErrorDto> {
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    session_key_fallback::qr_login_start_with_native_fallback(
-        &app,
-        &ss.http_client,
-        &region,
-        &ss.cookie_jar,
-    )
-    .await
-    .map_err(login_err_to_dto)
+    beanfun_service::qr_login_start(&ss.http_client, &region, &ss.cookie_jar)
+        .await
+        .map_err(to_dto)
 }
 
 /// Poll the status of an in-progress QR-code login.
@@ -286,14 +272,14 @@ pub async fn qr_login_poll(
     let result =
         beanfun_service::qr_login_poll(&ss.http_client, &session_key, &verification_token, &region)
             .await
-            .map_err(login_err_to_dto)?;
+            .map_err(to_dto)?;
 
     // If confirmed, complete the login and store the session
     if result.status == beanfun_service::QrPollStatus::Confirmed {
         let session =
             beanfun_service::qr_login_complete(&ss.http_client, &session_key, &ss.cookie_jar)
                 .await
-                .map_err(login_err_to_dto)?;
+                .map_err(to_dto)?;
 
         let accounts =
             beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
@@ -344,7 +330,7 @@ pub async fn totp_verify(
     let session =
         beanfun_service::hk_totp_verify_with_session(&ss.http_client, &code, &partial_session)
             .await
-            .map_err(login_err_to_dto)?;
+            .map_err(to_dto)?;
 
     let dto = SessionDto::from_session(&session, &session_id);
 
@@ -375,7 +361,7 @@ pub async fn get_advance_check(
 
     let check_state = beanfun_service::get_advance_check_page(&ss.http_client, url.as_deref())
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     tracing::info!("advance check page loaded");
     Ok(check_state)
@@ -417,7 +403,7 @@ pub async fn submit_advance_check(
         &captcha_code,
     )
     .await
-    .map_err(login_err_to_dto)?;
+    .map_err(to_dto)?;
 
     Ok(result)
 }
@@ -433,7 +419,7 @@ pub async fn refresh_advance_check_captcha(
 
     let image = beanfun_service::refresh_advance_check_captcha(&ss.http_client, &samplecaptcha)
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     Ok(image)
 }
@@ -460,56 +446,6 @@ pub async fn logout(
     state.remove_session(&session_id).await;
     tracing::info!("session {session_id} logged out and removed");
     Ok(())
-}
-
-/// Refresh the current session if it's about to expire.
-///
-/// Called internally or from the frontend heartbeat. Not exposed as a
-/// primary user action — it's automatic (Req 1.4).
-#[tauri::command]
-pub async fn refresh_session(
-    session_id: String,
-    state: State<'_, AppState>,
-) -> Result<SessionDto, ErrorDto> {
-    let ss = state.require_session(&session_id).await?;
-
-    let action = {
-        let session_guard = ss.session.read().await;
-        auth::decide_session_action(&session_guard)
-    };
-
-    match action {
-        SessionAction::UseExisting => {
-            let session_guard = ss.session.read().await;
-            let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
-            Ok(SessionDto::from_session(session, &session_id))
-        }
-        SessionAction::AttemptRefresh => {
-            let (refresh_token, region) = {
-                let session_guard = ss.session.read().await;
-                let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
-                (
-                    session
-                        .refresh_token
-                        .clone()
-                        .ok_or(AuthError::SessionExpired)
-                        .map_err(to_dto)?,
-                    session.region.clone(),
-                )
-            };
-
-            let new_session =
-                beanfun_service::refresh_session(&ss.http_client, &refresh_token, &region)
-                    .await
-                    .map_err(login_err_to_dto)?;
-
-            let dto = SessionDto::from_session(&new_session, &session_id);
-            *ss.session.write().await = Some(new_session);
-            tracing::info!("session refreshed for {}", dto.account_name);
-            Ok(dto)
-        }
-        SessionAction::ReAuthenticate => Err(to_dto(AuthError::SessionExpired)),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -758,39 +694,6 @@ pub async fn save_login_credentials(
 }
 
 // ---------------------------------------------------------------------------
-// Error mapping helpers
-// ---------------------------------------------------------------------------
-
-/// Convert an [`AuthError`] into an [`ErrorDto`].
-fn to_dto(err: AuthError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert a [`beanfun_service::LoginError`] into an [`ErrorDto`].
-fn login_err_to_dto(err: beanfun_service::LoginError) -> ErrorDto {
-    match err {
-        beanfun_service::LoginError::Auth(e) => to_dto(e),
-        beanfun_service::LoginError::Network(e) => {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        }
-    }
-}
-
-/// Receives the captured page from the hidden session-key fallback webview
-/// (invoked by its init script) and hands it to the waiting fallback.
-#[tauri::command]
-pub async fn session_key_webview_done(
-    request_id: String,
-    url: String,
-    html: String,
-) -> Result<(), ErrorDto> {
-    session_key_fallback::deliver_webview_result(&request_id, url, html);
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Webview login commands (GamePass / regular web login / reCAPTCHA helper)
 // ---------------------------------------------------------------------------
 
@@ -885,65 +788,6 @@ pub async fn gamepass_webview_done(
     .await?;
     if !completed {
         tracing::info!("GamePass (JS IPC): bfWebToken not present yet — backend poll will retry");
-    }
-    Ok(())
-}
-
-/// Open the regular (帳密) web-login window: the user completes the whole login
-/// on the official page (credentials prefilled), then cookies are harvested.
-#[tauri::command]
-pub async fn open_regular_web_login(
-    session_id: String,
-    account: String,
-    password: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
-    auth::validate_input("account", &account).map_err(to_dto)?;
-    auth::validate_input("password", &password).map_err(to_dto)?;
-    // Session is pre-created by the frontend.
-    let _ = state.require_session(&session_id).await?;
-
-    webview_login::open_regular_web_login_window(app, session_id, account, password).await
-}
-
-/// Called by the web-login init script once login completes: harvest cookies,
-/// build the session + account list, and emit `regular-login-complete`.
-#[tauri::command]
-pub async fn regular_web_login_done(
-    session_id: String,
-    account: String,
-    web_token: String,
-    account_html: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
-    use tauri::{Emitter, Manager};
-
-    let ss = state.require_session(&session_id).await?;
-    match webview_login::finalize_webview_login(
-        &app,
-        &ss,
-        &session_id,
-        "web-login",
-        &account,
-        &web_token,
-        &account_html,
-    )
-    .await
-    {
-        Ok(dto) => {
-            tracing::info!("regular web-login complete: {}", dto.account_name);
-            let _ = app.emit("regular-login-complete", dto);
-        }
-        Err(e) => {
-            tracing::error!("regular web-login failed: {e}");
-            let _ = app.emit("regular-login-error", format!("登入失敗: {e}"));
-        }
-    }
-
-    if let Some(win) = app.get_webview_window("web-login") {
-        let _ = win.destroy();
     }
     Ok(())
 }

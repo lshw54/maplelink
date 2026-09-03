@@ -18,7 +18,7 @@ use crate::models::error::ErrorDto;
 use crate::services::webview_util::{disable_tracking_prevention, WEBVIEW_USER_AGENT};
 
 /// Window label for the external reCAPTCHA helper window.
-pub const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
+const RECAPTCHA_WINDOW_LABEL: &str = "recaptcha_window";
 
 /// Set right before the backend destroys the helper window after a SUCCESSFUL
 /// token capture, so the window-destroyed handler can tell that apart from a
@@ -350,7 +350,7 @@ pub fn close_recaptcha_helper_window(app: &tauri::AppHandle) {
 /// Payload re-emitted to the frontend when a reCAPTCHA token is captured.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RecaptchaTokenEvent {
+struct RecaptchaTokenEvent {
     pub token: String,
     /// `"check"` or `"login"` — which login step this token is for.
     pub step: String,

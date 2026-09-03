@@ -66,9 +66,7 @@ impl SessionState {
         let mut default_headers = HeaderMap::new();
         default_headers.insert(
             USER_AGENT,
-            HeaderValue::from_static(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-            ),
+            HeaderValue::from_static(crate::services::http_util::USER_AGENT),
         );
         default_headers.insert(
             HeaderName::from_static("sec-ch-ua"),

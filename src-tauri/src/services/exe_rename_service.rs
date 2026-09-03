@@ -13,7 +13,7 @@
 use crate::services::network_service;
 
 /// The canonical name accelerators match on.
-pub const BEANFUN_EXE_NAME: &str = "Beanfun.exe";
+const BEANFUN_EXE_NAME: &str = "Beanfun.exe";
 
 /// Result of the startup rename check, surfaced to the frontend.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -32,7 +32,7 @@ pub struct BeanfunRenameCheck {
 }
 
 /// Whether the running exe is already named `beanfun.exe` (case-insensitive).
-pub fn is_already_beanfun() -> bool {
+fn is_already_beanfun() -> bool {
     std::env::current_exe()
         .ok()
         .and_then(|p| {

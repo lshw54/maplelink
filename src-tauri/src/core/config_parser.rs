@@ -152,9 +152,6 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = game.get("path") {
             config.game_path = v.clone();
         }
-        if let Some(v) = game.get("locale") {
-            config.locale = v.clone();
-        }
         if let Some(v) = game.get("skip_play_confirm") {
             config.skip_play_confirm =
                 parse_bool(v, "skip_play_confirm", defaults.skip_play_confirm);
@@ -272,7 +269,6 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     // [game]
     out.push_str("[game]\n");
     out.push_str(&format!("path = {}\n", config.game_path));
-    out.push_str(&format!("locale = {}\n", config.locale));
     out.push_str(&format!(
         "skip_play_confirm = {}\n",
         config.skip_play_confirm
@@ -545,7 +541,6 @@ height = 480
         assert!(!config.auto_start);
         assert!(!config.debug_logging);
         assert_eq!(config.game_path, "C:\\Nexon\\MapleStory\\MapleStory.exe");
-        assert_eq!(config.locale, "zh-TW");
         assert!(!config.skip_play_confirm);
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.window_x, Some(100));
@@ -584,7 +579,6 @@ x = not_a_number
     fn serialize_then_parse_round_trip() {
         let original = AppConfig {
             game_path: "D:\\Games\\Maple.exe".into(),
-            locale: "en-US".into(),
             theme: Theme::Light,
             language: Language::EnUS,
             auto_update: false,

@@ -138,9 +138,7 @@ export function WebLaunchTab() {
   const autoPaste = useConfigStore((s) => s.config?.webLaunchAutoPaste ?? true);
 
   function setPref(key: "webLaunchAutoLaunch" | "webLaunchAutoPaste", next: boolean) {
-    const store = useConfigStore.getState();
-    if (store.config) useConfigStore.setState({ config: { ...store.config, [key]: next } });
-    setConfig.mutate({ key, value: String(next) });
+    setConfig.mutate({ key, value: next });
   }
   const [status, setStatus] = useState<WebLaunchStatus | null>(null);
   const [checking, setChecking] = useState(false);

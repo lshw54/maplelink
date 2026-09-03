@@ -103,8 +103,9 @@ export function applyAccent(hex: string): void {
   set("--input-user", 14, 6.9);
   // The light palette leans harder into the hue — near-white carries far less
   // colour than near-black, so the same saturation reads as no tint at all.
-  set("--bg-user-light", 42, 95);
-  set("--nav-user-light", 30, 88);
-  set("--card-user-light", 55, 98.5);
-  set("--input-user-light", 45, 96.5);
+  // Lightness matches the stylesheet's darker light mode (bg ~91%).
+  set("--bg-user-light", 42, 90);
+  set("--nav-user-light", 30, 83);
+  set("--card-user-light", 55, 96);
+  set("--input-user-light", 45, 93);
 }

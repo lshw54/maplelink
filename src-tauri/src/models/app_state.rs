@@ -81,23 +81,6 @@ impl AppState {
         sessions.clear();
     }
 
-    /// Get all session IDs and their basic info (for frontend listing).
-    pub async fn list_sessions(&self) -> Vec<SessionInfo> {
-        let sessions = self.sessions.read().await;
-        let mut result = Vec::new();
-        for (id, ss) in sessions.iter() {
-            let session = ss.session.read().await;
-            if let Some(s) = session.as_ref() {
-                result.push(SessionInfo {
-                    id: id.clone(),
-                    account_name: s.account_name.clone(),
-                    region: format!("{:?}", s.region),
-                });
-            }
-        }
-        result
-    }
-
     /// Check if any session has a running game process.
     pub async fn is_any_game_running(&self) -> bool {
         let session_states: Vec<Arc<SessionState>> =
@@ -165,15 +148,6 @@ impl AppState {
     }
 }
 
-/// Basic info about a session for frontend display.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionInfo {
-    pub id: String,
-    pub account_name: String,
-    pub region: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,22 +163,18 @@ mod tests {
     fn arb_session() -> impl Strategy<Value = Session> {
         (
             "[a-zA-Z0-9]{8,32}",
-            proptest::option::of("[a-zA-Z0-9]{8,32}"),
             (0i64..=86400),
             arb_region(),
             "[a-zA-Z0-9_]{3,20}",
         )
-            .prop_map(
-                |(token, refresh_token, expires_in, region, account_name)| Session {
-                    token,
-                    refresh_token,
-                    expires_at: chrono::Utc::now() + chrono::Duration::seconds(expires_in),
-                    region,
-                    account_name,
-                    session_key: None,
-                    totp_state: None,
-                },
-            )
+            .prop_map(|(token, expires_in, region, account_name)| Session {
+                token,
+                expires_at: chrono::Utc::now() + chrono::Duration::seconds(expires_in),
+                region,
+                account_name,
+                session_key: None,
+                totp_state: None,
+            })
     }
 
     fn arb_game_account() -> impl Strategy<Value = GameAccount> {

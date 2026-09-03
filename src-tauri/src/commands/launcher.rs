@@ -5,7 +5,7 @@
 use tauri::State;
 
 use crate::core::auth;
-use crate::core::error::{AppError, AuthError, FsError, ProcessError};
+use crate::core::error::{to_dto, FsError};
 use crate::core::game_launcher;
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
@@ -36,18 +36,18 @@ pub async fn launch_game(
     state: State<'_, AppState>,
 ) -> Result<u32, ErrorDto> {
     // 1. Validate input
-    auth::validate_input("account_id", &account_id).map_err(auth_err_to_dto)?;
+    auth::validate_input("account_id", &account_id).map_err(to_dto)?;
 
     // 2. Require valid session
     let ss = state.require_session(&session_id).await?;
     let session_guard = ss.session.read().await;
-    let session = auth::require_valid_session(&session_guard).map_err(auth_err_to_dto)?;
+    let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
     // 3. Read config and validate game path exists on disk
     let config = state.config.read().await.clone();
 
     // Syntactic validation
-    game_launcher::validate_game_path(&config.game_path).map_err(fs_err_to_dto)?;
+    game_launcher::validate_game_path(&config.game_path).map_err(to_dto)?;
 
     // Actual file existence check on disk
     tokio::fs::metadata(&config.game_path).await.map_err(|e| {
@@ -63,7 +63,7 @@ pub async fn launch_game(
                 reason: e.to_string(),
             },
         };
-        fs_err_to_dto(fs_err)
+        to_dto(fs_err)
     })?;
 
     // 4. Get game credentials — skip HTTP if OTP was provided by the frontend.
@@ -87,15 +87,14 @@ pub async fn launch_game(
             &ss.game_accounts.read().await,
         )
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
         drop(session_guard);
         drop(_bf_lock);
         creds
     };
 
     // 5. Build launch command
-    let launch_cmd =
-        game_launcher::build_launch_command(&config, &credentials).map_err(fs_err_to_dto)?;
+    let launch_cmd = game_launcher::build_launch_command(&config, &credentials).map_err(to_dto)?;
 
     // 6–7. Launch with LR or directly
     // Auto mode: detect system locale, use LR if not zh-TW/zh-HK
@@ -113,7 +112,7 @@ pub async fn launch_game(
             &credentials,
         )
         .await
-        .map_err(proc_err_to_dto)?
+        .map_err(to_dto)?
     } else {
         tracing::info!("system locale is Traditional Chinese, launching directly");
         // When not in traditional mode and credentials are available,
@@ -138,7 +137,7 @@ pub async fn launch_game(
         };
         process_service::spawn_process(&launch_cmd.executable, &launch_cmd.working_dir, &args)
             .await
-            .map_err(proc_err_to_dto)?
+            .map_err(to_dto)?
     };
 
     // 8. Record initial PID in active processes.
@@ -274,7 +273,7 @@ pub async fn launch_game_direct(
 ) -> Result<u32, ErrorDto> {
     let config = state.config.read().await.clone();
 
-    game_launcher::validate_game_path(&config.game_path).map_err(fs_err_to_dto)?;
+    game_launcher::validate_game_path(&config.game_path).map_err(to_dto)?;
 
     tokio::fs::metadata(&config.game_path).await.map_err(|e| {
         let fs_err = match e.kind() {
@@ -289,7 +288,7 @@ pub async fn launch_game_direct(
                 reason: e.to_string(),
             },
         };
-        fs_err_to_dto(fs_err)
+        to_dto(fs_err)
     })?;
 
     let dummy_creds = GameCredentials {
@@ -298,8 +297,7 @@ pub async fn launch_game_direct(
         retrieved_at: chrono::Utc::now(),
         command_line_template: None,
     };
-    let launch_cmd =
-        game_launcher::build_launch_command(&config, &dummy_creds).map_err(fs_err_to_dto)?;
+    let launch_cmd = game_launcher::build_launch_command(&config, &dummy_creds).map_err(to_dto)?;
 
     let system_is_zhtw = lr_service::is_system_locale_chinese_traditional();
     let use_lr = !system_is_zhtw;
@@ -307,11 +305,11 @@ pub async fn launch_game_direct(
     let pid = if use_lr {
         game_launch_service::launch_with_lr(&app, &launch_cmd, true, &config.region, &dummy_creds)
             .await
-            .map_err(proc_err_to_dto)?
+            .map_err(to_dto)?
     } else {
         process_service::spawn_process(&launch_cmd.executable, &launch_cmd.working_dir, &[])
             .await
-            .map_err(proc_err_to_dto)?
+            .map_err(to_dto)?
     };
 
     // Create a temporary session for PID tracking
@@ -422,33 +420,6 @@ pub async fn get_game_pid(state: State<'_, AppState>) -> Result<u32, ErrorDto> {
     Ok(state.get_any_game_pid().await)
 }
 
-/// Check whether a tracked game process is still running (Req 4.5).
-///
-/// Returns `true` if the process is alive, `false` otherwise.
-/// Automatically removes dead processes from the session's active list.
-#[tauri::command]
-pub async fn get_process_status(
-    session_id: String,
-    pid: u32,
-    state: State<'_, AppState>,
-) -> Result<bool, ErrorDto> {
-    let ss = state.require_session(&session_id).await?;
-
-    let tracked = ss.active_processes.read().await.contains_key(&pid);
-    if !tracked {
-        return Ok(false);
-    }
-
-    let running = process_service::is_process_running(pid);
-
-    if !running {
-        ss.active_processes.write().await.remove(&pid);
-        tracing::info!(pid, "game process exited, removed from active list");
-    }
-
-    Ok(running)
-}
-
 /// Kill all running MapleStory processes across ALL sessions and clear tracked PIDs.
 #[tauri::command]
 pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
@@ -478,37 +449,4 @@ pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
 
     tracing::info!("all game processes killed and tracking cleared");
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Error mapping helpers
-// ---------------------------------------------------------------------------
-
-/// Convert an [`AuthError`] into an [`ErrorDto`].
-fn auth_err_to_dto(err: AuthError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert an [`FsError`] into an [`ErrorDto`].
-fn fs_err_to_dto(err: FsError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert a [`ProcessError`] into an [`ErrorDto`].
-fn proc_err_to_dto(err: ProcessError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert a [`beanfun_service::LoginError`] into an [`ErrorDto`].
-fn login_err_to_dto(err: beanfun_service::LoginError) -> ErrorDto {
-    match err {
-        beanfun_service::LoginError::Auth(e) => auth_err_to_dto(e),
-        beanfun_service::LoginError::Network(e) => {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        }
-    }
 }

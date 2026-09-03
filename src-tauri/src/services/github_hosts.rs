@@ -111,7 +111,7 @@ const MAX_LIST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DOH_BYTES: u64 = 64 * 1024;
 
 /// A domain → IPs mapping parsed out of a hosts file.
-pub type HostsMap = HashMap<String, Vec<IpAddr>>;
+type HostsMap = HashMap<String, Vec<IpAddr>>;
 
 /// Whether `host` is one of GitHub's own domains.
 fn is_github_domain(host: &str) -> bool {

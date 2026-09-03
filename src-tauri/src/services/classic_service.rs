@@ -301,7 +301,7 @@ const CLASSIC_EXE: &str = "Maplestory_Classic.exe";
 /// to the usual install folders across the machine's drives, since a user who
 /// moved the game may also have lost the registry entry.
 #[cfg(target_os = "windows")]
-pub fn detect_game_exe() -> Option<String> {
+fn detect_game_exe() -> Option<String> {
     use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY};
     use winreg::RegKey;
 
@@ -349,7 +349,7 @@ pub fn detect_game_exe() -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn detect_game_exe() -> Option<String> {
+fn detect_game_exe() -> Option<String> {
     None
 }
 
@@ -460,7 +460,7 @@ pub async fn open_classic_login(
     // then let the runtime settle.
     let mut waited = false;
     for _ in 0..30 {
-        let busy = ["gamepass-login", "web-login", "recaptcha_window"]
+        let busy = ["gamepass-login", "recaptcha_window"]
             .iter()
             .any(|l| app.get_webview_window(l).is_some());
         if !busy {

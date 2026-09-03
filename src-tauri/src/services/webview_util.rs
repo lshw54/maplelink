@@ -1,5 +1,7 @@
 //! Shared WebView2 helpers used by the webview-based auth flows.
 
+use crate::services::cookie_native::SeedCookie;
+
 /// User-Agent for WebView2 windows and HTTP requests.
 pub const WEBVIEW_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
 
@@ -45,13 +47,10 @@ pub async fn browser_args(app: &tauri::AppHandle) -> String {
     }
 }
 
-/// A cookie tuple: (name, value, domain, path).
-pub type CookieTuple = (String, String, String, String);
-
 /// Extract all cookies from a WebView2 window using the native CookieManager API.
 /// This reads HttpOnly cookies too (including secure/httponly flags).
 #[cfg(target_os = "windows")]
-pub async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Vec<CookieTuple> {
+pub async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Vec<SeedCookie> {
     use std::sync::{Arc, Mutex};
     use tauri::Manager;
 
@@ -60,7 +59,7 @@ pub async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Ve
         return Vec::new();
     };
 
-    let cookies: Arc<Mutex<Vec<CookieTuple>>> = Arc::new(Mutex::new(Vec::new()));
+    let cookies: Arc<Mutex<Vec<SeedCookie>>> = Arc::new(Mutex::new(Vec::new()));
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let tx = Arc::new(Mutex::new(Some(tx)));
 
@@ -176,7 +175,7 @@ pub async fn extract_webview2_cookies(app: &tauri::AppHandle, label: &str) -> Ve
 }
 
 #[cfg(not(target_os = "windows"))]
-pub async fn extract_webview2_cookies(_app: &tauri::AppHandle, _label: &str) -> Vec<CookieTuple> {
+pub async fn extract_webview2_cookies(_app: &tauri::AppHandle, _label: &str) -> Vec<SeedCookie> {
     Vec::new()
 }
 

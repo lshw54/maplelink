@@ -29,7 +29,7 @@ pub async fn geo_lookup_cached(client: &reqwest::Client) -> (String, String) {
 
 /// Geo-IP lookup via ip-api.com. Returns `(public_ip, country_code)`, empty on
 /// failure. Best-effort — never errors.
-pub async fn geo_lookup(client: &reqwest::Client) -> (String, String) {
+async fn geo_lookup(client: &reqwest::Client) -> (String, String) {
     let url = "http://ip-api.com/json/?fields=status,countryCode,query";
     // The only request in the app with no deadline of its own, and it runs at
     // startup: a third party that accepts the connection and then says nothing

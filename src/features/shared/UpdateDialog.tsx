@@ -69,7 +69,7 @@ export function UpdateDialog({ update, onClose }: Props) {
 
   async function handleDownload() {
     const method = useProxy ? "proxy" : "direct";
-    store.startDownload(update.version, update.downloadUrl, update.isPrerelease, method);
+    store.startDownload(update.version, method);
     try {
       await commands.applyUpdate(update.downloadUrl, useProxy);
       store.setDone();

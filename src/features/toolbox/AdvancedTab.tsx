@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
-import { useSetConfig } from "../../lib/hooks/use-config";
+import { useSetConfig, type ConfigKey } from "../../lib/hooks/use-config";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, Dropdown } from "./ToolboxUi";
@@ -22,8 +22,7 @@ export function AdvancedTab() {
     };
   }, []);
 
-  const flip = (key: string, current: boolean) =>
-    setConfig.mutate({ key, value: String(!current) });
+  const flip = (key: ConfigKey, current: boolean) => setConfig.mutate({ key, value: !current });
 
   return (
     <div className="flex flex-col gap-4">
@@ -32,25 +31,25 @@ export function AdvancedTab() {
         <Row label={t("settings.skip_play_confirm")}>
           <Toggle
             checked={config?.skipPlayConfirm ?? false}
-            onChange={() => config && flip("skip_play_confirm", config.skipPlayConfirm)}
+            onChange={() => config && flip("skipPlayConfirm", config.skipPlayConfirm)}
           />
         </Row>
         <Row label={t("settings.auto_launch_game")}>
           <Toggle
             checked={config?.autoLaunchGame ?? false}
-            onChange={() => config && flip("auto_launch_game", config.autoLaunchGame)}
+            onChange={() => config && flip("autoLaunchGame", config.autoLaunchGame)}
           />
         </Row>
         <Row label={t("settings.auto_kill_patcher")} hint={t("settings.auto_kill_patcher_desc")}>
           <Toggle
             checked={config?.autoKillPatcher ?? true}
-            onChange={() => config && flip("auto_kill_patcher", config.autoKillPatcher)}
+            onChange={() => config && flip("autoKillPatcher", config.autoKillPatcher)}
           />
         </Row>
         <Row label={t("settings.traditional_login")} hint={t("settings.traditional_login_desc")}>
           <Toggle
             checked={config?.traditionalLogin ?? false}
-            onChange={() => config && flip("traditional_login", config.traditionalLogin)}
+            onChange={() => config && flip("traditionalLogin", config.traditionalLogin)}
           />
         </Row>
       </Section>
@@ -60,13 +59,13 @@ export function AdvancedTab() {
         <Row label={t("settings.hide_account_names")} hint={t("settings.hide_account_names_desc")}>
           <Toggle
             checked={config?.hideAccountNames ?? false}
-            onChange={() => config && flip("hide_account_names", config.hideAccountNames)}
+            onChange={() => config && flip("hideAccountNames", config.hideAccountNames)}
           />
         </Row>
         <Row label={t("settings.gamepass_incognito")}>
           <Toggle
             checked={config?.gamepassIncognito ?? true}
-            onChange={() => config && flip("gamepass_incognito", config.gamepassIncognito)}
+            onChange={() => config && flip("gamepassIncognito", config.gamepassIncognito)}
           />
         </Row>
       </Section>
@@ -81,7 +80,7 @@ export function AdvancedTab() {
               { value: "quit", label: t("settings.close_quit") },
               { value: "tray", label: t("settings.close_tray") },
             ]}
-            onChange={(v) => setConfig.mutate({ key: "close_behavior", value: v })}
+            onChange={(v) => setConfig.mutate({ key: "closeBehavior", value: v })}
           />
         </Row>
       </Section>
@@ -94,7 +93,7 @@ export function AdvancedTab() {
             onChange={() => {
               if (!config) return;
               const newVal = !config.debugLogging;
-              setConfig.mutate({ key: "debug_logging", value: String(newVal) });
+              setConfig.mutate({ key: "debugLogging", value: String(newVal) });
               commands.toggleDebugWindow(newVal).catch(() => {});
             }}
           />

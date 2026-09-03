@@ -59,17 +59,7 @@ export function SessionTabs() {
 
   function commitRename() {
     if (editingId && editValue.trim()) {
-      const store = useAuthStore.getState();
-      const entry = store.sessions.get(editingId);
-      if (entry) {
-        const updated = { ...entry, session: { ...entry.session, accountName: editValue.trim() } };
-        const newSessions = new Map(store.sessions);
-        newSessions.set(editingId, updated);
-        useAuthStore.setState({
-          sessions: newSessions,
-          ...(store.activeSessionId === editingId ? { session: updated.session } : {}),
-        });
-      }
+      useAuthStore.getState().renameSession(editingId, editValue.trim());
     }
     setEditingId(null);
   }

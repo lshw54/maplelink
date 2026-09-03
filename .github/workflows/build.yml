@@ -120,8 +120,6 @@ jobs:
 
       - name: Build Tauri app
         run: npx @tauri-apps/cli@2.11.1 build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
 
       - name: Prepare artifact
         id: artifact

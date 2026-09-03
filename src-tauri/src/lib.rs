@@ -259,7 +259,6 @@ pub fn run() {
         // -- Command handlers -----------------------------------------------
         .invoke_handler(tauri::generate_handler![
             commands::auth::create_session,
-            commands::auth::list_sessions,
             commands::auth::login,
             commands::auth::tw_login_check,
             commands::auth::tw_login_submit,
@@ -270,7 +269,6 @@ pub fn run() {
             commands::auth::submit_advance_check,
             commands::auth::refresh_advance_check_captcha,
             commands::auth::logout,
-            commands::auth::refresh_session,
             commands::auth::get_saved_accounts,
             commands::auth::get_all_saved_accounts,
             commands::auth::get_last_saved_account,
@@ -278,10 +276,8 @@ pub fn run() {
             commands::auth::save_verify_info,
             commands::auth::delete_saved_account,
             commands::auth::save_login_credentials,
-            commands::auth::session_key_webview_done,
             commands::config::get_config,
             commands::config::set_config,
-            commands::config::reset_config,
             commands::account::copy_to_clipboard,
             commands::account::get_game_accounts,
             commands::account::get_account_create_time,
@@ -293,17 +289,14 @@ pub fn run() {
             commands::account::change_account_display_name,
             commands::account::set_display_override,
             commands::account::set_account_order,
-            commands::account::get_display_overrides,
             commands::account::get_auth_email,
             commands::launcher::launch_game,
             commands::launcher::launch_game_direct,
             commands::launcher::is_game_running,
             commands::launcher::get_game_pid,
-            commands::launcher::get_process_status,
             commands::launcher::kill_game,
             commands::system::log_frontend_error,
             commands::system::set_web_launch_intercept,
-            commands::system::get_web_launch_intercept_status,
             commands::system::get_web_launch_status,
             commands::system::web_launch_test_game,
             commands::system::web_launch_test_gamania,
@@ -311,7 +304,6 @@ pub fn run() {
             commands::system::resize_window,
             commands::system::open_file_dialog,
             commands::system::get_app_version,
-            commands::system::get_text_scale_factor,
             commands::system::get_platform_info,
             commands::system::detect_game_path,
             commands::system::toggle_debug_window,
@@ -324,7 +316,6 @@ pub fn run() {
             commands::system::resize_gash_popup,
             commands::system::open_customer_service,
             commands::browser::open_beanfun_browser,
-            commands::browser::close_beanfun_browser,
             commands::browser::browser_navigate,
             commands::browser::browser_back,
             commands::browser::browser_forward,
@@ -336,7 +327,6 @@ pub fn run() {
             commands::browser::browser_set_chrome_height,
             commands::browser::browser_open_external,
             commands::system::open_auth_popup,
-            commands::system::get_web_token,
             commands::system::cleanup_game_cache,
             commands::system::check_beanfun_rename,
             commands::system::apply_beanfun_rename,
@@ -357,8 +347,6 @@ pub fn run() {
             commands::auth::classic_needs_login,
             commands::auth::classic_ngm_missing,
             commands::auth::gamepass_webview_done,
-            commands::auth::open_regular_web_login,
-            commands::auth::regular_web_login_done,
             commands::auth::open_recaptcha_window,
             commands::auth::submit_login_token,
             commands::auth::close_recaptcha_window,
@@ -835,9 +823,6 @@ pub fn run() {
                         if !services::recaptcha_window::recaptcha_take_delivered() {
                             let _ = app_handle.emit("recaptcha-cancelled", ());
                         }
-                    } else if label == "web-login" {
-                        // Regular web-login window closed before completion
-                        let _ = app_handle.emit("regular-login-cancelled", ());
                     }
                 });
             }

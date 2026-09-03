@@ -152,7 +152,7 @@ pub async fn terminate_process(pid: u32) -> Result<(), ProcessError> {
 /// is launched and nothing reports an error. `ShellExecuteW` takes the string
 /// as given.
 #[cfg(target_os = "windows")]
-pub fn open_uri(uri: &str) -> Result<(), ProcessError> {
+fn open_uri(uri: &str) -> Result<(), ProcessError> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
@@ -183,7 +183,7 @@ pub fn open_uri(uri: &str) -> Result<(), ProcessError> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn open_uri(uri: &str) -> Result<(), ProcessError> {
+fn open_uri(uri: &str) -> Result<(), ProcessError> {
     open::that(uri).map_err(|e| ProcessError::SpawnFailed {
         path: uri.to_string(),
         reason: e.to_string(),
@@ -192,7 +192,7 @@ pub fn open_uri(uri: &str) -> Result<(), ProcessError> {
 
 /// Path of the Gamania Games Manager's web-start executable, if installed.
 #[cfg(target_os = "windows")]
-pub fn ggm_webstart_path() -> Option<std::path::PathBuf> {
+fn ggm_webstart_path() -> Option<std::path::PathBuf> {
     use winreg::enums::*;
     use winreg::RegKey;
 
@@ -340,7 +340,7 @@ pub fn builtin_client_integrity() -> ClientIntegrity {
 }
 
 /// The file name a user drops in to override these values.
-pub const GGM_DLL: &str = "GGMWebStart.dll";
+const GGM_DLL: &str = "GGMWebStart.dll";
 
 /// A copy of the manager's library placed in MapleLink's own data folder.
 ///

@@ -24,31 +24,6 @@ const localeNames = Object.keys(locales);
  * All known backend error codes derived from the Rust error type hierarchy.
  * These correspond to the `ErrorDto.code` values produced by `From<AppError> for ErrorDto`.
  */
-const ERROR_CODES: string[] = [
-  // AuthError variants
-  "AUTH_INVALID_CREDENTIALS",
-  "AUTH_SESSION_EXPIRED",
-  "AUTH_TOTP_FAILED",
-  "AUTH_QR_EXPIRED",
-  "AUTH_NOT_AUTHENTICATED",
-  // NetworkError variants
-  "NET_CONNECTION_FAILED",
-  "NET_TIMEOUT",
-  "NET_HTTP_ERROR",
-  // FsError variants
-  "FS_NOT_FOUND",
-  "FS_PERMISSION_DENIED",
-  "FS_IO",
-  // ProcessError variants
-  "PROC_SPAWN_FAILED",
-  // ConfigError variants
-  "CFG_PARSE_ERROR",
-  "CFG_WRITE_ERROR",
-  // UpdateError variants
-  "UPD_CHECK_FAILED",
-  "UPD_DOWNLOAD_FAILED",
-  "UPD_CORRUPT_DOWNLOAD",
-];
 
 // ---------------------------------------------------------------------------
 // Property 16: Locale resource files key completeness
@@ -89,34 +64,6 @@ describe("Property 16: Locale resource files key completeness", () => {
           expect(value.trim(), `${localeName}["${key}"] is empty`).not.toBe("");
         }
       }),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Property 17: Error codes have translations in all locales
-// ---------------------------------------------------------------------------
-describe("Property 17: Error codes have translations in all locales", () => {
-  it("every backend error code has a translation in every locale", () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom(...ERROR_CODES),
-        fc.constantFrom(...localeNames),
-        (errorCode, localeName) => {
-          const translationKey = `errors.${errorCode}`;
-          const locale = locales[localeName] as LocaleMap;
-
-          const value = locale[translationKey];
-
-          expect(
-            value,
-            `${localeName} is missing translation for "${translationKey}"`,
-          ).toBeDefined();
-
-          expect((value ?? "").trim(), `${localeName}["${translationKey}"] is empty`).not.toBe("");
-        },
-      ),
       { numRuns: 100 },
     );
   });

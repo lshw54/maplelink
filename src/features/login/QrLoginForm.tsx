@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { CopyGlyph } from "../../components/CopyIcon";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
-import { useAuthStore } from "../../lib/stores/auth-store";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
-import { autoLaunchGameIfEnabled } from "../../lib/hooks/use-auth";
+import { finishLogin } from "../../lib/hooks/use-auth";
+import { useQueryClient } from "@tanstack/react-query";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
 
 /**
@@ -69,6 +70,7 @@ interface QrLoginFormProps {
 }
 
 export function QrLoginForm({ onBack }: QrLoginFormProps) {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const [qrData, setQrData] = useState<QrCodeData | null>(
     useUiStore.getState().qrData as QrCodeData | null,
@@ -126,21 +128,9 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           );
           const confirmedSession = result.session ? { ...result.session, sessionId } : null;
           if (confirmedSession) {
-            useAuthStore.getState().addSession(confirmedSession, undefined, "qr");
-            const accounts = await commands.getGameAccounts(sessionId);
-            useAuthStore.getState().updateGameAccounts(sessionId, accounts);
-            // Clear persisted QR state
-            useUiStore.setState({
-              qrSessionId: null,
-              qrData: null,
-              qrIssuedAt: null,
-              loginView: "normal",
-              addingSession: false,
-            });
             // Reset window size if enlarged
             commands.resizeWindow("login").catch(() => {});
-            useUiStore.getState().setPage("main");
-            autoLaunchGameIfEnabled(sessionId);
+            await finishLogin(queryClient, confirmedSession);
           }
         } else if (result.status === "expired") {
           stopPolling();
@@ -370,34 +360,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                   : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-accent"
               }`}
             >
-              {copied ? (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              )}
+              <CopyGlyph copied={copied} size={14} />
               {copied ? t("common.copied") : t("login.qr.copy")}
             </button>
             <button

@@ -16,7 +16,6 @@ fn arb_auth_error() -> impl Strategy<Value = AuthError> {
         any::<String>().prop_map(|reason| AuthError::InvalidCredentials { reason }),
         Just(AuthError::SessionExpired),
         Just(AuthError::TotpFailed),
-        Just(AuthError::QrExpired),
         Just(AuthError::NotAuthenticated),
     ]
 }

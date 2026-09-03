@@ -32,8 +32,6 @@ pub enum AuthError {
     },
     #[error("TOTP verification failed")]
     TotpFailed,
-    #[error("QR code expired")]
-    QrExpired,
     #[error("Not authenticated")]
     NotAuthenticated,
     #[error("Advance check verification required")]
@@ -123,6 +121,11 @@ fn extract_path(err: &FsError) -> Option<String> {
 // ---------------------------------------------------------------------------
 // AppError → ErrorDto conversion
 // ---------------------------------------------------------------------------
+
+/// Map any domain error into the frontend [`ErrorDto`] via [`AppError`].
+pub fn to_dto<E: Into<AppError>>(err: E) -> ErrorDto {
+    ErrorDto::from(err.into())
+}
 
 impl From<AppError> for ErrorDto {
     fn from(err: AppError) -> Self {

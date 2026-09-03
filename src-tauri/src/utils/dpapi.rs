@@ -31,7 +31,7 @@ pub fn protect(plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
 
 /// Encrypt plaintext bytes with a given entropy using Windows DPAPI.
 #[cfg(target_os = "windows")]
-pub fn protect_with_entropy(plaintext: &[u8], entropy: &[u8]) -> Result<Vec<u8>, String> {
+fn protect_with_entropy(plaintext: &[u8], entropy: &[u8]) -> Result<Vec<u8>, String> {
     unsafe {
         let data_in = CRYPT_INTEGER_BLOB {
             cbData: plaintext.len() as u32,
@@ -113,7 +113,7 @@ pub fn protect(_plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
 
 /// Non-Windows stub.
 #[cfg(not(target_os = "windows"))]
-pub fn protect_with_entropy(_plaintext: &[u8], _entropy: &[u8]) -> Result<Vec<u8>, String> {
+fn protect_with_entropy(_plaintext: &[u8], _entropy: &[u8]) -> Result<Vec<u8>, String> {
     Err("DPAPI is only available on Windows".into())
 }
 

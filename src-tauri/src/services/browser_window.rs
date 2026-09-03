@@ -55,9 +55,9 @@ use crate::services::webview_util::WEBVIEW_USER_AGENT;
 use crate::services::{cookie_native, webview_nav};
 
 /// The window, and the two webviews inside it.
-pub const WINDOW: &str = "bf-browser";
-pub const BAR: &str = "bf-browser-bar";
-pub const VIEW: &str = "bf-browser-view";
+const WINDOW: &str = "bf-browser";
+const BAR: &str = "bf-browser-bar";
+const VIEW: &str = "bf-browser-view";
 
 /// Toolbar height in logical pixels. Mirrored by `BAR_HEIGHT` in the toolbar
 /// page; change both together or the strip and its contents disagree.
@@ -186,7 +186,7 @@ fn redact(url: &str) -> String {
 const IN_SCOPE: [&str; 2] = ["beanfun.com", "gamania.com"];
 
 /// Whether the window may follow `url` itself.
-pub fn in_scope(url: &url::Url) -> bool {
+fn in_scope(url: &url::Url) -> bool {
     // The window is built on about:blank before its first real navigation.
     if url.scheme() == "about" {
         return true;

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type SyntheticEvent } from "react";
 import { useLogin } from "../../lib/hooks/use-auth";
+import { useClickOutside } from "../../lib/hooks/use-click-outside";
+import { writeConfig } from "../../lib/hooks/use-config";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore } from "../../lib/stores/ui-store";
@@ -70,7 +72,7 @@ export function NormalLoginForm({
   async function pickNgmPath() {
     const path = await commands.openFileDialog().catch(() => null);
     if (!path) return;
-    await commands.setConfig("classic_ngm_path", path).catch(() => {});
+    await writeConfig("classicNgmPath", path).catch(() => {});
     await runClassicCheck();
   }
 
@@ -99,9 +101,7 @@ export function NormalLoginForm({
   }, [classicMode]);
 
   function setCafeMode(on: boolean) {
-    commands.setConfig("cafe_mode", String(on)).catch(() => {});
-    const cfg = useConfigStore.getState().config;
-    if (cfg) useConfigStore.setState({ config: { ...cfg, cafeMode: on } });
+    writeConfig("cafeMode", on).catch(() => {});
   }
 
   // Auto-fill from last saved account on mount and when region changes.
@@ -176,41 +176,38 @@ export function NormalLoginForm({
     }
   }, [autoLogin, cafeMode, account, password]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close dropdown when clicking outside.
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-        setHighlightIdx(-1);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+  const closeDropdown = useCallback(() => {
+    setShowDropdown(false);
+    setHighlightIdx(-1);
   }, []);
+  useClickOutside(dropdownRef, closeDropdown);
 
-  const handleSelectAccount = useCallback((saved: SavedAccountDto) => {
-    setAccount(saved.account);
-    setRemember(saved.rememberPassword);
-    // Fetch the specific account's saved password from the backend.
-    if (saved.hasPassword) {
-      commands
-        .getSavedAccountDetail(saved.account)
-        .then((detail) => {
-          if (detail && detail.password) {
-            setPassword(detail.password);
-            setRemember(detail.rememberPassword);
-          } else {
+  const handleSelectAccount = useCallback(
+    (saved: SavedAccountDto) => {
+      setAccount(saved.account);
+      setRemember(saved.rememberPassword);
+      // Fetch the specific account's saved password from the backend.
+      if (saved.hasPassword) {
+        commands
+          .getSavedAccountDetail(saved.account)
+          .then((detail) => {
+            if (detail && detail.password) {
+              setPassword(detail.password);
+              setRemember(detail.rememberPassword);
+            } else {
+              setPassword("");
+            }
+          })
+          .catch(() => {
             setPassword("");
-          }
-        })
-        .catch(() => {
-          setPassword("");
-        });
-    } else {
-      setPassword("");
-    }
-    closeDropdown();
-  }, []);
+          });
+      } else {
+        setPassword("");
+      }
+      closeDropdown();
+    },
+    [closeDropdown],
+  );
 
   async function handleDeleteAccount(acct: SavedAccountDto) {
     try {
@@ -223,11 +220,6 @@ export function NormalLoginForm({
     } catch {
       /* non-critical */
     }
-  }
-
-  function closeDropdown() {
-    setShowDropdown(false);
-    setHighlightIdx(-1);
   }
 
   function handleAccountKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -491,11 +483,7 @@ export function NormalLoginForm({
             name="auto-login"
             checked={useConfigStore.getState().config?.autoLogin ?? false}
             onChange={(e) => {
-              commands.setConfig("auto_login", String(e.target.checked)).catch(() => {});
-              const cfg = useConfigStore.getState().config;
-              if (cfg) {
-                useConfigStore.setState({ config: { ...cfg, autoLogin: e.target.checked } });
-              }
+              writeConfig("autoLogin", e.target.checked).catch(() => {});
             }}
             className="h-3.5 w-3.5 accent-accent"
           />

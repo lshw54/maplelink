@@ -19,12 +19,12 @@ use crate::utils::crypto::des_ecb_decrypt_hex;
 
 /// Default User-Agent for all beanfun requests — a current Chrome string
 /// (kept in sync with the session client defaults and [`SEC_CH_UA`]).
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+use crate::services::http_util::USER_AGENT;
 
 /// Same modern Chrome UA, used explicitly on the TW login POSTs alongside
 /// [`SEC_CH_UA`]. Kept distinct so the login fingerprint stays pinned even if
 /// the default UA is ever changed again.
-const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+const BROWSER_UA: &str = USER_AGENT;
 
 /// Chrome client-hint brand string; the Chrome major MUST match [`BROWSER_UA`]
 /// (a version mismatch between the UA and `sec-ch-ua` is a bot signal → beanfun
@@ -114,25 +114,6 @@ pub async fn login(
     }
 }
 
-/// Authenticate using a pre-fetched session key.
-pub async fn login_with_session_key(
-    client: &Client,
-    account: &str,
-    password: &str,
-    region: &Region,
-    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-    session_key: &str,
-    tokens: &RecaptchaTokens,
-) -> Result<Session, LoginError> {
-    match region {
-        Region::HK => hk_login_with_session_key(client, account, password, session_key).await,
-        Region::TW => {
-            tw_login_with_session_key(client, account, password, cookie_jar, session_key, tokens)
-                .await
-        }
-    }
-}
-
 /// Start a QR-code login flow (TW region only).
 ///
 /// Gets a session key, then fetches the QR code image from the TW login API.
@@ -143,20 +124,6 @@ pub async fn qr_login_start(
 ) -> Result<QrCodeData, LoginError> {
     match region {
         Region::TW => tw_qr_start(client, cookie_jar).await,
-        Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: "QR login is only available for TW region".into(),
-        })),
-    }
-}
-
-/// Start a QR-code login flow using a pre-fetched TW session key.
-pub async fn qr_login_start_with_session_key(
-    client: &Client,
-    region: &Region,
-    session_key: &str,
-) -> Result<QrCodeData, LoginError> {
-    match region {
-        Region::TW => tw_qr_start_with_session_key(client, session_key).await,
         Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
             reason: "QR login is only available for TW region".into(),
         })),
@@ -224,16 +191,6 @@ pub async fn totp_verify(
         Region::HK => hk_totp_verify(client, code, token).await,
         Region::TW => Err(LoginError::Auth(AuthError::TotpFailed)),
     }
-}
-
-/// Attempt to refresh an existing session. Placeholder.
-pub async fn refresh_session(
-    client: &Client,
-    refresh_token: &str,
-    region: &Region,
-) -> Result<Session, LoginError> {
-    let _ = (client, refresh_token, region);
-    Err(LoginError::Auth(AuthError::SessionExpired))
 }
 
 /// Log out from the Beanfun platform (invalidate server-side session).
@@ -537,6 +494,15 @@ pub enum LoginError {
     Network(#[from] NetworkError),
 }
 
+impl From<LoginError> for crate::core::error::AppError {
+    fn from(err: LoginError) -> Self {
+        match err {
+            LoginError::Auth(e) => e.into(),
+            LoginError::Network(e) => e.into(),
+        }
+    }
+}
+
 /// A failure in the hand-off to the Gamania Games Manager.
 pub fn launch_handoff_error(reason: &str) -> LoginError {
     LoginError::Auth(AuthError::InvalidCredentials {
@@ -631,7 +597,6 @@ async fn hk_login_with_session_key(
         tracing::info!("HK login requires TOTP verification");
         let partial_session = Session {
             token: String::new(),
-            refresh_token: None,
             expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
             region: Region::HK,
             account_name: account.to_string(),
@@ -659,7 +624,6 @@ async fn hk_login_with_session_key(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::HK,
         account_name: account.to_string(),
@@ -776,7 +740,6 @@ pub async fn hk_totp_verify_with_session(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::HK,
         account_name: partial_session.account_name.clone(),
@@ -1578,7 +1541,6 @@ async fn tw_account_login(
             let web_token = tw_send_login_flow(client, skey, cookie_jar).await?;
             Ok(Session {
                 token: web_token,
-                refresh_token: None,
                 expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
                 region: Region::TW,
                 account_name: account.to_string(),
@@ -1966,7 +1928,6 @@ async fn tw_qr_complete(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::TW,
         account_name: "TW User".to_string(),
@@ -2720,7 +2681,7 @@ const TICKET_TABLES: [&str; 8] = [
 /// Not credentials — a ticket that stands in for them, which the credential
 /// endpoint trades for the real thing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchTicket {
+struct LaunchTicket {
     pub launch_ticket: String,
     pub service_account: String,
 }
@@ -2740,7 +2701,7 @@ pub struct LaunchTicket {
 /// that can't be reached by accident, since a wrong table gives noise. Eight
 /// DES passes over 272 bytes costs nothing measurable, and it keeps working if
 /// beanfun adds a ninth table.
-pub fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
+fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
     let selector = usize::from_str_radix(data.get(..1)?, 16).ok()?;
     let body = data.get(1..)?;
 

@@ -45,7 +45,6 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
     // Split into two groups to stay within proptest's 12-element tuple limit.
     let group_a = (
         arb_ini_safe_string(), // game_path
-        arb_ini_safe_string(), // locale
         arb_theme(),
         arb_language(),
         any::<bool>(), // auto_update
@@ -74,7 +73,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
 
     (group_a, group_b).prop_map(
         |(
-            (game_path, locale, theme, language, auto_update, skip_play_confirm, auto_start),
+            (game_path, theme, language, auto_update, skip_play_confirm, auto_start),
             (
                 window_x,
                 window_y,
@@ -89,7 +88,6 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
         )| {
             AppConfig {
                 game_path,
-                locale,
                 theme,
                 language,
                 auto_update,

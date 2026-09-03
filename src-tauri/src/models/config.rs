@@ -9,7 +9,6 @@ use super::session::Region;
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub game_path: String,
-    pub locale: String,
     pub theme: Theme,
     pub language: Language,
     pub auto_update: bool,
@@ -128,7 +127,6 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             game_path: String::new(),
-            locale: "zh-TW".into(),
             theme: Theme::System,
             language: Language::ZhTW,
             auto_update: true,

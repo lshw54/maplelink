@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
-import type { ClassicAccountDto } from "../types";
+import type { ClassicAccountDto, GameCredentialsDto } from "../types";
 import { useConfigStore } from "./config-store";
 import { ANNOUNCEMENT_ID } from "../announcement";
 
@@ -9,7 +9,7 @@ export function announcementBarShown(): boolean {
   return useConfigStore.getState().config?.announcementDismissedId !== ANNOUNCEMENT_ID;
 }
 
-export type Page = "login" | "main" | "toolbox" | "web_launch";
+type Page = "login" | "main" | "toolbox" | "web_launch";
 export type ThemeMode = "system" | "dark" | "light";
 export type Language = "en-US" | "zh-TW" | "zh-CN";
 
@@ -18,7 +18,6 @@ export interface UiState {
   previousPage: Page;
   theme: ThemeMode;
   language: Language;
-  sidebarOpen: boolean;
   gamePid: number | null;
   gameRunning: boolean;
   /** When true, LoginPage won't auto-redirect to main even if authenticated. */
@@ -60,12 +59,16 @@ export interface UiState {
    * come back showing a fresh three minutes.
    */
   qrIssuedAt: number | null;
+  /**
+   * The last OTP fetched for each game account, so a session tab (or the
+   * toolbox round-trip) shows the code it had rather than a blank readout.
+   */
+  otpByAccount: Record<string, GameCredentialsDto>;
+  setOtp: (accountId: string, data: GameCredentialsDto) => void;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
   setLanguage: (language: Language) => void;
-  setSidebarOpen: (open: boolean) => void;
-  toggleSidebar: () => void;
   setGamePid: (pid: number | null) => void;
   setGameRunning: (running: boolean) => void;
 }
@@ -75,7 +78,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   previousPage: "login",
   theme: "dark",
   language: "zh-TW",
-  sidebarOpen: false,
   gamePid: null,
   gameRunning: false,
   addingSession: false,
@@ -88,6 +90,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   qrSessionId: null,
   qrData: null,
   qrIssuedAt: null,
+  otpByAccount: {},
+  setOtp: (accountId, data) =>
+    set((state) => ({ otpByAccount: { ...state.otpByAccount, [accountId]: data } })),
   setPage: (page) => {
     const current = get().currentPage;
     // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.
@@ -106,8 +111,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   setTheme: (theme) => set({ theme }),
   setLanguage: (language) => set({ language }),
-  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setGamePid: (pid) => set({ gamePid: pid }),
   setGameRunning: (running) => {
     set({ gameRunning: running });

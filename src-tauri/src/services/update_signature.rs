@@ -29,15 +29,6 @@ use crate::core::error::UpdateError;
 /// hand, since no build after it will verify against what users already have.
 const UPDATE_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0QjNCMTlCQkYzQjEzRDEKUldUUkV6dS9tN0d6Wkwrb2IrZm5ISTZrdEsrNTZUdytncVFSdjdoV0NiU2IvK3o0N3lvNUVCQXkK";
 
-/// Whether a public key has been published yet.
-///
-/// Until it has, an update cannot be shown to be ours, and the alternative to
-/// refusing is running an unidentified executable — which is the thing this
-/// exists to stop.
-pub fn signing_configured() -> bool {
-    !UPDATE_PUBLIC_KEY.is_empty()
-}
-
 /// Check `bytes` against `signature`, which is the content of the `.sig` file
 /// published beside the release asset.
 pub fn verify(bytes: &[u8], signature: &str) -> Result<(), UpdateError> {
@@ -137,7 +128,10 @@ mod tests {
     /// signed with. Its fingerprint is 64B3B19BBF3B13D1.
     #[test]
     fn the_shipped_key_is_a_real_one() {
-        assert!(signing_configured(), "UPDATE_PUBLIC_KEY is still empty");
+        assert!(
+            !UPDATE_PUBLIC_KEY.is_empty(),
+            "UPDATE_PUBLIC_KEY is still empty"
+        );
         // Wrong bytes, real key: reaching "does not match" proves the key
         // parsed, without needing a signature made by the private half.
         let err = verify(b"not the release", TEST_SIGNATURE).unwrap_err();

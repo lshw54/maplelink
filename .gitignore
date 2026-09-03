@@ -16,7 +16,6 @@ target/
 Thumbs.db
 
 # Tauri
-src-tauri/target/
 src-tauri/gen/schemas/
 
 # Logs

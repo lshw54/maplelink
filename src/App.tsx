@@ -4,7 +4,7 @@ import { useTranslation } from "./lib/i18n";
 import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
-import { useConfig, useSetConfig } from "./lib/hooks/use-config";
+import { useConfig, useSetConfig, writeConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
@@ -150,10 +150,7 @@ export function App() {
   // so this loses nothing. A new announcement id brings the banner back.
   const bannerHidden = useConfigStore((s) => s.config?.announcementDismissedId) === ANNOUNCEMENT_ID;
   const hideAnnouncementBanner = () => {
-    const cfg = useConfigStore.getState().config;
-    if (cfg)
-      useConfigStore.setState({ config: { ...cfg, announcementDismissedId: ANNOUNCEMENT_ID } });
-    commands.setConfig("announcement_dismissed_id", ANNOUNCEMENT_ID).catch(() => {});
+    writeConfig("announcementDismissedId", ANNOUNCEMENT_ID).catch(() => {});
     commands.resizeWindow(useUiStore.getState().currentPage, false).catch(() => {});
   };
   const [announcementForced, setAnnouncementForced] = useState(false);

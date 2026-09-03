@@ -37,7 +37,7 @@ pub fn is_ascii(path: &Path) -> bool {
 /// creation turned off — in which case Windows hands back the long name
 /// unchanged and there is no ASCII alias to be had.
 #[cfg(target_os = "windows")]
-pub fn short_path(path: &Path) -> Option<PathBuf> {
+fn short_path(path: &Path) -> Option<PathBuf> {
     use std::ffi::{OsStr, OsString};
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
@@ -63,7 +63,7 @@ pub fn short_path(path: &Path) -> Option<PathBuf> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn short_path(_path: &Path) -> Option<PathBuf> {
+fn short_path(_path: &Path) -> Option<PathBuf> {
     None
 }
 

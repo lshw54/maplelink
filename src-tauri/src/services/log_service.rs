@@ -42,16 +42,17 @@ impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
 ///
 /// Returns an error if the log directory cannot be created or the file
 /// appender fails to initialise.
-pub fn init_logging(log_dir: &Path) -> anyhow::Result<()> {
+pub fn init_logging(log_dir: &Path) -> Result<(), String> {
     // Ensure the log directory exists.
-    std::fs::create_dir_all(log_dir)?;
+    std::fs::create_dir_all(log_dir).map_err(|e| e.to_string())?;
 
     let log_file_path = log_dir.join(LOG_FILE_NAME);
 
     // Size-based rolling file appender: rotates at 10 MB, keeps 5 old files.
     let rolling_condition = RollingConditionBasic::new().max_size(MAX_FILE_SIZE_BYTES);
     let file_appender =
-        BasicRollingFileAppender::new(log_file_path, rolling_condition, MAX_RETAINED_FILES)?;
+        BasicRollingFileAppender::new(log_file_path, rolling_condition, MAX_RETAINED_FILES)
+            .map_err(|e| e.to_string())?;
 
     // Wrap in non-blocking writer so logging never blocks the caller.
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
