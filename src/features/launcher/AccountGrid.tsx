@@ -1,10 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { CopyGlyph } from "../../components/CopyIcon";
 import { useTranslation } from "../../lib/i18n";
 import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
 import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { commands } from "../../lib/tauri";
+import { writeConfig } from "../../lib/hooks/use-config";
 import { AccountContextMenu } from "./AccountContextMenu";
 import type { GameAccountDto } from "../../lib/types";
 
@@ -45,12 +47,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
 
   function toggleViewMode() {
     const next = savedViewMode === "card" ? "list" : "card";
-    // Update local store immediately for instant UI feedback
-    const store = useConfigStore.getState();
-    if (store.config) {
-      useConfigStore.setState({ config: { ...store.config, accountViewMode: next } });
-    }
-    commands.setConfig("accountViewMode", next).catch(() => {});
+    writeConfig("accountViewMode", next).catch(() => {});
   }
 
   const handleContextMenu = useCallback((e: React.MouseEvent, accountId: string) => {
@@ -446,34 +443,7 @@ function CopyIcon({
           : "text-text-faint opacity-0 group-hover:opacity-100 hover:text-accent"
       }`}
     >
-      {isCopied ? (
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      ) : (
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <rect x="9" y="9" width="13" height="13" rx="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
-      )}
+      <CopyGlyph copied={isCopied} size={12} />
     </span>
   );
 }

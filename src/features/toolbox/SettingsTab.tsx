@@ -89,7 +89,6 @@ export function SettingsTab() {
   }
 
   function handleUpdateChannelChange(channel: UpdateChannel) {
-    useConfigStore.getState().updateConfigField("updateChannel", channel);
     setConfig.mutate({ key: "updateChannel", value: channel });
   }
 
@@ -98,7 +97,6 @@ export function SettingsTab() {
   function handleAccentChange(hex: string) {
     const value = hex.toLowerCase() === DEFAULT_ACCENT ? "" : hex.toLowerCase();
     applyAccent(value);
-    useConfigStore.getState().updateConfigField("accentColor", value);
     setConfig.mutate({ key: "accentColor", value });
   }
   const currentAccent =
@@ -106,7 +104,6 @@ export function SettingsTab() {
   const accentIsPreset = ACCENT_PRESETS.some((p) => p.hex === currentAccent);
 
   function handleDefaultLoginViewChange(view: DefaultLoginView) {
-    useConfigStore.getState().updateConfigField("defaultLoginView", view);
     setConfig.mutate({ key: "defaultLoginView", value: view });
   }
 
@@ -193,7 +190,6 @@ export function SettingsTab() {
             checked={config?.compactUi ?? false}
             onChange={async () => {
               if (!config) return;
-              useConfigStore.getState().updateConfigField("compactUi", !config.compactUi);
               await setConfig
                 .mutateAsync({ key: "compactUi", value: String(!config.compactUi) })
                 .catch(() => {});
@@ -239,7 +235,7 @@ export function SettingsTab() {
             onChange={() => {
               if (!config) return;
               setConfig.mutate({
-                key: "webview_via_proxy",
+                key: "webviewViaProxy",
                 value: String(!config.webviewViaProxy),
               });
             }}

@@ -29,8 +29,7 @@ export function useOtp(
   const addToast = useErrorToastStore((s) => s.addToast);
 
   const setAutoInput = (on: boolean) => {
-    useConfigStore.getState().updateConfigField("otpAutoInput", on);
-    setConfig.mutate({ key: "otp_auto_input", value: String(on) });
+    setConfig.mutate({ key: "otpAutoInput", value: on });
   };
 
   function handleOtpError(error: Error) {

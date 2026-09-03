@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useClickOutside } from "../../lib/hooks/use-click-outside";
 
 /**
  * Shared building blocks for the toolbox tabs — the grouped-list look the
@@ -155,14 +156,8 @@ export function Dropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, close, { active: open });
 
   const current = options.find((o) => o.value === value);
 

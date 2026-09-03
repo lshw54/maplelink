@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { commands } from "../../lib/tauri";
+import { writeConfig } from "../../lib/hooks/use-config";
 import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
@@ -142,11 +143,7 @@ export function MainPage() {
         .detectGamePath()
         .then((path) => {
           if (path) {
-            commands.setConfig("game_path", path).catch(() => {});
-            const current = useConfigStore.getState().config;
-            if (current) {
-              useConfigStore.getState().setConfig({ ...current, gamePath: path });
-            }
+            writeConfig("gamePath", path).catch(() => {});
           }
         })
         .catch(() => {});

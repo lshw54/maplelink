@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { useClickOutside } from "../../lib/hooks/use-click-outside";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useConfigStore } from "../../lib/stores/config-store";
@@ -18,23 +19,6 @@ function useMenuClasses() {
   };
 }
 
-/** Close the menu on any mousedown outside it. Registered a tick late so the
- *  click that opened the menu doesn't immediately close it. */
-function useClickOutside(ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", handleClickOutside);
-    }, 16);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [ref, onClose]);
-}
-
 export function BeansPopupMenu({
   t,
   region,
@@ -52,7 +36,7 @@ export function BeansPopupMenu({
   alignLeft?: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  useClickOutside(menuRef, onClose);
+  useClickOutside(menuRef, onClose, { deferred: true });
   const cls = useMenuClasses();
 
   async function handleTopup() {
@@ -113,7 +97,7 @@ export function MorePopupMenu({
   onLogout?: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  useClickOutside(menuRef, onClose);
+  useClickOutside(menuRef, onClose, { deferred: true });
   const cls = useMenuClasses();
 
   return (
@@ -169,7 +153,7 @@ export function OtpMoreMenu({
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  useClickOutside(menuRef, onClose);
+  useClickOutside(menuRef, onClose, { deferred: true });
   const cls = useMenuClasses();
 
   return (

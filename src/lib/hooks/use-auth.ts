@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { getTranslation } from "../i18n";
 import { commands, solveRecaptcha } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
@@ -11,7 +11,7 @@ import type { SessionDto } from "../types";
 const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
 
 /** Launch the game after login if the user enabled autoLaunchGame. Shared by every login path (password, QR, TOTP). */
-export function autoLaunchGameIfEnabled(sessionId: string) {
+function autoLaunchGameIfEnabled(sessionId: string) {
   const cfg = useConfigStore.getState().config;
   if (!cfg?.autoLaunchGame) return;
   void (async () => {
@@ -37,6 +37,74 @@ export function autoLaunchGameIfEnabled(sessionId: string) {
       /* auto-launch failure is non-critical */
     }
   })();
+}
+
+/**
+ * Everything that happens once a login of any kind has produced a session:
+ * register it, load its game accounts (retrying once if the list came back
+ * empty, and saying so if it still is), land on the account list, then either
+ * launch Classic on this session or run the regular auto-launch.
+ */
+export async function finishLogin(queryClient: QueryClient, session: SessionDto) {
+  // Classic (懷舊服) and the regular server share the same beanfun account, so
+  // a classic login is set up EXACTLY like a regular one — the session joins
+  // the account list and gets the same polling / keep-alive — and THEN the
+  // classic portal launch is fired below. Either server can then be played
+  // from this single login.
+  const classic = useUiStore.getState().classicMode;
+
+  useAuthStore.getState().addSession(session);
+  let accountCount = -1;
+  try {
+    let accounts = await commands.getGameAccounts(session.sessionId);
+    if (accounts.length === 0) {
+      // Login-time list came back empty — force one fresh fetch so the user
+      // isn't stranded on an empty account list.
+      try {
+        accounts = await commands.refreshAccounts(session.sessionId);
+      } catch {
+        /* keep the empty list; refresh is best-effort */
+      }
+    }
+    accountCount = accounts.length;
+    useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
+  } catch {
+    /* accounts fetch failure is non-critical */
+  }
+  // Make an empty account list VISIBLE instead of a silent empty page, so a
+  // tester notices + reports it (and can retry) rather than it looking broken.
+  if (accountCount === 0) {
+    useErrorToastStore.getState().addToast({
+      message: tr("login.accounts_load_failed"),
+      category: "authentication",
+      critical: false,
+    });
+  }
+  await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+  // Leave the login page clean for the next session: no "adding" flag, the
+  // normal view, and no QR code held over from a scan that just completed.
+  useUiStore.setState({
+    addingSession: false,
+    loginView: "normal",
+    qrSessionId: null,
+    qrData: null,
+    qrIssuedAt: null,
+  });
+  useUiStore.getState().setPage("main");
+
+  // Classic: the regular session + account list are in place, so launch the
+  // classic portal on this same session; the app-level overlay shows its
+  // progress over the account list. This replaces the regular auto-launch —
+  // the classic launch is this login's launch.
+  if (classic) {
+    useUiStore.setState({ classicStatus: "launching" });
+    commands.openClassicLogin(session.sessionId).catch(() => {
+      useUiStore.setState({ classicStatus: "failed" });
+    });
+    return;
+  }
+
+  autoLaunchGameIfEnabled(session.sessionId);
 }
 
 /** Login with account + password. Creates a new session, then authenticates. */
@@ -172,60 +240,7 @@ export function useLogin() {
         );
       }
     },
-    onSuccess: async (session: SessionDto) => {
-      // Classic (懷舊服) and the regular server share the same beanfun account and
-      // are interconnected, so a classic login is set up EXACTLY like a regular one
-      // — the session joins the account list and gets the same polling / keep-alive
-      // — and THEN we also fire the classic portal launch below. This lets the user
-      // play either server from a single login.
-      const classic = useUiStore.getState().classicMode;
-
-      useAuthStore.getState().addSession(session);
-      let accountCount = -1;
-      try {
-        let accounts = await commands.getGameAccounts(session.sessionId);
-        if (accounts.length === 0) {
-          // Login-time list came back empty — force one fresh fetch so the user
-          // isn't stranded on an empty account list.
-          try {
-            accounts = await commands.refreshAccounts(session.sessionId);
-          } catch {
-            /* keep the empty list; refresh is best-effort */
-          }
-        }
-        accountCount = accounts.length;
-        useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
-      } catch {
-        /* accounts fetch failure is non-critical */
-      }
-      // Make an empty account list VISIBLE instead of a silent empty page, so a
-      // tester notices + reports it (and can retry) rather than it looking broken.
-      if (accountCount === 0) {
-        useErrorToastStore.getState().addToast({
-          message: tr("login.accounts_load_failed"),
-          category: "authentication",
-          critical: false,
-        });
-      }
-      await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      // Clear addingSession flag, reset login view, and navigate to main
-      useUiStore.setState({ addingSession: false, loginView: "normal" });
-      useUiStore.getState().setPage("main");
-
-      // Classic: now that the regular session + account list are in place, launch
-      // the classic portal on this same session. The app-level overlay shows its
-      // progress over the account list. Skip the regular auto-launch below — the
-      // classic launch is this login's launch.
-      if (classic) {
-        useUiStore.setState({ classicStatus: "launching" });
-        commands.openClassicLogin(session.sessionId).catch(() => {
-          useUiStore.setState({ classicStatus: "failed" });
-        });
-        return;
-      }
-
-      autoLaunchGameIfEnabled(session.sessionId);
-    },
+    onSuccess: (session: SessionDto) => finishLogin(queryClient, session),
   });
 }
 
@@ -236,14 +251,6 @@ export function useTotpVerify() {
   return useMutation<SessionDto, Error, { sessionId: string; code: string }>({
     mutationFn: ({ sessionId, code }) => commands.totpVerify(sessionId, code),
     onSuccess: async (session: SessionDto) => {
-      // Classic (懷舊服) is reached through the HK id-pass login, which is also
-      // the path that can demand 2FA — so a classic login can finish here rather
-      // than in useLogin's onSuccess. Set the session up as a regular one and
-      // launch classic below, exactly as that path does.
-      const classic = useUiStore.getState().classicMode;
-
-      useAuthStore.getState().addSession(session);
-
       // Save pending credentials from the login attempt
       const pending = useAuthStore.getState().pendingCredentials;
       if (pending) {
@@ -258,25 +265,7 @@ export function useTotpVerify() {
         }
         useAuthStore.getState().setPendingCredentials(null);
       }
-
-      const accounts = await commands.getGameAccounts(session.sessionId);
-      useAuthStore.getState().updateGameAccounts(session.sessionId, accounts);
-      await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
-      // Reset login view, clear addingSession, navigate to main
-      useUiStore.setState({ addingSession: false, loginView: "normal" });
-      useUiStore.getState().setPage("main");
-
-      // Classic launch replaces the regular auto-launch — otherwise a 2FA
-      // classic login would start the regular game instead.
-      if (classic) {
-        useUiStore.setState({ classicStatus: "launching" });
-        commands.openClassicLogin(session.sessionId).catch(() => {
-          useUiStore.setState({ classicStatus: "failed" });
-        });
-        return;
-      }
-
-      autoLaunchGameIfEnabled(session.sessionId);
+      await finishLogin(queryClient, session);
     },
   });
 }
