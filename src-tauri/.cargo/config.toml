@@ -1,0 +1,7 @@
+# Link with LLVM's lld (shipped inside the Rust toolchain as rust-lld) instead
+# of MSVC link.exe. Measured on 2026-09-03 with rustc 1.98, same machine, same
+# tree: incremental dev build 9.3s -> 8.6s, release (fat LTO) 189s -> 166s,
+# identical exe size. Nothing to install: rust-lld comes with every toolchain,
+# so CI's windows-latest picks it up the same way.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
