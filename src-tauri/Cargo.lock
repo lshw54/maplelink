@@ -2096,15 +2096,11 @@ name = "maplelink"
 version = "0.5.0"
 dependencies = [
  "aes-gcm",
- "anyhow",
  "argon2",
  "base64 0.22.1",
  "chrono",
- "cookie",
- "cookie_store",
  "des",
  "futures-util",
- "hex",
  "minisign-verify",
  "native-tls",
  "open",

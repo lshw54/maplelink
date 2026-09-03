@@ -6,6 +6,17 @@
 use des::cipher::{BlockCipherDecrypt, KeyInit};
 use des::Des;
 
+/// Decode a hex string into bytes; `None` on odd length or a non-hex digit.
+fn decode_hex(hex: &str) -> Option<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
 /// Decrypt a hex-encoded DES ECB ciphertext using an 8-byte ASCII key.
 ///
 /// Returns the decrypted ASCII string with null bytes trimmed.
@@ -22,7 +33,7 @@ pub fn des_ecb_decrypt_hex(hex_ciphertext: &str, key_ascii: &str) -> Option<Stri
     let key_bytes: [u8; 8] = key_ascii.as_bytes().try_into().ok()?;
     let cipher = Des::new_from_slice(&key_bytes).ok()?;
 
-    let ciphertext = hex::decode(hex_ciphertext).ok()?;
+    let ciphertext = decode_hex(hex_ciphertext)?;
     if ciphertext.len() % 8 != 0 {
         return None;
     }
