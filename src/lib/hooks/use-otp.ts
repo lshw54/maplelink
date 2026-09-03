@@ -21,6 +21,15 @@ export function useOtp(
   const credentialsMutation = useGameCredentials();
   const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
   const [copied, setCopied] = useState(false);
+  // An OTP belongs to the account it was fetched for. Switching account — which
+  // every session-tab switch does — must not carry the old one over, so the
+  // readout is reset in render when the selection changes.
+  const [shownFor, setShownFor] = useState(selectedAccountId);
+  if (shownFor !== selectedAccountId) {
+    setShownFor(selectedAccountId);
+    setCredentials(null);
+    setCopied(false);
+  }
   const [pasting, setPasting] = useState(false);
   // Persisted: as component state this reset to on every time the panel
   // remounted, which is why it appeared to tick itself back on.
