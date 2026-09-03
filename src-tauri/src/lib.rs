@@ -270,7 +270,6 @@ pub fn run() {
             commands::auth::submit_advance_check,
             commands::auth::refresh_advance_check_captcha,
             commands::auth::logout,
-            commands::auth::refresh_session,
             commands::auth::get_saved_accounts,
             commands::auth::get_all_saved_accounts,
             commands::auth::get_last_saved_account,
@@ -357,8 +356,6 @@ pub fn run() {
             commands::auth::classic_needs_login,
             commands::auth::classic_ngm_missing,
             commands::auth::gamepass_webview_done,
-            commands::auth::open_regular_web_login,
-            commands::auth::regular_web_login_done,
             commands::auth::open_recaptcha_window,
             commands::auth::submit_login_token,
             commands::auth::close_recaptcha_window,
@@ -835,9 +832,6 @@ pub fn run() {
                         if !services::recaptcha_window::recaptcha_take_delivered() {
                             let _ = app_handle.emit("recaptcha-cancelled", ());
                         }
-                    } else if label == "web-login" {
-                        // Regular web-login window closed before completion
-                        let _ = app_handle.emit("regular-login-cancelled", ());
                     }
                 });
             }

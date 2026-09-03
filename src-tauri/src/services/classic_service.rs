@@ -460,7 +460,7 @@ pub async fn open_classic_login(
     // then let the runtime settle.
     let mut waited = false;
     for _ in 0..30 {
-        let busy = ["gamepass-login", "web-login", "recaptcha_window"]
+        let busy = ["gamepass-login", "recaptcha_window"]
             .iter()
             .any(|l| app.get_webview_window(l).is_some());
         if !busy {

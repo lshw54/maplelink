@@ -6,7 +6,6 @@
     "debug-console",
     "gamepass-login",
     "recaptcha_window",
-    "web-login",
     "bf-browser"
   ],
   "webviews": ["bf-browser-bar"],

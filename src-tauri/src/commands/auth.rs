@@ -4,7 +4,7 @@
 
 use tauri::State;
 
-use crate::core::auth::{self, SessionAction};
+use crate::core::auth;
 use crate::core::error::{AppError, AuthError};
 use crate::models::app_state::{AppState, SessionInfo};
 use crate::models::error::ErrorDto;
@@ -462,56 +462,6 @@ pub async fn logout(
     Ok(())
 }
 
-/// Refresh the current session if it's about to expire.
-///
-/// Called internally or from the frontend heartbeat. Not exposed as a
-/// primary user action — it's automatic (Req 1.4).
-#[tauri::command]
-pub async fn refresh_session(
-    session_id: String,
-    state: State<'_, AppState>,
-) -> Result<SessionDto, ErrorDto> {
-    let ss = state.require_session(&session_id).await?;
-
-    let action = {
-        let session_guard = ss.session.read().await;
-        auth::decide_session_action(&session_guard)
-    };
-
-    match action {
-        SessionAction::UseExisting => {
-            let session_guard = ss.session.read().await;
-            let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
-            Ok(SessionDto::from_session(session, &session_id))
-        }
-        SessionAction::AttemptRefresh => {
-            let (refresh_token, region) = {
-                let session_guard = ss.session.read().await;
-                let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
-                (
-                    session
-                        .refresh_token
-                        .clone()
-                        .ok_or(AuthError::SessionExpired)
-                        .map_err(to_dto)?,
-                    session.region.clone(),
-                )
-            };
-
-            let new_session =
-                beanfun_service::refresh_session(&ss.http_client, &refresh_token, &region)
-                    .await
-                    .map_err(login_err_to_dto)?;
-
-            let dto = SessionDto::from_session(&new_session, &session_id);
-            *ss.session.write().await = Some(new_session);
-            tracing::info!("session refreshed for {}", dto.account_name);
-            Ok(dto)
-        }
-        SessionAction::ReAuthenticate => Err(to_dto(AuthError::SessionExpired)),
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Saved account commands (global state — no session_id needed)
 // ---------------------------------------------------------------------------
@@ -885,65 +835,6 @@ pub async fn gamepass_webview_done(
     .await?;
     if !completed {
         tracing::info!("GamePass (JS IPC): bfWebToken not present yet — backend poll will retry");
-    }
-    Ok(())
-}
-
-/// Open the regular (帳密) web-login window: the user completes the whole login
-/// on the official page (credentials prefilled), then cookies are harvested.
-#[tauri::command]
-pub async fn open_regular_web_login(
-    session_id: String,
-    account: String,
-    password: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
-    auth::validate_input("account", &account).map_err(to_dto)?;
-    auth::validate_input("password", &password).map_err(to_dto)?;
-    // Session is pre-created by the frontend.
-    let _ = state.require_session(&session_id).await?;
-
-    webview_login::open_regular_web_login_window(app, session_id, account, password).await
-}
-
-/// Called by the web-login init script once login completes: harvest cookies,
-/// build the session + account list, and emit `regular-login-complete`.
-#[tauri::command]
-pub async fn regular_web_login_done(
-    session_id: String,
-    account: String,
-    web_token: String,
-    account_html: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), ErrorDto> {
-    use tauri::{Emitter, Manager};
-
-    let ss = state.require_session(&session_id).await?;
-    match webview_login::finalize_webview_login(
-        &app,
-        &ss,
-        &session_id,
-        "web-login",
-        &account,
-        &web_token,
-        &account_html,
-    )
-    .await
-    {
-        Ok(dto) => {
-            tracing::info!("regular web-login complete: {}", dto.account_name);
-            let _ = app.emit("regular-login-complete", dto);
-        }
-        Err(e) => {
-            tracing::error!("regular web-login failed: {e}");
-            let _ = app.emit("regular-login-error", format!("登入失敗: {e}"));
-        }
-    }
-
-    if let Some(win) = app.get_webview_window("web-login") {
-        let _ = win.destroy();
     }
     Ok(())
 }
