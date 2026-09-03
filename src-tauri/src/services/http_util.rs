@@ -7,6 +7,11 @@
 
 use futures_util::StreamExt;
 
+/// The Chrome UA every reqwest client presents to beanfun and GitHub. The
+/// Chrome major must match the `sec-ch-ua` brand string in beanfun_service.
+pub const USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+
 /// Read a response body, stopping at `limit` rather than at whatever the sender
 /// decides to send.
 ///

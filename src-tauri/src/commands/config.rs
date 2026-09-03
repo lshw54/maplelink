@@ -5,7 +5,7 @@
 
 use tauri::State;
 
-use crate::core::error::{AppError, ConfigError};
+use crate::core::error::{to_dto, ConfigError};
 use crate::models::app_state::AppState;
 use crate::models::config::{
     AccountViewMode, AppConfig, DefaultLoginView, FontSize, Language, Theme, UpdateChannel,
@@ -24,7 +24,7 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, ErrorDt
 /// Update a single configuration field by key and persist to disk.
 ///
 /// Supported keys (flat, snake_case):
-/// `game_path`, `locale`, `theme`, `language`,
+/// `game_path`, `theme`, `language`,
 /// `auto_update`, `skip_play_confirm`, `auto_start`, `region`,
 /// `debug_logging`, `window_x`, `window_y`, `window_width`, `window_height`,
 /// `default_login_view`.
@@ -36,17 +36,11 @@ pub async fn set_config(
 ) -> Result<(), ErrorDto> {
     let mut config = state.config.write().await;
 
-    apply_config_field(&mut config, &key, &value).map_err(|e| {
-        let app_err: AppError = e.into();
-        ErrorDto::from(app_err)
-    })?;
+    apply_config_field(&mut config, &key, &value).map_err(to_dto)?;
 
     config_service::save_config(&state.config_path, &config)
         .await
-        .map_err(|e| {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        })?;
+        .map_err(to_dto)?;
 
     tracing::info!("config updated: {key} = {value}");
     Ok(())
@@ -60,7 +54,6 @@ pub async fn set_config(
 fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<(), ConfigError> {
     match key {
         "game_path" => config.game_path = value.to_string(),
-        "locale" => config.locale = value.to_string(),
         "theme" => {
             config.theme = match value.to_lowercase().as_str() {
                 "system" => Theme::System,

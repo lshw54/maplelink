@@ -5,7 +5,7 @@
 use tauri::State;
 
 use crate::core::auth;
-use crate::core::error::{AppError, AuthError};
+use crate::core::error::{to_dto, AuthError};
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::session::SessionDto;
@@ -88,7 +88,7 @@ pub async fn login(
                 details: Some("advance_check_required".to_string()),
             });
         }
-        Err(e) => return Err(login_err_to_dto(e)),
+        Err(e) => return Err(to_dto(e)),
     };
 
     let dto = SessionDto::from_session(&session, &session_id);
@@ -141,7 +141,7 @@ pub async fn tw_login_check(
         &ss.cookie_jar,
     )
     .await
-    .map_err(login_err_to_dto)?;
+    .map_err(to_dto)?;
 
     *ss.pending_tw_login.write().await = Some(crate::models::session_state::PendingTwLogin {
         skey,
@@ -206,7 +206,7 @@ pub async fn tw_login_submit(
                 details: Some("advance_check_required".to_string()),
             });
         }
-        Err(e) => return Err(login_err_to_dto(e)),
+        Err(e) => return Err(to_dto(e)),
     };
 
     // Consume the pending state now that the login attempt resolved.
@@ -261,7 +261,7 @@ pub async fn qr_login_start(
         &ss.cookie_jar,
     )
     .await
-    .map_err(login_err_to_dto)
+    .map_err(to_dto)
 }
 
 /// Poll the status of an in-progress QR-code login.
@@ -280,14 +280,14 @@ pub async fn qr_login_poll(
     let result =
         beanfun_service::qr_login_poll(&ss.http_client, &session_key, &verification_token, &region)
             .await
-            .map_err(login_err_to_dto)?;
+            .map_err(to_dto)?;
 
     // If confirmed, complete the login and store the session
     if result.status == beanfun_service::QrPollStatus::Confirmed {
         let session =
             beanfun_service::qr_login_complete(&ss.http_client, &session_key, &ss.cookie_jar)
                 .await
-                .map_err(login_err_to_dto)?;
+                .map_err(to_dto)?;
 
         let accounts =
             beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar)
@@ -338,7 +338,7 @@ pub async fn totp_verify(
     let session =
         beanfun_service::hk_totp_verify_with_session(&ss.http_client, &code, &partial_session)
             .await
-            .map_err(login_err_to_dto)?;
+            .map_err(to_dto)?;
 
     let dto = SessionDto::from_session(&session, &session_id);
 
@@ -369,7 +369,7 @@ pub async fn get_advance_check(
 
     let check_state = beanfun_service::get_advance_check_page(&ss.http_client, url.as_deref())
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     tracing::info!("advance check page loaded");
     Ok(check_state)
@@ -411,7 +411,7 @@ pub async fn submit_advance_check(
         &captcha_code,
     )
     .await
-    .map_err(login_err_to_dto)?;
+    .map_err(to_dto)?;
 
     Ok(result)
 }
@@ -427,7 +427,7 @@ pub async fn refresh_advance_check_captcha(
 
     let image = beanfun_service::refresh_advance_check_captcha(&ss.http_client, &samplecaptcha)
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     Ok(image)
 }
@@ -699,27 +699,6 @@ pub async fn save_login_credentials(
 
     tracing::info!("saved login credentials (remember={})", remember_password);
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Error mapping helpers
-// ---------------------------------------------------------------------------
-
-/// Convert an [`AuthError`] into an [`ErrorDto`].
-fn to_dto(err: AuthError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert a [`beanfun_service::LoginError`] into an [`ErrorDto`].
-fn login_err_to_dto(err: beanfun_service::LoginError) -> ErrorDto {
-    match err {
-        beanfun_service::LoginError::Auth(e) => to_dto(e),
-        beanfun_service::LoginError::Network(e) => {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        }
-    }
 }
 
 /// Receives the captured page from the hidden session-key fallback webview

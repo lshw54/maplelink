@@ -167,154 +167,120 @@ async fn get_server_version() -> String {
     }
 }
 
-/// Find Patcher.exe by enumerating processes via Toolhelp32 snapshot and kill
-/// it if its executable path matches the expected game directory.
+/// Walk the Toolhelp32 process snapshot, handing each `(exe_name_lower, pid)` to
+/// `visit`; stop early when it returns `true`.
+#[cfg(target_os = "windows")]
+fn for_each_process(mut visit: impl FnMut(&str, u32) -> bool) {
+    use std::ffi::OsString;
+    use std::mem;
+    use std::os::windows::ffi::OsStringExt;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return;
+        }
+
+        let mut entry: PROCESSENTRY32W = mem::zeroed();
+        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                let len = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let exe_name = OsString::from_wide(&entry.szExeFile[..len])
+                    .to_string_lossy()
+                    .to_lowercase();
+
+                if visit(&exe_name, entry.th32ProcessID) {
+                    break;
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+
+        CloseHandle(snapshot);
+    }
+}
+
+/// Find Patcher.exe among the running processes and kill it if its executable
+/// path matches the expected game directory.
 ///
 /// Returns `true` if the patcher was found and killed.
 #[cfg(target_os = "windows")]
 fn find_and_kill_patcher(expected_path_lower: &str) -> bool {
     use std::ffi::OsString;
-    use std::mem;
     use std::os::windows::ffi::OsStringExt;
 
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-        TH32CS_SNAPPROCESS,
-    };
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
         PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
     };
 
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == INVALID_HANDLE_VALUE {
+    let mut killed = false;
+    for_each_process(|exe_name, pid| {
+        if exe_name != "patcher.exe" {
             return false;
         }
+        unsafe {
+            // Open the process to query its full path
+            let proc_handle = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                0, // bInheritHandle = FALSE
+                pid,
+            );
+            if proc_handle.is_null() {
+                return false;
+            }
 
-        let mut entry: PROCESSENTRY32W = mem::zeroed();
-        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
-
-        if Process32FirstW(snapshot, &mut entry) == 0 {
-            CloseHandle(snapshot);
-            return false;
-        }
-
-        loop {
-            // Check if this process is Patcher.exe by its szExeFile field
-            let exe_name = OsString::from_wide(
-                &entry.szExeFile[..entry
-                    .szExeFile
-                    .iter()
-                    .position(|&c| c == 0)
-                    .unwrap_or(entry.szExeFile.len())],
-            )
-            .to_string_lossy()
-            .to_lowercase();
-
-            if exe_name == "patcher.exe" {
-                let pid = entry.th32ProcessID;
-
-                // Open the process to query its full path
-                let proc_handle = OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
-                    0, // bInheritHandle = FALSE
-                    pid,
-                );
-
-                if !proc_handle.is_null() {
-                    let mut buf = [0u16; 1024];
-                    let mut size = buf.len() as u32;
-
-                    if QueryFullProcessImageNameW(proc_handle, 0, buf.as_mut_ptr(), &mut size) != 0
-                    {
-                        let full_path = OsString::from_wide(&buf[..size as usize])
-                            .to_string_lossy()
-                            .to_lowercase();
-
-                        if full_path == *expected_path_lower {
-                            TerminateProcess(proc_handle, 1);
-                            CloseHandle(proc_handle);
-                            CloseHandle(snapshot);
-                            tracing::info!("killed Patcher.exe (PID {pid})");
-                            return true;
-                        }
-                    }
-
-                    CloseHandle(proc_handle);
+            let mut buf = [0u16; 1024];
+            let mut size = buf.len() as u32;
+            if QueryFullProcessImageNameW(proc_handle, 0, buf.as_mut_ptr(), &mut size) != 0 {
+                let full_path = OsString::from_wide(&buf[..size as usize])
+                    .to_string_lossy()
+                    .to_lowercase();
+                if full_path == *expected_path_lower {
+                    TerminateProcess(proc_handle, 1);
+                    tracing::info!("killed Patcher.exe (PID {pid})");
+                    killed = true;
                 }
             }
-
-            if Process32NextW(snapshot, &mut entry) == 0 {
-                break;
-            }
+            CloseHandle(proc_handle);
         }
-
-        CloseHandle(snapshot);
-    }
-
-    false
+        killed
+    });
+    killed
 }
 
 /// Find a running process by executable name and return its PID.
 ///
-/// Uses Toolhelp32 snapshot to enumerate processes in-process (no console popups).
-/// Returns the first matching PID, or `None` if not found.
+/// Enumerates processes in-process (no console popups). Returns the first
+/// matching PID, or `None` if not found.
 #[cfg(target_os = "windows")]
 pub fn find_process_pid_by_name(name: &str) -> Option<u32> {
-    use std::ffi::OsString;
-    use std::mem;
-    use std::os::windows::ffi::OsStringExt;
-
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-        TH32CS_SNAPPROCESS,
-    };
-
     let name_lower = name.to_lowercase();
-
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == INVALID_HANDLE_VALUE {
-            return None;
+    let mut found = None;
+    for_each_process(|exe_name, pid| {
+        if exe_name == name_lower {
+            found = Some(pid);
+            true
+        } else {
+            false
         }
-
-        let mut entry: PROCESSENTRY32W = mem::zeroed();
-        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
-
-        if Process32FirstW(snapshot, &mut entry) == 0 {
-            CloseHandle(snapshot);
-            return None;
-        }
-
-        loop {
-            let exe_name = OsString::from_wide(
-                &entry.szExeFile[..entry
-                    .szExeFile
-                    .iter()
-                    .position(|&c| c == 0)
-                    .unwrap_or(entry.szExeFile.len())],
-            )
-            .to_string_lossy()
-            .to_lowercase();
-
-            if exe_name == name_lower {
-                let pid = entry.th32ProcessID;
-                CloseHandle(snapshot);
-                return Some(pid);
-            }
-
-            if Process32NextW(snapshot, &mut entry) == 0 {
-                break;
-            }
-        }
-
-        CloseHandle(snapshot);
-    }
-
-    None
+    });
+    found
 }
 
 #[cfg(not(target_os = "windows"))]

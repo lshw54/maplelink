@@ -19,12 +19,12 @@ use crate::utils::crypto::des_ecb_decrypt_hex;
 
 /// Default User-Agent for all beanfun requests — a current Chrome string
 /// (kept in sync with the session client defaults and [`SEC_CH_UA`]).
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+use crate::services::http_util::USER_AGENT;
 
 /// Same modern Chrome UA, used explicitly on the TW login POSTs alongside
 /// [`SEC_CH_UA`]. Kept distinct so the login fingerprint stays pinned even if
 /// the default UA is ever changed again.
-const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+const BROWSER_UA: &str = USER_AGENT;
 
 /// Chrome client-hint brand string; the Chrome major MUST match [`BROWSER_UA`]
 /// (a version mismatch between the UA and `sec-ch-ua` is a bot signal → beanfun
@@ -525,6 +525,15 @@ pub enum LoginError {
     Auth(#[from] AuthError),
     #[error(transparent)]
     Network(#[from] NetworkError),
+}
+
+impl From<LoginError> for crate::core::error::AppError {
+    fn from(err: LoginError) -> Self {
+        match err {
+            LoginError::Auth(e) => e.into(),
+            LoginError::Network(e) => e.into(),
+        }
+    }
 }
 
 /// A failure in the hand-off to the Gamania Games Manager.
@@ -2705,7 +2714,7 @@ const TICKET_TABLES: [&str; 8] = [
 /// Not credentials — a ticket that stands in for them, which the credential
 /// endpoint trades for the real thing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchTicket {
+struct LaunchTicket {
     pub launch_ticket: String,
     pub service_account: String,
 }
@@ -2725,7 +2734,7 @@ pub struct LaunchTicket {
 /// that can't be reached by accident, since a wrong table gives noise. Eight
 /// DES passes over 272 bytes costs nothing measurable, and it keeps working if
 /// beanfun adds a ninth table.
-pub fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
+fn decode_launch_ticket(data: &str) -> Option<LaunchTicket> {
     let selector = usize::from_str_radix(data.get(..1)?, 16).ok()?;
     let body = data.get(1..)?;
 

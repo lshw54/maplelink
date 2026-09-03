@@ -5,7 +5,7 @@
 use tauri::State;
 
 use crate::core::auth;
-use crate::core::error::{AppError, AuthError};
+use crate::core::error::to_dto;
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::game_account::{GameAccount, GameCredentials};
@@ -192,7 +192,7 @@ pub async fn get_game_credentials(
             account_id = %account_id,
             "credential retrieval failed: {e}"
         );
-        login_err_to_dto(e)
+        to_dto(e)
     })?;
 
     tracing::info!(account_id = %account_id, "credentials retrieved");
@@ -216,7 +216,7 @@ pub async fn refresh_accounts(
 
     let accounts = beanfun_service::get_game_accounts(&ss.http_client, session, &ss.cookie_jar)
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     let overrides = state.display_overrides.read().await;
     let mut dtos: Vec<GameAccountDto> = accounts
@@ -296,7 +296,7 @@ pub async fn get_remain_point(
 
     let points = beanfun_service::get_remain_point(&ss.http_client, &region)
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     tracing::info!("remain points: {points}");
     Ok(points)
@@ -336,7 +336,7 @@ pub async fn auto_paste_otp(
     .await
     .map_err(|e| {
         tracing::warn!(account_id = %account_id, "credential retrieval for auto-paste failed: {e}");
-        login_err_to_dto(e)
+        to_dto(e)
     })?;
 
     // Drop locks before the blocking auto-paste call
@@ -393,7 +393,7 @@ pub async fn change_account_display_name(
         &new_name,
     )
     .await
-    .map_err(login_err_to_dto)?;
+    .map_err(to_dto)?;
 
     if success {
         tracing::info!(account_id = %account_id, new_name = %new_name, "display name changed");
@@ -467,29 +467,8 @@ pub async fn get_auth_email(
 
     let email = beanfun_service::get_email(&ss.http_client, &session.region)
         .await
-        .map_err(login_err_to_dto)?;
+        .map_err(to_dto)?;
 
     tracing::info!("auth email retrieved (empty={})", email.is_empty());
     Ok(email)
-}
-
-// ---------------------------------------------------------------------------
-// Error mapping helpers
-// ---------------------------------------------------------------------------
-
-/// Convert an [`AuthError`] into an [`ErrorDto`].
-fn to_dto(err: AuthError) -> ErrorDto {
-    let app_err: AppError = err.into();
-    ErrorDto::from(app_err)
-}
-
-/// Convert a [`beanfun_service::LoginError`] into an [`ErrorDto`].
-fn login_err_to_dto(err: beanfun_service::LoginError) -> ErrorDto {
-    match err {
-        beanfun_service::LoginError::Auth(e) => to_dto(e),
-        beanfun_service::LoginError::Network(e) => {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        }
-    }
 }

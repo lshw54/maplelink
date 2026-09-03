@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 const DOWNLOAD_PAGE: &str = "https://maplestory.beanfun.com/download";
 const DOWNLOAD_LIST_HANDLER: &str = "https://maplestory.beanfun.com/download?handler=DownloadList";
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+use crate::services::http_util::USER_AGENT as UA;
 
 /// One downloadable item exposed to the UI.
 #[derive(Debug, Clone, Serialize)]

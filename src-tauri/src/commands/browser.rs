@@ -165,4 +165,3 @@ pub async fn browser_open_external(url: String) -> Result<(), ErrorDto> {
         details: None,
     })
 }
-

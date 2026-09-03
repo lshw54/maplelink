@@ -458,7 +458,7 @@ pub async fn finalize_webview_login(
 /// the beanfun origin matching its domain.
 fn inject_cookies_into_jar(
     jar: &std::sync::Arc<reqwest::cookie::Jar>,
-    cookies: &[crate::services::webview_util::CookieTuple],
+    cookies: &[crate::services::cookie_native::SeedCookie],
 ) {
     let tw_url: url::Url = "https://tw.beanfun.com/".parse().unwrap();
     let login_url: url::Url = "https://login.beanfun.com/".parse().unwrap();
