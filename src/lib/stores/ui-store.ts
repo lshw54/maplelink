@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { commands } from "../tauri";
-import type { ClassicAccountDto } from "../types";
+import type { ClassicAccountDto, GameCredentialsDto } from "../types";
 import { useConfigStore } from "./config-store";
 import { ANNOUNCEMENT_ID } from "../announcement";
 
@@ -59,6 +59,12 @@ export interface UiState {
    * come back showing a fresh three minutes.
    */
   qrIssuedAt: number | null;
+  /**
+   * The last OTP fetched for each game account, so a session tab (or the
+   * toolbox round-trip) shows the code it had rather than a blank readout.
+   */
+  otpByAccount: Record<string, GameCredentialsDto>;
+  setOtp: (accountId: string, data: GameCredentialsDto) => void;
   setPage: (page: Page) => void;
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
@@ -84,6 +90,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   qrSessionId: null,
   qrData: null,
   qrIssuedAt: null,
+  otpByAccount: {},
+  setOtp: (accountId, data) =>
+    set((state) => ({ otpByAccount: { ...state.otpByAccount, [accountId]: data } })),
   setPage: (page) => {
     const current = get().currentPage;
     // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.

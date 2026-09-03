@@ -4,6 +4,7 @@ import { useConfigStore } from "../stores/config-store";
 import { useSetConfig } from "./use-config";
 import { useGameCredentials } from "./use-accounts";
 import { useAuthStore } from "../stores/auth-store";
+import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
 import { commands } from "../tauri";
 import type { ErrorDto, GameCredentialsDto } from "../types";
@@ -19,17 +20,13 @@ export function useOtp(
 ) {
   const { t } = useTranslation();
   const credentialsMutation = useGameCredentials();
-  const [credentials, setCredentials] = useState<GameCredentialsDto | null>(null);
+  // An OTP belongs to the account it was fetched for: each account keeps its
+  // own readout, so switching tabs shows that tab's code, not the last one.
+  const credentials = useUiStore((s) =>
+    selectedAccountId ? (s.otpByAccount[selectedAccountId] ?? null) : null,
+  );
+  const setOtp = useUiStore((s) => s.setOtp);
   const [copied, setCopied] = useState(false);
-  // An OTP belongs to the account it was fetched for. Switching account — which
-  // every session-tab switch does — must not carry the old one over, so the
-  // readout is reset in render when the selection changes.
-  const [shownFor, setShownFor] = useState(selectedAccountId);
-  if (shownFor !== selectedAccountId) {
-    setShownFor(selectedAccountId);
-    setCredentials(null);
-    setCopied(false);
-  }
   const [pasting, setPasting] = useState(false);
   // Persisted: as component state this reset to on every time the panel
   // remounted, which is why it appeared to tick itself back on.
@@ -73,7 +70,7 @@ export function useOtp(
    *  auto-input has just handed focus to the game, and the webview's own
    *  clipboard refuses to write when the document isn't focused. */
   async function applyOtp(accountId: string, data: GameCredentialsDto) {
-    setCredentials(data);
+    setOtp(accountId, data);
     onOtpFetched?.(accountId, data.otp);
     const ok = await commands.copyToClipboard(data.otp).catch(() => false);
     setCopied(ok);
@@ -126,7 +123,7 @@ export function useOtp(
         useAuthStore.getState().sessionIdForAccount(selectedAccountId) ?? "",
         selectedAccountId,
       );
-      setCredentials(data);
+      setOtp(selectedAccountId, data);
       onOtpFetched?.(selectedAccountId, data.otp);
       await commands.copyToClipboard(`${data.accountId}
 ${data.otp}`);
