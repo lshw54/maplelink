@@ -189,15 +189,13 @@ mod tests {
     fn arb_session() -> impl Strategy<Value = Session> {
         (
             "[a-zA-Z0-9]{8,32}",
-            proptest::option::of("[a-zA-Z0-9]{8,32}"),
             (0i64..=86400),
             arb_region(),
             "[a-zA-Z0-9_]{3,20}",
         )
             .prop_map(
-                |(token, refresh_token, expires_in, region, account_name)| Session {
+                |(token, expires_in, region, account_name)| Session {
                     token,
-                    refresh_token,
                     expires_at: chrono::Utc::now() + chrono::Duration::seconds(expires_in),
                     region,
                     account_name,

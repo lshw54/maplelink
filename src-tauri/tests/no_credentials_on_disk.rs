@@ -138,13 +138,11 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
 fn arb_session() -> impl Strategy<Value = Session> {
     (
         arb_token(),
-        proptest::option::of(arb_token()),
         arb_region(),
         arb_ini_safe_string(),
     )
-        .prop_map(|(token, refresh_token, region, account_name)| Session {
+        .prop_map(|(token, region, account_name)| Session {
             token,
-            refresh_token,
             expires_at: chrono::Utc::now(),
             region,
             account_name,
@@ -196,15 +194,6 @@ proptest! {
             "INI output contains session token: {}",
             session.token,
         );
-
-        // Refresh token (if present) must not appear either
-        if let Some(ref rt) = session.refresh_token {
-            prop_assert!(
-                !ini_output.contains(rt),
-                "INI output contains refresh token: {}",
-                rt,
-            );
-        }
     }
 
     /// Writing config to disk via `save_config` shall never persist credentials.
@@ -239,15 +228,6 @@ proptest! {
                 "Disk files contain session token: {}",
                 session.token,
             );
-
-            // Assert no file contains the refresh token
-            if let Some(ref rt_tok) = session.refresh_token {
-                assert!(
-                    !all_contents.contains(rt_tok),
-                    "Disk files contain refresh token: {}",
-                    rt_tok,
-                );
-            }
 
             // Cleanup
             std::fs::remove_dir_all(&dir).ok();

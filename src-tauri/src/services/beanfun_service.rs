@@ -226,16 +226,6 @@ pub async fn totp_verify(
     }
 }
 
-/// Attempt to refresh an existing session. Placeholder.
-pub async fn refresh_session(
-    client: &Client,
-    refresh_token: &str,
-    region: &Region,
-) -> Result<Session, LoginError> {
-    let _ = (client, refresh_token, region);
-    Err(LoginError::Auth(AuthError::SessionExpired))
-}
-
 /// Log out from the Beanfun platform (invalidate server-side session).
 pub async fn logout(client: &Client, region: &Region) -> Result<(), LoginError> {
     let (host, login_host) = match region {
@@ -631,7 +621,6 @@ async fn hk_login_with_session_key(
         tracing::info!("HK login requires TOTP verification");
         let partial_session = Session {
             token: String::new(),
-            refresh_token: None,
             expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
             region: Region::HK,
             account_name: account.to_string(),
@@ -659,7 +648,6 @@ async fn hk_login_with_session_key(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::HK,
         account_name: account.to_string(),
@@ -776,7 +764,6 @@ pub async fn hk_totp_verify_with_session(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::HK,
         account_name: partial_session.account_name.clone(),
@@ -1578,7 +1565,6 @@ async fn tw_account_login(
             let web_token = tw_send_login_flow(client, skey, cookie_jar).await?;
             Ok(Session {
                 token: web_token,
-                refresh_token: None,
                 expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
                 region: Region::TW,
                 account_name: account.to_string(),
@@ -1966,7 +1952,6 @@ async fn tw_qr_complete(
 
     Ok(Session {
         token: web_token,
-        refresh_token: None,
         expires_at: chrono::Utc::now() + chrono::Duration::hours(6),
         region: Region::TW,
         account_name: "TW User".to_string(),

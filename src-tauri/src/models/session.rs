@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub token: String,
-    pub refresh_token: Option<String>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub region: Region,
     pub account_name: String,
@@ -37,7 +36,7 @@ pub enum Region {
     HK,
 }
 
-/// Subset of [`Session`] safe to send to the frontend (no refresh token).
+/// Subset of [`Session`] sent to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDto {
