@@ -238,7 +238,6 @@ mod tests {
                 )| {
                     AppConfig {
                         game_path,
-                        locale: "zh-TW".into(),
                         theme,
                         language,
                         auto_update,

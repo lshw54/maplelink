@@ -4,7 +4,7 @@ use crate::core::error::AuthError;
 use crate::models::session::Session;
 
 /// Maximum allowed length for user-supplied string inputs (account, password, codes).
-pub const MAX_INPUT_LENGTH: usize = 256;
+const MAX_INPUT_LENGTH: usize = 256;
 
 /// Validate that a session exists.
 /// Returns the session reference on success.

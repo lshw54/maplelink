@@ -11,20 +11,3 @@ pub struct UpdateInfo {
     pub download_url: String,
     pub is_prerelease: bool,
 }
-
-/// Current status of an update operation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum UpdateStatus {
-    /// No update activity.
-    Idle,
-    /// Checking for updates.
-    Checking,
-    /// An update is available.
-    Available,
-    /// Downloading the update.
-    Downloading,
-    /// Ready to install.
-    ReadyToInstall,
-    /// Update failed.
-    Failed,
-}

@@ -169,7 +169,7 @@ async fn sync_lr_file(
 ///
 /// The plain long path is always last so a failure is a failed launch with the
 /// real path in the log, not an empty candidate list.
-pub fn lr_dir_candidates(app_data_dir: &std::path::Path) -> Vec<PathBuf> {
+fn lr_dir_candidates(app_data_dir: &std::path::Path) -> Vec<PathBuf> {
     use crate::utils::ascii_path;
 
     let primary = app_data_dir.join("lr");

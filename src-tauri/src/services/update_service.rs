@@ -198,7 +198,7 @@ pub async fn resolve_route(client: &reqwest::Client, hosts_enabled: bool) -> req
 ///
 /// Overrides only cover GitHub's own domains, so the same client still reaches
 /// the proxy mirrors normally.
-pub fn github_client(fallback: &reqwest::Client) -> reqwest::Client {
+fn github_client(fallback: &reqwest::Client) -> reqwest::Client {
     HOSTS_CLIENT
         .get()
         .cloned()
@@ -480,23 +480,6 @@ fn extract_update_info(release: &serde_json::Value) -> Result<Option<UpdateInfo>
 /// Parse a version string into a vector of numeric parts.
 fn parse_version(s: &str) -> Vec<u32> {
     s.split('.').filter_map(|p| p.parse().ok()).collect()
-}
-
-/// Get the download URL, automatically proxied if GitHub is not directly reachable.
-/// The `use_proxy` flag from the frontend overrides auto-detection when true.
-pub fn get_download_url(original_url: &str, use_proxy: bool) -> String {
-    if use_proxy && !original_url.is_empty() {
-        // Explicit proxy request from frontend — use cached mirror or first fallback
-        match PROXY_CACHE.get() {
-            Some(Some(prefix)) => format!("{prefix}{original_url}"),
-            _ => format!("{}{original_url}", PROXY_MIRRORS[0]),
-        }
-    } else if !use_proxy {
-        // Check if auto-proxy is active
-        maybe_proxy_url(original_url)
-    } else {
-        original_url.to_string()
-    }
 }
 
 /// Test if GitHub API is reachable (for frontend proxy toggle detection).
@@ -956,11 +939,6 @@ pub fn should_check(is_manual: bool, auto_update_enabled: bool) -> bool {
 /// Current application version from Cargo.toml.
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
-}
-
-/// Whether a proxy mirror is currently active (for frontend display).
-pub fn is_proxy_active() -> bool {
-    matches!(PROXY_CACHE.get(), Some(Some(_)))
 }
 
 #[cfg(test)]

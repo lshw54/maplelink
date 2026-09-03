@@ -47,7 +47,6 @@ export interface ClassicCheckDto {
 
 export interface AppConfigDto {
   gamePath: string;
-  locale: string;
   theme: "system" | "dark" | "light";
   language: "en-US" | "zh-TW" | "zh-CN";
   autoUpdate: boolean;

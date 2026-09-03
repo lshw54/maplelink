@@ -81,8 +81,6 @@ impl AppState {
         sessions.clear();
     }
 
-    /// Get all session IDs and their basic info (for frontend listing).
-
     /// Check if any session has a running game process.
     pub async fn is_any_game_running(&self) -> bool {
         let session_states: Vec<Arc<SessionState>> =
@@ -169,16 +167,14 @@ mod tests {
             arb_region(),
             "[a-zA-Z0-9_]{3,20}",
         )
-            .prop_map(
-                |(token, expires_in, region, account_name)| Session {
-                    token,
-                    expires_at: chrono::Utc::now() + chrono::Duration::seconds(expires_in),
-                    region,
-                    account_name,
-                    session_key: None,
-                    totp_state: None,
-                },
-            )
+            .prop_map(|(token, expires_in, region, account_name)| Session {
+                token,
+                expires_at: chrono::Utc::now() + chrono::Duration::seconds(expires_in),
+                region,
+                account_name,
+                session_key: None,
+                totp_state: None,
+            })
     }
 
     fn arb_game_account() -> impl Strategy<Value = GameAccount> {

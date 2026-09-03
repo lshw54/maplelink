@@ -50,7 +50,6 @@ fn arb_region() -> impl Strategy<Value = Region> {
 fn arb_app_config() -> impl Strategy<Value = AppConfig> {
     let group_a = (
         arb_ini_safe_string(),
-        arb_ini_safe_string(),
         arb_theme(),
         arb_language(),
         any::<bool>(),
@@ -79,7 +78,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
 
     (group_a, group_b).prop_map(
         |(
-            (game_path, locale, theme, language, auto_update, skip_play_confirm, auto_start),
+            (game_path, theme, language, auto_update, skip_play_confirm, auto_start),
             (
                 window_x,
                 window_y,
@@ -94,7 +93,6 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
         )| {
             AppConfig {
                 game_path,
-                locale,
                 theme,
                 language,
                 auto_update,
@@ -136,19 +134,16 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
 
 /// Generate a random `Session` with non-empty token and optional refresh token.
 fn arb_session() -> impl Strategy<Value = Session> {
-    (
-        arb_token(),
-        arb_region(),
-        arb_ini_safe_string(),
-    )
-        .prop_map(|(token, region, account_name)| Session {
+    (arb_token(), arb_region(), arb_ini_safe_string()).prop_map(|(token, region, account_name)| {
+        Session {
             token,
             expires_at: chrono::Utc::now(),
             region,
             account_name,
             session_key: None,
             totp_state: None,
-        })
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------

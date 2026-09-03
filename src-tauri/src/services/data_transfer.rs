@@ -72,14 +72,6 @@ pub fn build_export(payload: &ExportPayload, passphrase: Option<&str>) -> Result
     }
 }
 
-/// Whether the given export-file contents are passphrase-encrypted.
-pub fn is_encrypted(data: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(data)
-        .ok()
-        .and_then(|v| v.get("encrypted").and_then(|e| e.as_bool()))
-        .unwrap_or(false)
-}
-
 /// Parse an export file into the payload. Returns `Err("PASSPHRASE_REQUIRED")`
 /// if the file is encrypted and no passphrase was supplied, or
 /// `Err("WRONG_PASSPHRASE")` if decryption fails.
@@ -228,7 +220,6 @@ mod tests {
         let p = sample();
         let s = build_export(&p, None).unwrap();
         assert!(s.contains("user@example.com"));
-        assert!(!is_encrypted(&s));
         let back = parse_import(&s, None).unwrap();
         assert_eq!(back.accounts.len(), 1);
         assert_eq!(back.accounts[0].password, "s3cret");
@@ -260,7 +251,6 @@ mod tests {
     fn encrypted_round_trip() {
         let p = sample();
         let s = build_export(&p, Some("hunter2")).unwrap();
-        assert!(is_encrypted(&s));
         assert!(!s.contains("s3cret")); // password not in plaintext
                                         // Missing passphrase → required
         assert_eq!(parse_import(&s, None).unwrap_err(), "PASSPHRASE_REQUIRED");
