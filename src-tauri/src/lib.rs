@@ -276,7 +276,6 @@ pub fn run() {
             commands::auth::save_verify_info,
             commands::auth::delete_saved_account,
             commands::auth::save_login_credentials,
-            commands::auth::session_key_webview_done,
             commands::config::get_config,
             commands::config::set_config,
             commands::account::copy_to_clipboard,

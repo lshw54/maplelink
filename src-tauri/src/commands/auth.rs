@@ -10,7 +10,7 @@ use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::session::SessionDto;
 use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
-use crate::services::{recaptcha_window, session_key_fallback, webview_login};
+use crate::services::{recaptcha_window, webview_login};
 
 // ---------------------------------------------------------------------------
 // Session management commands
@@ -37,7 +37,6 @@ pub async fn login(
     password: String,
     recaptcha_check: Option<String>,
     recaptcha_login: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SessionDto, ErrorDto> {
     // Input validation
@@ -52,8 +51,7 @@ pub async fn login(
         login: recaptcha_login,
     };
 
-    let login_result = session_key_fallback::login_with_native_fallback(
-        &app,
+    let login_result = beanfun_service::login(
         &ss.http_client,
         &account,
         &password,
@@ -248,20 +246,14 @@ pub async fn tw_login_submit(
 #[tauri::command]
 pub async fn qr_login_start(
     session_id: String,
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<QrCodeData, ErrorDto> {
     let ss = state.require_session(&session_id).await?;
     let region = state.config.read().await.region.clone();
 
-    session_key_fallback::qr_login_start_with_native_fallback(
-        &app,
-        &ss.http_client,
-        &region,
-        &ss.cookie_jar,
-    )
-    .await
-    .map_err(to_dto)
+    beanfun_service::qr_login_start(&ss.http_client, &region, &ss.cookie_jar)
+        .await
+        .map_err(to_dto)
 }
 
 /// Poll the status of an in-progress QR-code login.
@@ -698,18 +690,6 @@ pub async fn save_login_credentials(
     }
 
     tracing::info!("saved login credentials (remember={})", remember_password);
-    Ok(())
-}
-
-/// Receives the captured page from the hidden session-key fallback webview
-/// (invoked by its init script) and hands it to the waiting fallback.
-#[tauri::command]
-pub async fn session_key_webview_done(
-    request_id: String,
-    url: String,
-    html: String,
-) -> Result<(), ErrorDto> {
-    session_key_fallback::deliver_webview_result(&request_id, url, html);
     Ok(())
 }
 

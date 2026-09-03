@@ -114,25 +114,6 @@ pub async fn login(
     }
 }
 
-/// Authenticate using a pre-fetched session key.
-pub async fn login_with_session_key(
-    client: &Client,
-    account: &str,
-    password: &str,
-    region: &Region,
-    cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-    session_key: &str,
-    tokens: &RecaptchaTokens,
-) -> Result<Session, LoginError> {
-    match region {
-        Region::HK => hk_login_with_session_key(client, account, password, session_key).await,
-        Region::TW => {
-            tw_login_with_session_key(client, account, password, cookie_jar, session_key, tokens)
-                .await
-        }
-    }
-}
-
 /// Start a QR-code login flow (TW region only).
 ///
 /// Gets a session key, then fetches the QR code image from the TW login API.
@@ -143,20 +124,6 @@ pub async fn qr_login_start(
 ) -> Result<QrCodeData, LoginError> {
     match region {
         Region::TW => tw_qr_start(client, cookie_jar).await,
-        Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
-            reason: "QR login is only available for TW region".into(),
-        })),
-    }
-}
-
-/// Start a QR-code login flow using a pre-fetched TW session key.
-pub async fn qr_login_start_with_session_key(
-    client: &Client,
-    region: &Region,
-    session_key: &str,
-) -> Result<QrCodeData, LoginError> {
-    match region {
-        Region::TW => tw_qr_start_with_session_key(client, session_key).await,
         Region::HK => Err(LoginError::Auth(AuthError::InvalidCredentials {
             reason: "QR login is only available for TW region".into(),
         })),
