@@ -74,7 +74,8 @@ export function DebugConsole() {
   // Initial load + periodic refresh
   useEffect(() => {
     function fetchLogs() {
-      commands.getRecentLogs()
+      commands
+        .getRecentLogs()
         .then((text) => {
           setLogs(
             text
@@ -150,9 +151,7 @@ export function DebugConsole() {
         </span>
         <div style={{ flex: 1 }} />
         <button
-          onClick={() =>
-            commands.toggleDebugWindow(false).catch(() => getCurrentWindow().close())
-          }
+          onClick={() => commands.toggleDebugWindow(false).catch(() => getCurrentWindow().close())}
           style={{
             width: 28,
             height: 28,

@@ -18,7 +18,6 @@ export interface CompactMainProps {
   session: SessionDto | null;
   activeSessionId: string | null;
   region: string;
-  nameMask: string;
   remainPoint: number;
   onRemainPoint: (pts: number) => void;
   // Regular ↔ Classic switch (HK sessions only)

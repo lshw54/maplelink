@@ -2,11 +2,7 @@
 
 @theme inline {
   --color-accent: var(--accent);
-  --color-accent-glow: var(--accent-glow);
-  --color-surface: var(--surface);
-  --color-surface-hover: var(--surface-hover);
   --color-border: var(--border);
-  --color-text-primary: var(--text);
   --color-text-dim: var(--text-dim);
   --color-text-faint: var(--text-faint);
   --radius-DEFAULT: var(--radius);
@@ -180,25 +176,6 @@
     100% {
       transform: translateX(400%);
     }
-  }
-
-  /* The Beanfun browser's indeterminate load bar: a sliver sweeping the toolbar's
-     bottom edge, since WebView2 reports no progress figure to fill against. */
-  @keyframes browserLoad {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(400%);
-    }
-  }
-
-  /* The address bar is the one place in the app where selecting text is the
-     point, so it opts out of the app-wide `user-select: none`. */
-  input[type="text"],
-  input:not([type]) {
-    user-select: text;
-    -webkit-user-select: text;
   }
 
   ::-webkit-scrollbar {

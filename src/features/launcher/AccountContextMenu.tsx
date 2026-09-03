@@ -337,15 +337,6 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
     onClose();
   }
 
-  // Close just the modal, keeping context menu hidden.
-  // Since context menu only shows when `position && !modalView`,
-  // we need to also clear position to prevent it from re-appearing.
-  function closeModalOnly() {
-    setModalView(null);
-    setEditError(false);
-    onClose();
-  }
-
   function handleCopyAccount() {
     if (account) {
       navigator.clipboard.writeText(account.id);
@@ -505,7 +496,7 @@ export function AccountContextMenu({ position, account, onClose }: AccountContex
         </div>
       )}
 
-      <Modal isOpen={modalView !== null} onClose={closeModalOnly} title={modalTitle}>
+      <Modal isOpen={modalView !== null} onClose={closeModal} title={modalTitle}>
         {modalView?.kind === "detail" && <AccountDetailView account={account} t={t} />}
         {modalView?.kind === "edit" && (
           <>

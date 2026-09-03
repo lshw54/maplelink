@@ -16,9 +16,6 @@ interface AccountGridProps {
   onSelectAccount: (account: GameAccountDto) => void;
   /** Compact launcher: always the list view, no view toggle, tighter rows. */
   compact?: boolean;
-  /** Extra controls in the header line (the compact launcher puts the OTP
-   *  auto-input toggle here, next to refresh). */
-  headerExtra?: React.ReactNode;
 }
 
 interface ContextState {
@@ -28,12 +25,7 @@ interface ContextState {
 
 type ViewMode = "card" | "list";
 
-export function AccountGrid({
-  selectedAccountId,
-  onSelectAccount,
-  compact,
-  headerExtra,
-}: AccountGridProps) {
+export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: AccountGridProps) {
   const { t } = useTranslation();
   const { data: accounts, isLoading } = useGameAccounts();
   const refreshAccounts = useRefreshAccounts();
@@ -191,7 +183,6 @@ export function AccountGrid({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {headerExtra}
           <button
             onClick={refreshAccounts}
             className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}

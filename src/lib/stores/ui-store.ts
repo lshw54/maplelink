@@ -18,7 +18,6 @@ export interface UiState {
   previousPage: Page;
   theme: ThemeMode;
   language: Language;
-  sidebarOpen: boolean;
   gamePid: number | null;
   gameRunning: boolean;
   /** When true, LoginPage won't auto-redirect to main even if authenticated. */
@@ -64,8 +63,6 @@ export interface UiState {
   goBack: () => void;
   setTheme: (theme: ThemeMode) => void;
   setLanguage: (language: Language) => void;
-  setSidebarOpen: (open: boolean) => void;
-  toggleSidebar: () => void;
   setGamePid: (pid: number | null) => void;
   setGameRunning: (running: boolean) => void;
 }
@@ -75,7 +72,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   previousPage: "login",
   theme: "dark",
   language: "zh-TW",
-  sidebarOpen: false,
   gamePid: null,
   gameRunning: false,
   addingSession: false,
@@ -106,8 +102,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   setTheme: (theme) => set({ theme }),
   setLanguage: (language) => set({ language }),
-  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setGamePid: (pid) => set({ gamePid: pid }),
   setGameRunning: (running) => {
     set({ gameRunning: running });

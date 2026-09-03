@@ -2,7 +2,7 @@ import { useTranslation } from "../../lib/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
-import { useAuthStore } from "../../lib/stores/auth-store";
+import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 
 export function Titlebar() {
@@ -17,7 +17,7 @@ export function Titlebar() {
   const region = config?.region ?? "HK";
   // Off the login page the indicator describes the session in use, not the
   // login-page default — with several tabs open they can differ.
-  const sessionRegion = useAuthStore((s) => s.session?.region);
+  const sessionRegion = useAuthStore(selectActiveSession)?.region;
   const shownRegion = currentPage === "login" ? region : (sessionRegion ?? region);
   const regionFlag = region === "TW" ? "🇹🇼" : "🇭🇰";
 

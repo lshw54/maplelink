@@ -19,7 +19,6 @@ type LoginView = "normal" | "qr" | "totp" | "verify" | "gamepass";
 
 export function LoginPage() {
   const { t } = useTranslation();
-  const loginError = useAuthStore((s) => s.loginError);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPage = useUiStore((s) => s.setPage);
   const queryClient = useQueryClient();
@@ -80,7 +79,7 @@ export function LoginPage() {
       // session joins the account list with the same polling / keep-alive — and
       // THEN we also fire the classic portal launch below.
       const classic = useUiStore.getState().classicMode;
-      useAuthStore.getState().addSession(event.payload, undefined, "gamepass");
+      useAuthStore.getState().addSession(event.payload);
       try {
         const accounts = await commands.getGameAccounts(event.payload.sessionId);
         useAuthStore.getState().updateGameAccounts(event.payload.sessionId, accounts);
@@ -168,8 +167,6 @@ export function LoginPage() {
                 </div>
               </div>
             )}
-
-            {loginError && <p className="mb-2 w-full text-xs text-[var(--danger)]">{loginError}</p>}
 
             <NormalLoginForm
               onShowQr={() => setView("qr")}

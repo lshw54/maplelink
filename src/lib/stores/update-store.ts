@@ -11,18 +11,11 @@ export interface UpdateDownloadState {
   error: string | null;
   method: string; // "direct" | proxy URL
   version: string;
-  downloadUrl: string;
-  isPrerelease: boolean;
   /** Cached update info from startup check — survives dialog dismiss */
   availableUpdate: UpdateInfoDto | null;
 
   setAvailableUpdate: (info: UpdateInfoDto | null) => void;
-  startDownload: (
-    version: string,
-    downloadUrl: string,
-    isPrerelease: boolean,
-    method: string,
-  ) => void;
+  startDownload: (version: string, method: string) => void;
   updateProgress: (downloaded: number, total: number, speed: number) => void;
   setDone: () => void;
   setError: (msg: string) => void;
@@ -37,12 +30,10 @@ export const useUpdateStore = create<UpdateDownloadState>((set) => ({
   error: null,
   method: "direct",
   version: "",
-  downloadUrl: "",
-  isPrerelease: false,
   availableUpdate: null,
 
   setAvailableUpdate: (info) => set({ availableUpdate: info }),
-  startDownload: (version, downloadUrl, isPrerelease, method) =>
+  startDownload: (version, method) =>
     set({
       status: "downloading",
       downloaded: 0,
@@ -50,8 +41,6 @@ export const useUpdateStore = create<UpdateDownloadState>((set) => ({
       speed: 0,
       error: null,
       version,
-      downloadUrl,
-      isPrerelease,
       method,
     }),
   updateProgress: (downloaded, total, speed) => set({ downloaded, total, speed }),
@@ -66,7 +55,5 @@ export const useUpdateStore = create<UpdateDownloadState>((set) => ({
       error: null,
       method: "direct",
       version: "",
-      downloadUrl: "",
-      isPrerelease: false,
     }),
 }));
