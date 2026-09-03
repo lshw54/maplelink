@@ -52,23 +52,6 @@ pub async fn set_config(
     Ok(())
 }
 
-/// Reset configuration to defaults and persist to disk.
-#[tauri::command]
-pub async fn reset_config(state: State<'_, AppState>) -> Result<(), ErrorDto> {
-    let mut config = state.config.write().await;
-    *config = AppConfig::default();
-
-    config_service::save_config(&state.config_path, &config)
-        .await
-        .map_err(|e| {
-            let app_err: AppError = e.into();
-            ErrorDto::from(app_err)
-        })?;
-
-    tracing::info!("config reset to defaults");
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Field mapping helper
 // ---------------------------------------------------------------------------

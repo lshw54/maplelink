@@ -8,12 +8,6 @@ export interface SessionDto {
   expiresAt: string;
 }
 
-export interface SessionInfo {
-  id: string;
-  accountName: string;
-  region: string;
-}
-
 export interface GameAccountDto {
   id: string;
   displayName: string;

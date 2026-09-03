@@ -166,9 +166,3 @@ pub async fn browser_open_external(url: String) -> Result<(), ErrorDto> {
     })
 }
 
-/// Close the browser, clearing the cookies it was seeded with.
-#[tauri::command]
-pub async fn close_beanfun_browser(app: tauri::AppHandle) -> Result<(), ErrorDto> {
-    browser_window::close(&app).await;
-    Ok(())
-}

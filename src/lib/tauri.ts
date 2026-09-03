@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   SessionDto,
-  SessionInfo,
   QrCodeData,
   QrPollResult,
   GameAccountDto,
@@ -26,7 +25,6 @@ import type {
 export const commands = {
   // Session management
   createSession: () => invoke<string>("create_session"),
-  listSessions: () => invoke<SessionInfo[]>("list_sessions"),
 
   // Auth (session-specific)
   login: (sessionId: string, account: string, password: string) =>
@@ -92,7 +90,6 @@ export const commands = {
     invoke<boolean>("change_account_display_name", { sessionId, accountId, newName }),
   setDisplayOverride: (accountId: string, displayName: string) =>
     invoke("set_display_override", { accountId, displayName }),
-  getDisplayOverrides: () => invoke<Record<string, string>>("get_display_overrides"),
   setAccountOrder: (order: string[]) => invoke("set_account_order", { order }),
   getAuthEmail: (sessionId: string) => invoke<string>("get_auth_email", { sessionId }),
 
@@ -102,8 +99,6 @@ export const commands = {
   launchGameDirect: () => invoke<number>("launch_game_direct"),
   isGameRunning: () => invoke<boolean>("is_game_running"),
   getGamePid: () => invoke<number>("get_game_pid"),
-  getProcessStatus: (sessionId: string, pid: number) =>
-    invoke<boolean>("get_process_status", { sessionId, pid }),
   killGame: () => invoke("kill_game"),
 
   // Config (global)
@@ -130,13 +125,11 @@ export const commands = {
     invoke("resize_window", { page, announcementBar }),
   openFileDialog: () => invoke<string | null>("open_file_dialog"),
   getAppVersion: () => invoke<string>("get_app_version"),
-  getTextScaleFactor: () => invoke<number>("get_text_scale_factor"),
   getPlatformInfo: () => invoke<string>("get_platform_info"),
   logFrontendError: (level: string, module: string, message: string) =>
     invoke("log_frontend_error", { level, module, message }),
   // Web-login game-launch interception (opt-in registry toggle)
   setWebLaunchIntercept: (enabled: boolean) => invoke("set_web_launch_intercept", { enabled }),
-  getWebLaunchInterceptStatus: () => invoke<boolean>("get_web_launch_intercept_status"),
   getWebLaunchStatus: () => invoke<WebLaunchStatus>("get_web_launch_status"),
   webLaunchTestGame: () => invoke<WebLaunchTestCode>("web_launch_test_game"),
   webLaunchTestGamania: () => invoke<WebLaunchTestCode>("web_launch_test_gamania"),
@@ -153,7 +146,6 @@ export const commands = {
   openExternal: (url: string) => invoke("open_external", { url }),
   getRecentLogs: () => invoke<string>("get_recent_logs"),
   openWebPopup: (url: string, title: string) => invoke("open_web_popup", { url, title }),
-  getWebToken: (sessionId: string) => invoke<string>("get_web_token", { sessionId }),
 
   // Beanfun points (session-specific)
   openGashPopup: (sessionId: string) => invoke("open_gash_popup", { sessionId }),
@@ -164,7 +156,6 @@ export const commands = {
   // Beanfun browser — one window, a toolbar webview above the content webview
   openBeanfunBrowser: (sessionId: string, url?: string) =>
     invoke("open_beanfun_browser", { sessionId, url: url ?? null }),
-  closeBeanfunBrowser: () => invoke("close_beanfun_browser"),
   browserNavigate: (url: string) => invoke("browser_navigate", { url }),
   browserBack: () => invoke("browser_back"),
   browserForward: () => invoke("browser_forward"),

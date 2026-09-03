@@ -6,7 +6,7 @@ use tauri::State;
 
 use crate::core::auth;
 use crate::core::error::{AppError, AuthError};
-use crate::models::app_state::{AppState, SessionInfo};
+use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::session::SessionDto;
 use crate::services::beanfun_service::{self, QrCodeData, QrPollResult};
@@ -22,12 +22,6 @@ pub async fn create_session(state: State<'_, AppState>) -> Result<String, ErrorD
     let (id, _) = state.create_session().await;
     tracing::info!("created new session: {id}");
     Ok(id)
-}
-
-/// List all active sessions with their basic info.
-#[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, ErrorDto> {
-    Ok(state.list_sessions().await)
 }
 
 // ---------------------------------------------------------------------------

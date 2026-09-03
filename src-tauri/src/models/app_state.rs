@@ -82,21 +82,6 @@ impl AppState {
     }
 
     /// Get all session IDs and their basic info (for frontend listing).
-    pub async fn list_sessions(&self) -> Vec<SessionInfo> {
-        let sessions = self.sessions.read().await;
-        let mut result = Vec::new();
-        for (id, ss) in sessions.iter() {
-            let session = ss.session.read().await;
-            if let Some(s) = session.as_ref() {
-                result.push(SessionInfo {
-                    id: id.clone(),
-                    account_name: s.account_name.clone(),
-                    region: format!("{:?}", s.region),
-                });
-            }
-        }
-        result
-    }
 
     /// Check if any session has a running game process.
     pub async fn is_any_game_running(&self) -> bool {
@@ -163,15 +148,6 @@ impl AppState {
 
         0
     }
-}
-
-/// Basic info about a session for frontend display.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionInfo {
-    pub id: String,
-    pub account_name: String,
-    pub region: String,
 }
 
 #[cfg(test)]

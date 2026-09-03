@@ -449,15 +449,6 @@ pub async fn set_account_order(
     Ok(())
 }
 
-/// Get all local display name overrides.
-#[tauri::command]
-pub async fn get_display_overrides(
-    state: State<'_, AppState>,
-) -> Result<std::collections::HashMap<String, String>, ErrorDto> {
-    let overrides = state.display_overrides.read().await;
-    Ok(overrides.names.clone())
-}
-
 /// Retrieve the authenticated user's email address (context menu action).
 ///
 /// Delegates to [`beanfun_service::get_email`]. Returns an empty string

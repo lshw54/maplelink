@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { commands } from "../../lib/tauri";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
@@ -74,7 +74,7 @@ export function DebugConsole() {
   // Initial load + periodic refresh
   useEffect(() => {
     function fetchLogs() {
-      invoke<string>("get_recent_logs")
+      commands.getRecentLogs()
         .then((text) => {
           setLogs(
             text
@@ -151,7 +151,7 @@ export function DebugConsole() {
         <div style={{ flex: 1 }} />
         <button
           onClick={() =>
-            invoke("toggle_debug_window", { enable: false }).catch(() => getCurrentWindow().close())
+            commands.toggleDebugWindow(false).catch(() => getCurrentWindow().close())
           }
           style={{
             width: 28,
@@ -258,7 +258,7 @@ export function DebugConsole() {
           📋
         </button>
         <button
-          onClick={() => invoke("open_log_folder").catch(() => {})}
+          onClick={() => commands.openLogFolder().catch(() => {})}
           title="Open folder"
           style={{
             padding: "2px 5px",

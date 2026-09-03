@@ -422,33 +422,6 @@ pub async fn get_game_pid(state: State<'_, AppState>) -> Result<u32, ErrorDto> {
     Ok(state.get_any_game_pid().await)
 }
 
-/// Check whether a tracked game process is still running (Req 4.5).
-///
-/// Returns `true` if the process is alive, `false` otherwise.
-/// Automatically removes dead processes from the session's active list.
-#[tauri::command]
-pub async fn get_process_status(
-    session_id: String,
-    pid: u32,
-    state: State<'_, AppState>,
-) -> Result<bool, ErrorDto> {
-    let ss = state.require_session(&session_id).await?;
-
-    let tracked = ss.active_processes.read().await.contains_key(&pid);
-    if !tracked {
-        return Ok(false);
-    }
-
-    let running = process_service::is_process_running(pid);
-
-    if !running {
-        ss.active_processes.write().await.remove(&pid);
-        tracing::info!(pid, "game process exited, removed from active list");
-    }
-
-    Ok(running)
-}
-
 /// Kill all running MapleStory processes across ALL sessions and clear tracked PIDs.
 #[tauri::command]
 pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
