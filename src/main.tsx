@@ -2,10 +2,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
-// Cut to the characters this interface uses — see scripts/build-font-subset.py.
-// The upstream package ships the whole face in 105 chunks, four megabytes of
-// which a desktop build embeds every byte.
-import "./assets/fonts/noto-sans-tc.css";
 import "./styles/globals.css";
 
 const queryClient = new QueryClient({

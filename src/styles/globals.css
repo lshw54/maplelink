@@ -69,18 +69,16 @@
   body {
     background: var(--bg);
     color: var(--text);
-    /* The bundled Noto Sans TC renders every script (Latin included) so the
-       look no longer depends on which CJK font a machine happens to have —
-       the system stack below is only a safety net. */
+    /* System fonts only. A bundled Noto Sans TC was tried and testers found it
+       blurry next to the OS's own ClearType-tuned faces; Microsoft YaHei ships
+       with every Windows this app runs on, so it is what players see. */
     font-family:
-      "Noto Sans TC Variable",
-      "Segoe UI",
-      "Microsoft JhengHei UI",
-      "Microsoft JhengHei",
       "Microsoft YaHei UI",
       "Microsoft YaHei",
+      "Microsoft JhengHei UI",
+      "Microsoft JhengHei",
+      "Segoe UI",
       "PingFang TC",
-      "Noto Sans TC",
       system-ui,
       -apple-system,
       sans-serif;
