@@ -13,7 +13,7 @@ use reqwest::Client;
 use tokio::time::{sleep, Duration};
 
 use crate::core::error::{AuthError, NetworkError};
-use crate::models::game_account::{GameAccount, GameCredentials};
+use crate::models::game_account::{AccountList, GameAccount, GameCredentials};
 use crate::models::session::{Region, Session, TotpState};
 use crate::utils::crypto::des_ecb_decrypt_hex;
 
@@ -235,11 +235,63 @@ pub async fn get_game_accounts(
     client: &Client,
     session: &Session,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-) -> Result<Vec<GameAccount>, LoginError> {
+) -> Result<AccountList, LoginError> {
     match session.region {
         Region::HK => hk_get_accounts(client, session, cookie_jar).await,
         Region::TW => tw_get_accounts(client, session, cookie_jar).await,
     }
+}
+
+/// Pull the account-limit notice out of the account list page.
+///
+/// beanfun renders `<div id="divServiceAccountAmountLimitNotice">` above the
+/// list when the account has a cap ("...最多可建立 3 個帳號") or, on TW, when
+/// it must pass advanced verification before creating more. Empty when the
+/// page has no such block. Inner tags are stripped, entities decoded.
+pub fn parse_account_limit_notice(html: &str) -> String {
+    let re =
+        match Regex::new(r#"(?s)<div id="divServiceAccountAmountLimitNotice"[^>]*>(.*?)</div>"#) {
+            Ok(r) => r,
+            Err(_) => return String::new(),
+        };
+    let inner = match re.captures(html).and_then(|c| c.get(1)) {
+        Some(m) => m.as_str(),
+        None => return String::new(),
+    };
+    let tag_re = match Regex::new(r"<[^>]+>") {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+    html_decode(&tag_re.replace_all(inner, ""))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What the limit notice means for the "add account" button.
+///
+/// Mirrors the original launcher: a notice mentioning 進階認證 means the
+/// beanfun account must complete advanced verification first (the button
+/// becomes "go to verification"); otherwise the trailing number in the
+/// notice is the cap on accounts, and the button hides once it is reached.
+/// `(None, false)` when there is no notice or no number in it.
+pub fn account_limit_from_notice(notice: &str) -> (Option<u32>, bool) {
+    if notice.is_empty() {
+        return (None, false);
+    }
+    if notice.contains("進階認證") {
+        return (None, true);
+    }
+    let digits: String = notice
+        .chars()
+        .rev()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    (digits.parse::<u32>().ok(), false)
 }
 
 /// Fetch the creation time for a single service account on demand.
@@ -443,6 +495,188 @@ pub async fn change_display_name(
     // Response is JSON: {"intResult": 1} on success
     let success = body.contains("\"intResult\":1") || body.contains("\"intResult\": 1");
     Ok(success)
+}
+
+/// Outcome of a `gamezone.ashx` account-creation call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddServiceAccountOutcome {
+    pub success: bool,
+    /// Server's own message (`strOutputMessage`), empty when it gave none.
+    pub message: String,
+}
+
+/// Parse the JSON `gamezone.ashx` returns for `AddServiceAccount`.
+///
+/// Success is `intResult == 1`, as the original launcher checks. beanfun also
+/// carries the reason it refused (name taken, account limit reached, ...) in
+/// `strOutstring` (observed on the live handler; `strOutputMessage` is kept
+/// as a fallback), so surface that rather than a bare "failed".
+pub fn parse_add_service_account_response(body: &str) -> AddServiceAccountOutcome {
+    let json: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return AddServiceAccountOutcome {
+                success: false,
+                message: String::new(),
+            }
+        }
+    };
+    let success = int_result_ok(&json);
+    let message = ["strOutstring", "strOutputMessage"]
+        .iter()
+        .filter_map(|k| json.get(k).and_then(|v| v.as_str()))
+        .map(str::trim)
+        .find(|m| !m.is_empty())
+        .unwrap_or("")
+        .to_string();
+    AddServiceAccountOutcome { success, message }
+}
+
+/// Create a new game (service) account under the logged-in beanfun account.
+///
+/// POSTs to `gamezone.ashx` with `strFunction=AddServiceAccount`, the same
+/// call the original launcher's "新增帳號" button makes. Unlike rename this
+/// endpoint exists on both regions.
+pub async fn add_service_account(
+    client: &Client,
+    region: &Region,
+    sc: &str,
+    sr: &str,
+    display_name: &str,
+) -> Result<AddServiceAccountOutcome, LoginError> {
+    let url = gamezone_handler_url(region);
+    let form = [
+        ("strFunction", "AddServiceAccount"),
+        ("npsc", ""),
+        ("npsr", ""),
+        ("sc", sc),
+        ("sr", sr),
+        ("sadn", display_name),
+        ("sag", ""),
+    ];
+
+    let resp = client
+        .post(&url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/json, text/javascript, */*; q=0.01")
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header("Referer", format!("https://{}/", url_host(region)))
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+    let body = read_gamezone_body(resp, &url).await?;
+    tracing::info!(
+        head = %body.chars().take(300).collect::<String>(),
+        "add_service_account response"
+    );
+
+    Ok(parse_add_service_account_response(&body))
+}
+
+/// Fetch the game's terms of service that a new account must agree to.
+///
+/// POSTs `strFunction=GetServiceContract` to `gamezone.ashx`; the contract
+/// comes back as newline-separated plain text in `strResult` (e.g.
+/// "[新楓之谷]網路連線遊戲服務定型化契約..."). Empty when the server refuses.
+pub async fn get_service_contract(
+    client: &Client,
+    region: &Region,
+    sc: &str,
+    sr: &str,
+) -> Result<String, LoginError> {
+    let url = gamezone_handler_url(region);
+    let form = [
+        ("strFunction", "GetServiceContract"),
+        ("sc", sc),
+        ("sr", sr),
+    ];
+
+    let resp = client
+        .post(&url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/json, text/javascript, */*; q=0.01")
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header("Referer", format!("https://{}/", url_host(region)))
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| map_reqwest_error(&url, e))?;
+    let status = resp.status();
+    let body = read_gamezone_body(resp, &url).await?;
+
+    let json: serde_json::Value = match serde_json::from_str(body.trim_start_matches('\u{feff}')) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                %status,
+                body_len = body.len(),
+                head = %body.chars().take(200).collect::<String>(),
+                "service contract response is not JSON: {e}"
+            );
+            return Err(parse_error_str("service contract response is not JSON"));
+        }
+    };
+    if !int_result_ok(&json) {
+        tracing::warn!(
+            body = %body.chars().take(300).collect::<String>(),
+            "service contract refused by server"
+        );
+        return Ok(String::new());
+    }
+    Ok(json
+        .get("strResult")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// `intResult == 1`, whether beanfun serialised it as a number or a string.
+fn int_result_ok(json: &serde_json::Value) -> bool {
+    match json.get("intResult") {
+        Some(v) if v.as_i64() == Some(1) => true,
+        Some(v) => v.as_str().map(str::trim) == Some("1"),
+        None => false,
+    }
+}
+
+/// Bare hostname of the gamezone handler for `region`.
+fn url_host(region: &Region) -> &'static str {
+    match region {
+        Region::HK => "bfweb.hk.beanfun.com",
+        Region::TW => TW_HOST,
+    }
+}
+
+/// Read a `gamezone.ashx` response body, gunzipping it if beanfun compressed
+/// it.
+///
+/// The handler gzips some replies (`GetServiceContract`, ~15 KB) no matter
+/// what `Accept-Encoding` says — the original launcher had a dedicated
+/// `UploadStringGZip` for exactly this — and our client asks for identity, so
+/// reqwest hands the raw bytes through. Sniff the gzip magic rather than trust
+/// the `Content-Encoding` header, which is what the original did too.
+async fn read_gamezone_body(resp: reqwest::Response, url: &str) -> Result<String, LoginError> {
+    let bytes = resp.bytes().await.map_err(|e| map_reqwest_error(url, e))?;
+    let bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
+        use std::io::Read;
+        let mut out = Vec::with_capacity(bytes.len() * 4);
+        flate2::read::GzDecoder::new(&bytes[..])
+            .read_to_end(&mut out)
+            .map_err(|e| parse_error_str(&format!("gunzip of gamezone response failed: {e}")))?;
+        out
+    } else {
+        bytes.to_vec()
+    };
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// The gamezone AJAX handler for a region.
+fn gamezone_handler_url(region: &Region) -> String {
+    format!(
+        "https://{}/generic_handlers/gamezone.ashx",
+        url_host(region)
+    )
 }
 
 /// Retrieve the authenticated user's email address.
@@ -757,7 +991,7 @@ async fn hk_get_accounts(
     client: &Client,
     _session: &Session,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-) -> Result<Vec<GameAccount>, LoginError> {
+) -> Result<AccountList, LoginError> {
     let host = "bfweb.hk.beanfun.com";
     let sc = DEFAULT_SERVICE_CODE;
     let sr = DEFAULT_SERVICE_REGION;
@@ -837,7 +1071,10 @@ async fn hk_get_accounts(
     accounts.sort_by(|a, b| a.sn.cmp(&b.sn));
 
     tracing::info!("HK: found {} game accounts", accounts.len());
-    Ok(accounts)
+    Ok(AccountList {
+        accounts,
+        limit_notice: parse_account_limit_notice(&list_html),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -861,7 +1098,7 @@ async fn hk_get_otp(
     // Read bfWebToken from cookie jar for OTP requests
     let web_token = read_bf_web_token(cookie_jar, host);
 
-    let accounts = hk_get_accounts(client, session, cookie_jar).await?;
+    let accounts = hk_get_accounts(client, session, cookie_jar).await?.accounts;
     let account = accounts
         .iter()
         .find(|a| a.id == account_id)
@@ -1945,7 +2182,7 @@ async fn tw_get_accounts(
     client: &Client,
     _session: &Session,
     cookie_jar: &std::sync::Arc<reqwest::cookie::Jar>,
-) -> Result<Vec<GameAccount>, LoginError> {
+) -> Result<AccountList, LoginError> {
     let host = "tw.beanfun.com";
     let sc = DEFAULT_SERVICE_CODE;
     let sr = DEFAULT_SERVICE_REGION;
@@ -2005,7 +2242,10 @@ async fn tw_get_accounts(
 
     accounts.sort_by(|a, b| a.sn.cmp(&b.sn));
     tracing::info!("TW: found {} game accounts", accounts.len());
-    Ok(accounts)
+    Ok(AccountList {
+        accounts,
+        limit_notice: parse_account_limit_notice(&list_html),
+    })
 }
 
 /// Fetch the TW game-start page for `account_id` and read its GGM launch
@@ -2030,7 +2270,7 @@ pub async fn tw_ggm_ticket(
     let account = match known_accounts.iter().find(|a| a.id == account_id) {
         Some(account) => account,
         None => {
-            fetched = tw_get_accounts(client, session, cookie_jar).await?;
+            fetched = tw_get_accounts(client, session, cookie_jar).await?.accounts;
             fetched.iter().find(|a| a.id == account_id).ok_or_else(|| {
                 LoginError::Auth(AuthError::InvalidCredentials {
                     reason: format!("account {account_id} not found"),
@@ -3285,6 +3525,73 @@ mod tests {
     #[test]
     fn extract_tw_session_key_missing_on_block_page() {
         assert!(extract_tw_session_key("https://tw.beanfun.com/TW/BlockIPMessage.htm").is_none());
+    }
+
+    #[test]
+    fn limit_notice_absent_is_empty() {
+        assert_eq!(
+            parse_account_limit_notice("<html><div id=\"x\">no</div></html>"),
+            ""
+        );
+        assert_eq!(account_limit_from_notice(""), (None, false));
+    }
+
+    #[test]
+    fn limit_notice_strips_tags_and_reads_trailing_number() {
+        let html = r#"<div id="divServiceAccountAmountLimitNotice" class="InnerContent">
+            您目前最多可建立 <b>3</b> 個遊戲帳號</div><div>other</div>"#;
+        let notice = parse_account_limit_notice(html);
+        assert_eq!(notice, "您目前最多可建立 3 個遊戲帳號");
+        assert_eq!(account_limit_from_notice(&notice), (Some(3), false));
+    }
+
+    #[test]
+    fn limit_notice_advanced_verification_means_go_verify() {
+        let html = r#"<div id="divServiceAccountAmountLimitNotice" class="InnerContent">請先完成進階認證，才能建立更多帳號</div>"#;
+        let notice = parse_account_limit_notice(html);
+        assert!(notice.contains("進階認證"));
+        assert_eq!(account_limit_from_notice(&notice), (None, true));
+    }
+
+    #[test]
+    fn limit_notice_two_digit_cap() {
+        assert_eq!(account_limit_from_notice("最多 12 個"), (Some(12), false));
+        assert_eq!(account_limit_from_notice("沒有數字"), (None, false));
+    }
+
+    #[test]
+    fn add_service_account_success_on_int_result_one() {
+        let out = parse_add_service_account_response(r#"{"intResult":1,"strOutputMessage":""}"#);
+        assert!(out.success);
+        assert_eq!(out.message, "");
+    }
+
+    #[test]
+    fn add_service_account_failure_carries_server_message() {
+        let out = parse_add_service_account_response(
+            r#"{"intResult":0,"strOutstring":" 名稱已被使用 ","strResult":""}"#,
+        );
+        assert!(!out.success);
+        assert_eq!(out.message, "名稱已被使用");
+
+        let out =
+            parse_add_service_account_response(r#"{"intResult":0,"strOutputMessage":"舊欄位"}"#);
+        assert_eq!(out.message, "舊欄位");
+    }
+
+    #[test]
+    fn int_result_accepts_string_one() {
+        let out = parse_add_service_account_response(r#"{"intResult":"1","strOutstring":""}"#);
+        assert!(out.success);
+        let out = parse_add_service_account_response(r#"{"intResult":"0","strOutstring":"x"}"#);
+        assert!(!out.success);
+    }
+
+    #[test]
+    fn add_service_account_non_json_is_failure() {
+        let out = parse_add_service_account_response("<html>login</html>");
+        assert!(!out.success);
+        assert_eq!(out.message, "");
     }
 
     #[test]

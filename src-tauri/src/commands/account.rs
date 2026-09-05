@@ -214,12 +214,13 @@ pub async fn refresh_accounts(
     let session_guard = ss.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
-    let accounts = beanfun_service::get_game_accounts(&ss.http_client, session, &ss.cookie_jar)
+    let list = beanfun_service::get_game_accounts(&ss.http_client, session, &ss.cookie_jar)
         .await
         .map_err(to_dto)?;
 
     let overrides = state.display_overrides.read().await;
-    let mut dtos: Vec<GameAccountDto> = accounts
+    let mut dtos: Vec<GameAccountDto> = list
+        .accounts
         .iter()
         .map(|a| {
             let mut dto = GameAccountDto::from(a);
@@ -240,7 +241,7 @@ pub async fn refresh_accounts(
     }
 
     drop(session_guard);
-    *ss.game_accounts.write().await = accounts;
+    ss.store_account_list(list).await;
 
     tracing::info!("game accounts refreshed ({} accounts)", dtos.len());
     Ok(dtos)
@@ -402,6 +403,126 @@ pub async fn change_account_display_name(
     }
 
     Ok(success)
+}
+
+/// Result of creating a game account, for the "add account" dialog.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddServiceAccountDto {
+    pub success: bool,
+    /// beanfun's own reason when it refused, empty otherwise.
+    pub message: String,
+}
+
+/// Create a new game account under the session's beanfun account.
+///
+/// Delegates to [`beanfun_service::add_service_account`]. On success the
+/// session's account list is re-fetched so the new account shows up without a
+/// second round trip from the UI.
+#[tauri::command]
+pub async fn add_service_account(
+    session_id: String,
+    display_name: String,
+    state: State<'_, AppState>,
+) -> Result<AddServiceAccountDto, ErrorDto> {
+    auth::validate_input("display_name", &display_name).map_err(to_dto)?;
+
+    let ss = state.require_session(&session_id).await?;
+    let _bf_lock = ss.bf_client_lock.lock().await;
+
+    let session_guard = ss.session.read().await;
+    let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
+    let region = session.region.clone();
+
+    let outcome = beanfun_service::add_service_account(
+        &ss.http_client,
+        &region,
+        DEFAULT_SERVICE_CODE,
+        DEFAULT_SERVICE_REGION,
+        &display_name,
+    )
+    .await
+    .map_err(to_dto)?;
+
+    if outcome.success {
+        tracing::info!(display_name = %display_name, "service account created");
+        match beanfun_service::get_game_accounts(&ss.http_client, session, &ss.cookie_jar).await {
+            Ok(list) => {
+                drop(session_guard);
+                ss.store_account_list(list).await;
+            }
+            Err(e) => tracing::warn!("account list refresh after create failed: {e}"),
+        }
+    } else {
+        tracing::warn!(
+            display_name = %display_name,
+            message = %outcome.message,
+            "service account creation refused by server"
+        );
+    }
+
+    Ok(AddServiceAccountDto {
+        success: outcome.success,
+        message: outcome.message,
+    })
+}
+
+/// What the account list page said about creating more accounts.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountLimitDto {
+    /// The notice text as beanfun showed it ("" when there was none).
+    pub notice: String,
+    /// Cap on game accounts, when the notice states one.
+    pub limit: Option<u32>,
+    /// TW: the beanfun account must pass advanced verification first.
+    pub needs_verify: bool,
+}
+
+/// The account-limit notice captured with the last account list load.
+///
+/// No network call — the notice comes from the same page as the list, so
+/// it is exactly as fresh as the accounts the UI is showing.
+#[tauri::command]
+pub async fn get_account_limit(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<AccountLimitDto, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+    {
+        let session_guard = ss.session.read().await;
+        auth::require_valid_session(&session_guard).map_err(to_dto)?;
+    }
+    let notice = ss.account_limit_notice.read().await.clone();
+    let (limit, needs_verify) = beanfun_service::account_limit_from_notice(&notice);
+    Ok(AccountLimitDto {
+        notice,
+        limit,
+        needs_verify,
+    })
+}
+
+/// Fetch the terms of service shown in the "add account" dialog (plain text).
+#[tauri::command]
+pub async fn get_service_contract(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, ErrorDto> {
+    let ss = state.require_session(&session_id).await?;
+    let _bf_lock = ss.bf_client_lock.lock().await;
+
+    let session_guard = ss.session.read().await;
+    let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
+    let region = session.region.clone();
+
+    beanfun_service::get_service_contract(
+        &ss.http_client,
+        &region,
+        DEFAULT_SERVICE_CODE,
+        DEFAULT_SERVICE_REGION,
+    )
+    .await
+    .map_err(to_dto)
 }
 
 /// Save a local display name override (persisted to display_overrides.json).
