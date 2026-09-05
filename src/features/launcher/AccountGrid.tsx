@@ -1,13 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { CopyGlyph } from "../../components/CopyIcon";
 import { useTranslation } from "../../lib/i18n";
-import { useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
+import { useAccountLimit, useGameAccounts, useRefreshAccounts } from "../../lib/hooks/use-accounts";
 import { useQueryClient } from "@tanstack/react-query";
 import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
+import { useAuthStore } from "../../lib/stores/auth-store";
 import { commands } from "../../lib/tauri";
 import { writeConfig } from "../../lib/hooks/use-config";
 import { AccountContextMenu } from "./AccountContextMenu";
+import { AddServiceAccountDialog } from "./AddServiceAccountDialog";
 import type { GameAccountDto } from "../../lib/types";
 
 /** Applied to account name/id text when the "hide account names" privacy
@@ -33,6 +35,25 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
   const refreshAccounts = useRefreshAccounts();
   const queryClient = useQueryClient();
   const [contextMenu, setContextMenu] = useState<ContextState | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  // Same rule as the original launcher: the list page's limit notice decides
+  // whether "add" is offered at all, or becomes "go to verification" (TW).
+  const { data: limitInfo } = useAccountLimit();
+  const needsVerify = limitInfo?.needsVerify ?? false;
+  const atLimit =
+    limitInfo?.limit != null && (accounts?.length ?? 0) >= limitInfo.limit && !needsVerify;
+  const limitNotice = needsVerify
+    ? t("launcher.add_account.verify_notice")
+    : (limitInfo?.notice ?? "");
+
+  function handleGoVerify() {
+    commands
+      .openBeanfunBrowser(
+        useAuthStore.getState().activeSessionId ?? "",
+        "https://tw.beanfun.com/TW/member/verify_index.aspx",
+      )
+      .catch(() => {});
+  }
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const savedViewMode = useConfigStore((s) => s.config?.accountViewMode ?? "card") as ViewMode;
   // The compact column is too narrow for a two-up card grid.
@@ -132,10 +153,10 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
 
   return (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "gap-1" : "gap-2"}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <span
-            className={`font-semibold tracking-[1px] text-text-dim ${compact ? "text-[10px] uppercase" : "text-[11px]"}`}
+            className={`shrink-0 leading-none font-semibold tracking-[1px] text-text-dim ${compact ? "text-[10px] uppercase" : "text-[11px]"}`}
           >
             {t("launcher.accounts")}
           </span>
@@ -178,8 +199,38 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
               )}
             </button>
           )}
+          {/* beanfun's account-cap notice, on the title line so the list
+              itself starts right under the header. */}
+          {limitNotice && (
+            <>
+              <span aria-hidden className="h-3 w-px shrink-0 bg-border" />
+              <span
+                title={limitNotice}
+                className={`truncate leading-none text-text-faint ${compact ? "text-[10px]" : "text-[11px]"}`}
+              >
+                {limitNotice}
+              </span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {needsVerify ? (
+            <button
+              onClick={handleGoVerify}
+              className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
+            >
+              {t("launcher.add_account.go_verify")}
+            </button>
+          ) : (
+            !atLimit && (
+              <button
+                onClick={() => setAddOpen(true)}
+                className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
+              >
+                {t("launcher.add_account.button")}
+              </button>
+            )
+          )}
           <button
             onClick={refreshAccounts}
             className={`text-accent hover:underline ${compact ? "text-[11px]" : "text-[12px]"}`}
@@ -241,6 +292,8 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
         account={displayAccounts.find((a) => a.id === contextMenu?.accountId) ?? null}
         onClose={closeContextMenu}
       />
+
+      <AddServiceAccountDialog isOpen={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }

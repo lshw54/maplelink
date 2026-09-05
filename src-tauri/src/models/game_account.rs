@@ -14,6 +14,16 @@ pub struct GameAccount {
     pub created_at: String,
 }
 
+/// What one load of beanfun's account list page yields: the accounts plus the
+/// "account amount limit" notice the page shows above them (empty when the
+/// page has none). The notice drives the "add account" button, exactly as it
+/// did in the original launcher.
+#[derive(Debug, Clone, Default)]
+pub struct AccountList {
+    pub accounts: Vec<GameAccount>,
+    pub limit_notice: String,
+}
+
 /// One-time game credentials retrieved from Beanfun for launching.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -81,6 +81,7 @@ export async function finishLogin(queryClient: QueryClient, session: SessionDto)
     });
   }
   await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
+  await queryClient.invalidateQueries({ queryKey: ["accountLimit"] });
   // Leave the login page clean for the next session: no "adding" flag, the
   // normal view, and no QR code held over from a scan that just completed.
   useUiStore.setState({

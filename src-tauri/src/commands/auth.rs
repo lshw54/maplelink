@@ -96,11 +96,11 @@ pub async fn login(
         .await
         .unwrap_or_else(|e| {
             tracing::warn!("failed to fetch game accounts after login: {e}");
-            Vec::new()
+            Default::default()
         });
 
     *ss.session.write().await = Some(session);
-    *ss.game_accounts.write().await = accounts;
+    ss.store_account_list(accounts).await;
 
     tracing::info!("user logged in: {}", dto.account_name);
     Ok(dto)
@@ -216,13 +216,13 @@ pub async fn tw_login_submit(
     // set by SendLogin can need a moment to settle before
     // game_server_account_list.aspx returns the list — without retries the UI
     // lands on an empty account list.
-    let mut accounts = Vec::new();
+    let mut accounts = crate::models::game_account::AccountList::default();
     for attempt in 0..3 {
         if attempt > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(700)).await;
         }
         match beanfun_service::get_game_accounts(&ss.http_client, &session, &ss.cookie_jar).await {
-            Ok(a) if !a.is_empty() => {
+            Ok(a) if !a.accounts.is_empty() => {
                 accounts = a;
                 break;
             }
@@ -233,10 +233,13 @@ pub async fn tw_login_submit(
             ),
         }
     }
-    tracing::info!("TW two-phase login: {} game accounts", accounts.len());
+    tracing::info!(
+        "TW two-phase login: {} game accounts",
+        accounts.accounts.len()
+    );
 
     *ss.session.write().await = Some(session);
-    *ss.game_accounts.write().await = accounts;
+    ss.store_account_list(accounts).await;
 
     tracing::info!("user logged in (two-phase TW): {}", dto.account_name);
     Ok(dto)
@@ -286,13 +289,13 @@ pub async fn qr_login_poll(
                 .await
                 .unwrap_or_else(|e| {
                     tracing::warn!("failed to fetch game accounts after QR login: {e}");
-                    Vec::new()
+                    Default::default()
                 });
 
         let dto = SessionDto::from_session(&session, &session_id);
         let session_for_result = session.clone();
         *ss.session.write().await = Some(session);
-        *ss.game_accounts.write().await = accounts;
+        ss.store_account_list(accounts).await;
         tracing::info!("user logged in via QR: {}", dto.account_name);
 
         return Ok(QrPollResult {
@@ -338,11 +341,11 @@ pub async fn totp_verify(
         .await
         .unwrap_or_else(|e| {
             tracing::warn!("failed to fetch game accounts after TOTP: {e}");
-            Vec::new()
+            Default::default()
         });
 
     *ss.session.write().await = Some(session);
-    *ss.game_accounts.write().await = accounts;
+    ss.store_account_list(accounts).await;
 
     tracing::info!("user verified TOTP: {}", dto.account_name);
     Ok(dto)

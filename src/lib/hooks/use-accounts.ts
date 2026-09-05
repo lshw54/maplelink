@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../tauri";
 import { useAuthStore } from "../stores/auth-store";
-import type { GameAccountDto, GameCredentialsDto } from "../types";
+import type { AccountLimitDto, GameAccountDto, GameCredentialsDto } from "../types";
 
 /** Fetch game accounts for the active session. Enabled only when authenticated. */
 export function useGameAccounts() {
@@ -16,6 +16,20 @@ export function useGameAccounts() {
       useAuthStore.getState().updateGameAccounts(activeSessionId, accounts);
       return accounts;
     },
+    enabled: isAuthenticated && !!activeSessionId,
+  });
+}
+
+/** The account-limit notice that came with the active session's account
+ *  list. Backed by session state, so it costs no request of its own — it is
+ *  re-read whenever the list itself is reloaded. */
+export function useAccountLimit() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const activeSessionId = useAuthStore((s) => s.activeSessionId);
+
+  return useQuery<AccountLimitDto>({
+    queryKey: ["accountLimit", activeSessionId],
+    queryFn: () => commands.getAccountLimit(activeSessionId ?? ""),
     enabled: isAuthenticated && !!activeSessionId,
   });
 }
@@ -47,5 +61,6 @@ export function useRefreshAccounts() {
     } catch {
       queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
     }
+    queryClient.invalidateQueries({ queryKey: ["accountLimit"] });
   };
 }

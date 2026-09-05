@@ -13,7 +13,7 @@ use reqwest::header::{
 };
 use tokio::sync::{Mutex, RwLock};
 
-use super::game_account::GameAccount;
+use super::game_account::{AccountList, GameAccount};
 use super::session::Session;
 
 /// Unique identifier for a login session.
@@ -37,6 +37,8 @@ pub struct SessionState {
     pub session: RwLock<Option<Session>>,
     /// Game accounts associated with this session.
     pub game_accounts: RwLock<Vec<GameAccount>>,
+    /// The account-limit notice from the last account list load ("" if none).
+    pub account_limit_notice: RwLock<String>,
     /// HTTP client with its own cookie jar for this session.
     pub http_client: reqwest::Client,
     /// Cookie jar for reading cookies (e.g. bfWebToken).
@@ -110,6 +112,7 @@ impl SessionState {
         Self {
             session: RwLock::new(None),
             game_accounts: RwLock::new(Vec::new()),
+            account_limit_notice: RwLock::new(String::new()),
             http_client,
             cookie_jar,
             bf_client_lock: Mutex::new(()),
@@ -118,10 +121,18 @@ impl SessionState {
         }
     }
 
+    /// Replace the session's account list (and the limit notice that came
+    /// with it) after a fresh load from beanfun.
+    pub async fn store_account_list(&self, list: AccountList) {
+        *self.game_accounts.write().await = list.accounts;
+        *self.account_limit_notice.write().await = list.limit_notice;
+    }
+
     /// Clear all in-memory credentials and game account data.
     pub async fn clear_credentials(&self) {
         *self.session.write().await = None;
         self.game_accounts.write().await.clear();
+        self.account_limit_notice.write().await.clear();
         self.active_processes.write().await.clear();
         *self.pending_tw_login.write().await = None;
     }

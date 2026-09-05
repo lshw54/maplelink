@@ -370,14 +370,19 @@ pub async fn try_finalize_gamepass(
     .await
     .unwrap_or_else(|e| {
         tracing::warn!("GamePass: reqwest get_game_accounts failed: {e}, trying webview HTML");
-        crate::services::beanfun_service::parse_tw_account_list_html(account_html)
+        crate::models::game_account::AccountList {
+            accounts: crate::services::beanfun_service::parse_tw_account_list_html(account_html),
+            limit_notice: crate::services::beanfun_service::parse_account_limit_notice(
+                account_html,
+            ),
+        }
     });
 
-    tracing::info!("GamePass: got {} accounts", accounts.len());
+    tracing::info!("GamePass: got {} accounts", accounts.accounts.len());
 
     let dto = SessionDto::from_session(&session, session_id);
     *ss.session.write().await = Some(session);
-    *ss.game_accounts.write().await = accounts;
+    ss.store_account_list(accounts).await;
 
     let _ = app.emit("gamepass-login-complete", dto);
 

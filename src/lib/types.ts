@@ -17,6 +17,21 @@ export interface GameAccountDto {
   createdAt: string;
 }
 
+export interface AddServiceAccountDto {
+  success: boolean;
+  /** beanfun's own reason when it refused, empty otherwise. */
+  message: string;
+}
+
+export interface AccountLimitDto {
+  /** The notice text as beanfun showed it ("" when there was none). */
+  notice: string;
+  /** Cap on game accounts, when the notice states one. */
+  limit: number | null;
+  /** TW: the beanfun account must pass advanced verification first. */
+  needsVerify: boolean;
+}
+
 export interface GameCredentialsDto {
   accountId: string;
   otp: string;

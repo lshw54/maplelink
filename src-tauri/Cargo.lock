@@ -2100,6 +2100,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "des",
+ "flate2",
  "futures-util",
  "minisign-verify",
  "native-tls",

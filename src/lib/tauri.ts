@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AccountLimitDto,
+  AddServiceAccountDto,
   SessionDto,
   QrCodeData,
   QrPollResult,
@@ -88,6 +90,11 @@ export const commands = {
     invoke<boolean>("auto_paste_otp", { sessionId, accountId }),
   changeAccountDisplayName: (sessionId: string, accountId: string, newName: string) =>
     invoke<boolean>("change_account_display_name", { sessionId, accountId, newName }),
+  addServiceAccount: (sessionId: string, displayName: string) =>
+    invoke<AddServiceAccountDto>("add_service_account", { sessionId, displayName }),
+  getServiceContract: (sessionId: string) => invoke<string>("get_service_contract", { sessionId }),
+  getAccountLimit: (sessionId: string) =>
+    invoke<AccountLimitDto>("get_account_limit", { sessionId }),
   setDisplayOverride: (accountId: string, displayName: string) =>
     invoke("set_display_override", { accountId, displayName }),
   setAccountOrder: (order: string[]) => invoke("set_account_order", { order }),
