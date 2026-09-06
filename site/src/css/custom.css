@@ -1,0 +1,330 @@
+@import "../demo/ml.css";
+
+/* ---- Theme ------------------------------------------------------------- */
+
+:root {
+  /* Height of the announcement ticker pinned above the navbar (NoticeBar). */
+  --ticker-height: 36px;
+
+  --ifm-color-primary: #c9371f;
+  --ifm-color-primary-dark: #b5321c;
+  --ifm-color-primary-darker: #ab2f1a;
+  --ifm-color-primary-darkest: #8d2716;
+  --ifm-color-primary-light: #dd3c22;
+  --ifm-color-primary-lighter: #e0432b;
+  --ifm-color-primary-lightest: #e86450;
+  --ifm-color-primary-contrast-background: rgba(224, 67, 43, 0.12);
+  /* Infima leaves the light background transparent; anything mixed from it
+     (the ticker) would let the page show through. */
+  --ifm-background-color: #ffffff;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #f36b55;
+  --ifm-color-primary-dark: #f15139;
+  --ifm-color-primary-darker: #f0452b;
+  --ifm-color-primary-darkest: #d02f13;
+  --ifm-color-primary-light: #f58571;
+  --ifm-color-primary-lighter: #f6917f;
+  --ifm-color-primary-lightest: #f9b4a7;
+  --ifm-color-primary-contrast-background: rgba(243, 107, 85, 0.16);
+  --ifm-background-color: #1b1b1f;
+  --ifm-background-surface-color: #202127;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* The ticker is fixed at the top; push the sticky navbar and anchors down. */
+body {
+  padding-top: var(--ticker-height);
+}
+.navbar {
+  top: var(--ticker-height);
+}
+html {
+  scroll-padding-top: calc(var(--ifm-navbar-height) + var(--ticker-height) + 8px);
+}
+.navbar-sidebar {
+  top: var(--ticker-height);
+}
+
+/* GitHub icon in the navbar */
+.navbar-github::before {
+  content: "";
+  display: block;
+  width: 22px;
+  height: 22px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2 0 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8 0 3.2.9.8 1.3 1.9 1.3 3.1 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1 .9 2.2v3.3c0 .3.1.7.8.6A12 12 0 0 0 12 .3'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.navbar-github:hover {
+  opacity: 0.7;
+}
+
+/* Doc pages: demos sit on their own line, sized to the column */
+.markdown .demo {
+  max-width: 100%;
+}
+
+/* ---- Landing page ------------------------------------------------------- */
+
+.landing {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px 64px;
+}
+.landing a {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+.landing a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Hero: copy on the left, the app window on the right. The window is drawn at
+   its real 760×530 and scaled to whatever width its column gets, so the two
+   columns hold at any desktop width; it only stacks on phones. */
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 56px;
+  align-items: center;
+  padding: 72px 0 56px;
+}
+.landing-eyebrow {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ifm-color-primary);
+  margin-bottom: 14px;
+}
+.landing-hero h1 {
+  margin: 0 0 16px;
+  font-size: clamp(30px, 3vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ifm-font-color-base);
+}
+.landing-lead {
+  margin: 0 0 32px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ifm-color-emphasis-700);
+}
+.landing-fine {
+  margin: 20px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ifm-color-emphasis-600);
+}
+.landing-window {
+  width: 100%;
+  max-width: 760px;
+  justify-self: end;
+}
+
+/* Practical footer: three short lists, then the disclaimer */
+.landing-help {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+}
+.landing-help h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ifm-font-color-base);
+}
+.landing-help ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-700);
+}
+.landing-legal {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ifm-color-emphasis-600);
+}
+.landing-legal p {
+  margin: 0 0 8px;
+}
+.landing-legal a {
+  color: var(--ifm-color-emphasis-700);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .landing-hero {
+    gap: 32px;
+    padding-top: 48px;
+  }
+  .landing-help {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+@media (max-width: 640px) {
+  .landing {
+    padding: 0 24px 48px;
+  }
+  .landing-hero {
+    grid-template-columns: 1fr;
+  }
+  .landing-window {
+    justify-self: stretch;
+  }
+}
+
+/* ---- Announcements timeline ------------------------------------------- */
+
+.markdown .timeline {
+  position: relative;
+  margin-top: 32px;
+  padding-left: 36px;
+}
+.markdown .timeline::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 7px;
+  width: 2px;
+  background: var(--ifm-color-emphasis-300);
+}
+.markdown .tl-item {
+  position: relative;
+  margin-bottom: 40px;
+  padding: 20px 24px 8px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 12px;
+  background: var(--ifm-background-surface-color);
+}
+.markdown .tl-item::before {
+  content: "";
+  position: absolute;
+  top: 26px;
+  left: -34px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--ifm-background-color);
+  background: var(--ifm-color-emphasis-600);
+  box-shadow: 0 0 0 2px var(--ifm-color-emphasis-300);
+}
+.markdown .tl-item:first-child::before {
+  background: var(--ifm-color-primary);
+  box-shadow: 0 0 0 2px var(--ifm-color-primary-contrast-background);
+}
+.markdown .tl-item:has(h2:target) {
+  border-color: var(--ifm-color-primary);
+}
+.markdown .tl-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.markdown .tl-meta time {
+  font-family: var(--ifm-font-family-monospace);
+  color: var(--ifm-color-emphasis-600);
+}
+.markdown .tl-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  color: var(--ifm-color-emphasis-700);
+}
+.markdown .tl-tag--warn {
+  border-color: rgba(224, 67, 43, 0.35);
+  color: var(--ifm-color-primary);
+}
+.markdown .tl-new {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ifm-color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.markdown .tl-item h2 {
+  margin: 10px 0 12px;
+  padding: 0;
+  border: 0;
+  font-size: 1.2rem;
+  line-height: 1.4;
+}
+.markdown .tl-item p,
+.markdown .tl-item li {
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+.markdown .tl-links {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .markdown .timeline {
+    padding-left: 24px;
+  }
+  .markdown .timeline::before {
+    left: 3px;
+  }
+  .markdown .tl-item {
+    padding: 16px 16px 6px;
+  }
+  .markdown .tl-item::before {
+    left: -26px;
+  }
+}
+
+/* ---- Collapsible blocks ------------------------------------------------- */
+
+/* Docusaurus styles <details> as a blue "info" alert. The guide and FAQ use
+   them for plain optional steps, so they get a quiet card look instead. */
+.markdown details.alert.alert--info {
+  --ifm-alert-background-color: var(--ifm-background-surface-color);
+  --ifm-alert-border-color: var(--ifm-color-emphasis-300);
+  --ifm-alert-foreground-color: var(--ifm-font-color-base);
+  --docusaurus-details-decoration-color: var(--ifm-color-emphasis-500);
+  border-width: 1px;
+  box-shadow: none;
+}
+.markdown details.alert.alert--info > summary {
+  font-weight: 600;
+}
+.markdown details.alert.alert--info > summary::before {
+  border-color: transparent transparent transparent var(--ifm-color-emphasis-500);
+}
+
+/* Admonitions (:::tip) as quiet cards with a coloured left edge, not a flood fill */
+.markdown .theme-admonition {
+  --ifm-alert-background-color: var(--ifm-background-surface-color);
+  --ifm-alert-foreground-color: var(--ifm-font-color-base);
+  border-width: 0 0 0 4px;
+  box-shadow: none;
+}
+.markdown .theme-admonition > div:first-child {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.95rem;
+}

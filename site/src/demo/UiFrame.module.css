@@ -1,0 +1,10 @@
+.frame {
+  position: relative;
+  width: 100%;
+}
+.content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}

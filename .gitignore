@@ -45,3 +45,8 @@ vitest.config.d.ts
 # when the built app or its NSIS uninstaller gets copied/run at the root)
 /maplelink.exe
 /uninstall.exe
+
+# Docusaurus site
+site/node_modules/
+site/build/
+site/.docusaurus/

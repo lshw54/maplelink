@@ -1,0 +1,129 @@
+.demo {
+  margin: 20px 0 28px;
+}
+.ss-lang {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--ifm-color-emphasis-700);
+}
+.ss-lang button {
+  font: inherit;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: none;
+  color: var(--ifm-color-emphasis-700);
+  cursor: pointer;
+}
+.ss-lang button.on {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+/* Windows 10/11 SmartScreen: one flat blue sheet, Segoe UI, light text */
+.ss {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 40px 36px 32px;
+  display: flex;
+  flex-direction: column;
+  background: #0078d7;
+  color: #fff;
+  font-family: "Segoe UI", "Microsoft JhengHei UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  user-select: none;
+  transition: opacity 0.25s;
+}
+.ss--done {
+  opacity: 0.55;
+}
+.ss :where(button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.ss__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 32px;
+  font-size: 14px;
+  background: #fff !important;
+  color: #333 !important;
+}
+.ss__close:hover {
+  background: #e81123 !important;
+  color: #fff !important;
+}
+.ss__title {
+  margin: 0 0 20px;
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  border: 0;
+  padding: 0;
+}
+.ss__body {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.ss__more {
+  align-self: flex-start;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+  padding: 1px 3px !important;
+}
+.ss__info {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  font-size: 15px;
+}
+.ss__info dd {
+  margin: 0;
+}
+.ss__actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.ss__btn {
+  min-width: 108px;
+  height: 36px;
+  padding: 0 18px !important;
+  background: #fff !important;
+  color: #000 !important;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 2px;
+}
+.ss__btn:hover {
+  background: #e6e6e6 !important;
+}
+.ss-hint {
+  animation: ss-nudge 1.6s ease-in-out infinite;
+}
+@keyframes ss-nudge {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.55);
+  }
+}

@@ -1,0 +1,31 @@
+.coach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--ifm-color-primary-contrast-background);
+  color: var(--ifm-color-primary);
+}
+.done {
+  background: rgba(74, 222, 128, 0.12);
+  color: #15803d;
+}
+[data-theme="dark"] .done {
+  color: #8ff0b0;
+}
+.coach button {
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
