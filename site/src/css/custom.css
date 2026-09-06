@@ -293,3 +293,35 @@ html {
     left: -26px;
   }
 }
+
+/* ---- Collapsible blocks ------------------------------------------------- */
+
+/* Docusaurus styles <details> as a blue "info" alert. The guide and FAQ use
+   them for plain optional steps, so they get a quiet card look instead. */
+.markdown details.alert.alert--info {
+  --ifm-alert-background-color: var(--ifm-background-surface-color);
+  --ifm-alert-border-color: var(--ifm-color-emphasis-300);
+  --ifm-alert-foreground-color: var(--ifm-font-color-base);
+  --docusaurus-details-decoration-color: var(--ifm-color-emphasis-500);
+  border-width: 1px;
+  box-shadow: none;
+}
+.markdown details.alert.alert--info > summary {
+  font-weight: 600;
+}
+.markdown details.alert.alert--info > summary::before {
+  border-color: transparent transparent transparent var(--ifm-color-emphasis-500);
+}
+
+/* Admonitions (:::tip) as quiet cards with a coloured left edge, not a flood fill */
+.markdown .theme-admonition {
+  --ifm-alert-background-color: var(--ifm-background-surface-color);
+  --ifm-alert-foreground-color: var(--ifm-font-color-base);
+  border-width: 0 0 0 4px;
+  box-shadow: none;
+}
+.markdown .theme-admonition > div:first-child {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.95rem;
+}
