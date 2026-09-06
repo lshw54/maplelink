@@ -4,6 +4,7 @@ import { useT } from "./i18n";
 import UiFrame from "./UiFrame.vue";
 import UiTitlebar from "./UiTitlebar.vue";
 import UiCoach from "./UiCoach.vue";
+import { useLatestVersion } from "./release";
 
 /**
  * The sign-in window (350×620), playable. Flip the region flag to see the TW
@@ -11,6 +12,7 @@ import UiCoach from "./UiCoach.vue";
  * press sign in. Nothing is sent anywhere; the fields accept any text.
  */
 const t = useT();
+const version = useLatestVersion();
 const region = ref<"HK" | "TW">("HK");
 const classic = ref(false);
 const view = ref<"form" | "qr">("form");
@@ -123,7 +125,7 @@ const coach = computed(() => {
         <div class="login__foot">
           <span class="login__online"><i></i>ONLINE <small>42ms</small></span>
           <span class="login__direct">▶ {{ t("免登入啟動遊戲", "免登录启动游戏", "Launch game without login") }}</span>
-          <span class="login__ver">MapleLink v0.5.0</span>
+          <span class="login__ver">MapleLink v{{ version ?? "…" }}</span>
         </div>
       </div>
     </UiFrame>

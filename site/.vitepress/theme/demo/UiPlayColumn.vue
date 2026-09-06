@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useT } from "./i18n";
+import { useLatestVersion } from "./release";
 
 /**
  * The left-hand side of the main window: the live / classic switch, the game
@@ -10,6 +11,7 @@ import { useT } from "./i18n";
 withDefaults(defineProps<{ canClassic?: boolean; hint?: boolean }>(), { canClassic: true, hint: false });
 const emit = defineEmits<{ launched: [] }>();
 const t = useT();
+const version = useLatestVersion();
 
 const classic = ref(false);
 const launching = ref(false);
@@ -50,7 +52,7 @@ defineExpose({
     </div>
     <div class="play__status">
       <span class="play__online"><i></i>ONLINE <small>42ms</small></span>
-      <span class="play__ver">MapleLink v0.5.0</span>
+      <span class="play__ver">MapleLink v{{ version ?? "…" }}</span>
     </div>
   </div>
 </template>

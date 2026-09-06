@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed } from "vue";
 import { useData } from "vitepress";
 import { PRODUCTS, latestUrl } from "../products";
+import { useLatestRelease, useLatestVersion } from "./demo/release";
 
 /**
  * Latest release card for one product. Reads the public GitHub API in the
  * visitor's browser; the site never proxies or hosts the file, so what people
  * click is the same GitHub asset URL the app's own announcement points at.
- */
-/**
+ *
  * `card` is the full download card (download page). `hero` is the landing
  * page's single primary button plus a text link for the bare exe.
  */
@@ -18,22 +18,9 @@ const props = withDefaults(defineProps<{ product?: string; variant?: "card" | "h
 });
 const product = PRODUCTS[props.product];
 
-interface Asset {
-  name: string;
-  browser_download_url: string;
-  size: number;
-}
-interface Release {
-  tag_name: string;
-  html_url: string;
-  body: string;
-  published_at: string;
-  assets: Asset[];
-}
-
 const { lang } = useData();
-const release = ref<Release | null>(null);
-const failed = ref(false);
+const { release, failed } = useLatestRelease(props.product);
+const version = useLatestVersion(props.product);
 
 const t = (zhTW: string, zhCN: string, en: string) =>
   lang.value === "zh-CN" ? zhCN : lang.value.startsWith("en") ? en : zhTW;
@@ -43,17 +30,6 @@ const setup = computed(() => find(product.setup));
 const portable = computed(() => find(product.portable));
 const sha256 = computed(() => release.value?.body.match(product.sha256)?.[1]);
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-const version = computed(() => release.value?.tag_name.replace(/^v/, "").split(".").slice(0, 3).join("."));
-
-onMounted(async () => {
-  try {
-    const res = await fetch(`https://api.github.com/repos/${product.repo}/releases/latest`);
-    if (!res.ok) throw new Error(String(res.status));
-    release.value = await res.json();
-  } catch {
-    failed.value = true;
-  }
-});
 </script>
 
 <template>
