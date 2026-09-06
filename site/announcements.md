@@ -1,0 +1,43 @@
+---
+title: 公告
+outline: false
+---
+
+# 公告
+
+以下公告與程式內顯示的內容相同，最新的在最上面。程式內的公告也可在工具箱「公告」分頁重看。
+
+<div class="timeline">
+
+<section class="tl-item" id="2026-09-download-source">
+<div class="tl-meta"><time>2026-09</time><span class="tl-tag tl-tag--warn">安全提示</span><span class="tl-new">最新</span></div>
+
+## 下載來源提醒
+
+我們接獲回報，有非官方、疑似被重新打包的 Beanfun 啟動器在外流傳。
+
+開發團隊每次發佈，只會提供 GitHub 上該版本 exe 的下載連結。我們給的永遠是連結，不是檔案。
+
+所以，如果有人直接把執行檔傳給你，或者你從網盤、論壇轉載、聊天群組附件取得，那就不是我們發出的。MapleLink 與 Beanfun 各自獨立發佈，任何一邊都不會代另一邊派發檔案。
+
+下載與使用前，請先確認來源安全可靠。不是從認可位置取得的，請立即刪除並重新下載。重新打包的版本可能已被植入其他程式，而你的帳號密碼會經過它。
+
+<p class="tl-links"><a href="/download#verify">如何核對下載</a></p>
+
+</section>
+
+<section class="tl-item" id="2026-07-dual-track">
+<div class="tl-meta"><time>2026-07</time><span class="tl-tag">專案動態</span></div>
+
+## 開發狀態與雙線更新公告
+
+MapleLink 目前與原版 Beanfun 維持雙線並行開發，旨在為玩家提供更具彈性的選擇。兩個專案各有明確定位：
+
+- **MapleLink（本專案）**：專為純《新楓之谷》玩家打造，採用由零重寫的輕量化架構，作為新技術實驗與快速排查登入異常問題的先行區。
+- **Beanfun**：以支援所有橘子旗下遊戲為目標，持續優化並提供高相容性的全生態服務。
+
+<p class="tl-links"><a href="https://github.com/pungin/Beanfun/issues/323">關於 Beanfun 與 MapleLink 雙線並行開發的說明 (pungin/Beanfun#323)</a></p>
+
+</section>
+
+</div>

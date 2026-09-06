@@ -1,0 +1,140 @@
+---
+title: 常見問題
+outline: [2, 3]
+---
+
+# 常見問題
+
+依情況分類。點開標題下方的區塊可以看到做法。
+
+## 安裝與開啟
+
+### 打不開、白屏、提示 WebView2 錯誤 {#webview2}
+
+程式需要「Microsoft Edge WebView2 執行階段」才能顯示介面。Windows 10 / 11 通常已內建；缺少時請手動安裝。
+
+<DemoBlank />
+
+::: details 安裝步驟
+1. 直接下載「常青版引導安裝程式」：<https://go.microsoft.com/fwlink/p/?LinkId=2124703>（檔名為 `MicrosoftEdgeWebView2Setup.exe`）。也可以到[微軟官方下載頁](https://developer.microsoft.com/microsoft-edge/webview2/)取得。
+2. 執行安裝。
+3. 重新開啟 MapleLink。
+
+中國大陸使用者若下載緩慢，可先開啟加速器再下載。
+:::
+
+### Windows SmartScreen 說「無法辨識的應用程式」
+
+程式沒有購買商業程式碼簽章憑證，Windows 對它沒有信譽紀錄。這不是病毒警告。
+
+::: details 做法
+先依[下載頁](/download#verify)核對 SHA256，一致後按「其他資訊」再按「仍要執行」。
+
+<DemoSmartScreen />
+:::
+
+### 防毒軟體把它當成病毒
+
+第三方啟動器常被誤判，因為它會啟動另一個程式、注入 DLL（區域模擬）並操作剪貼簿。
+
+::: details 做法
+核對 SHA256 一致後，把該檔案加入防毒軟體的白名單。若 SHA256 不一致，請立即刪除。
+:::
+
+### 加速器認不到程式
+
+部分加速器只認得 `Beanfun.exe`。
+
+::: details 做法
+把 `MapleLink.exe` 改名為 `Beanfun.exe` 即可，功能完全相同。第一次開啟時程式也會提示一鍵改名：
+
+<DemoRename />
+:::
+
+## 登入
+
+### 顯示 no auth key in response 或 missing akey in response URL
+
+登入失敗時會在登入鈕上方出現紅字「Invalid credentials: login failed: no auth key in response」，或右下角彈出「missing akey in response URL」。兩個訊息代表同一件事：Beanfun 沒有回傳登入憑證。原因有兩類，訊息本身分不出是哪一類。
+
+<DemoLoginError />
+
+::: details 做法
+1. **先排除帳密錯誤**：到官網用同一組帳密登入一次。HK 帳號到 <https://hk.beanfun.com/>，TW 帳號到 <https://tw.beanfun.com/>。登入不了就是帳密問題，請在官網重設密碼。
+2. **官網登入得到，就是連線節點問題**：見下一條。
+3. 兩者都沒問題仍然失敗，多數是 Beanfun 伺服器暫時異常，等幾分鐘再試。
+:::
+
+### 連線節點有問題時會看到什麼
+
+使用加速器或 VPN 時，節點不穩或被 Beanfun 拒絕，會有三種表現：登入鈕上方出現「failed to extract session key (no OTP1 span)」；官網的進階驗證視窗「感謝您的配合，您的資料已驗證成功…」按了確定又再彈出，無限重複；或出現 `Request timeout: https://tw.beanfun.com/…default.aspx?service=999999_T0`。
+
+<DemoNodeErrors />
+
+::: details 做法
+1. **換節點**：在加速器或 VPN 換一個節點再試；能直接連線的話，暫時關掉再試。
+2. **用加速器的人，確認程式已改名為 `Beanfun.exe`**：加速器是按程式名稱加速的，沒改名就認不到 MapleLink，流量根本沒有經過節點。做法見上方「加速器認不到程式」。
+3. 無限重複驗證的情況，換節點後請關掉程式重開，再登入一次。
+:::
+
+### 圖形驗證碼一直失敗
+
+程式會自動處理圖形驗證碼，連續失敗時會退回手動輸入。
+
+::: details 做法
+在跳出的視窗手動輸入驗證碼。若持續失敗，多數是 Beanfun 伺服器暫時異常，稍後再試。
+:::
+
+### TW 帳密登入卡在 reCAPTCHA
+
+TW 一般帳密登入需要通過 reCAPTCHA。
+
+::: details 做法
+程式會開啟一個小視窗讓你完成驗證，完成後自動繼續。若視窗沒有出現，可以改用 QR Code 或 GamaPass 登入。
+:::
+
+## 遊戲啟動
+
+### 按「開始遊戲」沒有反應
+
+多數是遊戲路徑未設定或不正確。
+
+::: details 做法
+到工具箱「設定」確認 `MapleStory.exe` 所在的資料夾。程式會先嘗試自動偵測，偵測不到時請手動選擇。
+
+<DemoSettings focus="path" />
+:::
+
+### 遊戲出現亂碼或無法啟動
+
+系統地區不是繁體中文時會發生。
+
+::: details 做法
+程式會自動偵測系統地區，不是繁體中文時就經 Locale Remulator 啟動遊戲，沒有開關。仍然亂碼的話，請先確認遊戲路徑正確，再到 [GitHub Issues](https://github.com/lshw54/maplelink/issues) 附上日誌回報。
+:::
+
+## 帳號與資料
+
+### 更換電腦後帳號列表不見了
+
+帳號存放在 `%APPDATA%\com.maplelink.app\accounts.dat`，以 Windows DPAPI 加密，綁定原本的電腦與 Windows 帳戶，無法直接複製。
+
+::: details 做法
+在舊電腦的工具箱「帳號管理」按「匯出資料」，再於新電腦「匯入資料」。
+
+<DemoBackup />
+:::
+
+### 密碼會傳到哪裏
+
+只存放在你的電腦。記住的帳號密碼以 Windows DPAPI 加密寫入 `%APPDATA%\com.maplelink.app\accounts.dat`，不會傳送給開發團隊。登入時只與 Beanfun 官方伺服器通訊。
+
+## 關於專案
+
+### MapleLink 與 Beanfun 有什麼分別
+
+兩者由同一批人並行維護。MapleLink 專為《新楓之谷》玩家打造，由零重寫，新技術與登入問題的修正會先在這裏出現；[Beanfun](https://github.com/pungin/Beanfun) 以支援所有橘子旗下遊戲為目標。詳見 [pungin/Beanfun#323](https://github.com/pungin/Beanfun/issues/323)。
+
+### 如何回報問題
+
+到 [GitHub Issues](https://github.com/lshw54/maplelink/issues) 開一則 issue，附上程式版本、地區與重現步驟。

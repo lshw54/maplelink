@@ -1,0 +1,138 @@
+---
+title: FAQ
+outline: [2, 3]
+---
+
+# FAQ
+
+Grouped by situation. Expand the block under a question for the fix.
+
+## Installing and opening
+
+### Won't open, blank window, or a WebView2 error {#webview2}
+
+The app needs the Microsoft Edge WebView2 Runtime to draw its interface. Windows 10 / 11 normally ship with it; install it by hand if it is missing.
+
+<DemoBlank />
+
+::: details Steps
+1. Download the Evergreen Bootstrapper directly: <https://go.microsoft.com/fwlink/p/?LinkId=2124703> (the file is `MicrosoftEdgeWebView2Setup.exe`). It is also on [Microsoft's download page](https://developer.microsoft.com/microsoft-edge/webview2/).
+2. Run it.
+3. Start MapleLink again.
+:::
+
+### SmartScreen says "unrecognized app"
+
+The app has no commercial code-signing certificate, so Windows has no reputation record for it. This is not a virus warning.
+
+::: details Fix
+Check the SHA256 as described on the [download page](/en/download#verify), then click "More info" and "Run anyway".
+
+<DemoSmartScreen />
+:::
+
+### My antivirus flags it
+
+Third-party launchers are often misclassified: this one starts another process, injects a DLL (locale emulation) and touches the clipboard.
+
+::: details Fix
+Once the SHA256 matches, add the file to your antivirus allow list. If the SHA256 does not match, delete the file immediately.
+:::
+
+### My accelerator does not see the app
+
+Some accelerators only recognise `Beanfun.exe`.
+
+::: details Fix
+Rename `MapleLink.exe` to `Beanfun.exe`; nothing else changes. The app also offers to do this on first launch:
+
+<DemoRename />
+:::
+
+## Signing in
+
+### It says "no auth key in response" or "missing akey in response URL"
+
+A failed sign-in shows a red line above the sign-in button, "Invalid credentials: login failed: no auth key in response", or a toast at the bottom right, "missing akey in response URL". Both mean the same thing: Beanfun did not hand back a sign-in token. There are two causes, and the message alone cannot tell them apart.
+
+<DemoLoginError />
+
+::: details Fix
+1. **Rule out a wrong password first**: sign in on the website with the same credentials, at <https://hk.beanfun.com/> for an HK account or <https://tw.beanfun.com/> for TW. If that fails too, reset the password there.
+2. **If the website works, it is the connection node**: see the next question.
+3. If both are fine and it still fails, Beanfun's servers are usually having a moment; wait a few minutes.
+:::
+
+### What a bad connection node looks like
+
+With an accelerator or VPN, an unstable node or one Beanfun rejects shows up in three ways: "failed to extract session key (no OTP1 span)" above the sign-in button; the website's verification alert ("感謝您的配合，您的資料已驗證成功…") coming back every time you press OK; or `Request timeout: https://tw.beanfun.com/…default.aspx?service=999999_T0`.
+
+<DemoNodeErrors />
+
+::: details Fix
+1. **Change node**: pick another node in the accelerator or VPN; if you can connect directly, turn it off and try again.
+2. **Accelerator users, make sure the app is renamed to `Beanfun.exe`**: accelerators route by process name, so an unrenamed MapleLink is not recognised and its traffic never goes through the node. See "My accelerator does not see the app" above.
+3. For the endless verification loop, close the app after changing node, reopen it and sign in again.
+:::
+
+### The image CAPTCHA keeps failing
+
+The app solves image CAPTCHAs itself and falls back to manual entry after repeated failures.
+
+::: details Fix
+Type the code in the window that appears. If it keeps failing, Beanfun's servers are usually having a moment; try again later.
+:::
+
+### TW password sign-in is stuck on reCAPTCHA
+
+Regular TW password sign-in requires a reCAPTCHA.
+
+::: details Fix
+The app opens a small window for you to complete it and continues on its own afterwards. If the window never appears, sign in with a QR code or GamaPass instead.
+:::
+
+## Starting the game
+
+### Nothing happens when I press PLAY
+
+Usually the game path is unset or wrong.
+
+::: details Fix
+Open Toolbox → Settings and check the folder containing `MapleStory.exe`. The app tries to detect it first; pick it by hand if that fails.
+
+<DemoSettings focus="path" />
+:::
+
+### The game shows garbled text or will not start
+
+This happens when the system locale is not Traditional Chinese.
+
+::: details Fix
+The app detects the system locale and, when it is not Traditional Chinese, launches the game through Locale Remulator by itself; there is no switch. If text is still garbled, confirm the game path first, then report it on [GitHub Issues](https://github.com/lshw54/maplelink/issues) with the log.
+:::
+
+## Accounts and data
+
+### My accounts vanished on a new PC
+
+Credentials live in `%APPDATA%\com.maplelink.app\accounts.dat`, encrypted with Windows DPAPI and bound to the original PC and Windows account, so they cannot simply be copied.
+
+::: details Fix
+On the old PC open Toolbox → Account Manager and click "Export data"; on the new one click "Import data".
+
+<DemoBackup />
+:::
+
+### Where do my passwords go
+
+Nowhere but your PC. Remembered credentials are written to `%APPDATA%\com.maplelink.app\accounts.dat`, encrypted with Windows DPAPI, and are never sent to the developers. Signing in talks only to Beanfun's own servers.
+
+## About the project
+
+### How is MapleLink different from Beanfun
+
+Both are maintained side by side by the same people. MapleLink is built for MapleStory players only and rewritten from scratch; new techniques and sign-in fixes land here first. [Beanfun](https://github.com/pungin/Beanfun) aims to support every Gamania game. See [pungin/Beanfun#323](https://github.com/pungin/Beanfun/issues/323).
+
+### How do I report a problem
+
+Open an issue on [GitHub](https://github.com/lshw54/maplelink/issues) with the app version, region and steps to reproduce.
