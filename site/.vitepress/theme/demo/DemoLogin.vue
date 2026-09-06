@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { withBase } from "vitepress";
 import { useT } from "./i18n";
+import { NATIVE_INPUT } from "./native";
 import UiFrame from "./UiFrame.vue";
 import UiTitlebar from "./UiTitlebar.vue";
 import UiCoach from "./UiCoach.vue";
@@ -70,10 +71,10 @@ const coach = computed(() => {
 
           <form v-if="view === 'form'" class="login__form" @submit.prevent="submit">
             <label class="login__label">{{ t("帳號", "账号", "Username") }}</label>
-            <input v-model="account" class="login__input" type="text" :placeholder="t('輸入你的帳號', '输入你的账号', 'Enter your username')" autocomplete="off" />
+            <input v-model="account" class="login__input" type="text" name="demo-account" :placeholder="t('輸入你的帳號', '输入你的账号', 'Enter your username')" v-bind="NATIVE_INPUT" />
             <label class="login__label">{{ t("密碼", "密码", "Password") }}</label>
             <div class="login__pw">
-              <input v-model="password" class="login__input" type="password" :placeholder="t('輸入你的密碼', '输入你的密码', 'Enter your password')" autocomplete="off" />
+              <input v-model="password" class="login__input ml-secret" type="text" name="demo-secret" :placeholder="t('輸入你的密碼', '输入你的密码', 'Enter your password')" v-bind="NATIVE_INPUT" />
               <span class="login__eye">👁</span>
             </div>
             <div class="login__opts">

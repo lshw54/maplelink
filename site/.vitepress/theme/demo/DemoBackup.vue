@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useT } from "./i18n";
+import { NATIVE_INPUT } from "./native";
 import UiFrame from "./UiFrame.vue";
 import UiCoach from "./UiCoach.vue";
 import UiToolbox from "./UiToolbox.vue";
@@ -72,7 +73,7 @@ const coach = computed(() => {
             <div class="am__dlg-head">{{ t("匯出資料", "导出数据", "Export data") }}<button @click="dialog = 'none'">✕</button></div>
             <p class="am__warn">{{ t("會匯出所有已儲存帳號（含密碼）與自訂設定。明文檔案任何人都讀得到密碼，請妥善保管；建議勾選加密。", "会导出所有已保存账号（含密码）与自定义设置。明文文件任何人都能读到密码，请妥善保管；建议勾选加密。", "Exports all saved accounts (including passwords) and customizations. A plaintext file exposes passwords to anyone who opens it. Keep it safe, or tick encrypt.") }}</p>
             <label class="am__check"><input v-model="encrypt" type="checkbox" /> {{ t("用密碼加密（AES-256）", "用密码加密（AES-256）", "Encrypt with a password (AES-256)") }}</label>
-            <input v-if="encrypt" v-model="pass" class="am__input" type="password" :placeholder="t('輸入密碼', '输入密码', 'Enter password')" />
+            <input v-if="encrypt" v-model="pass" class="am__input ml-secret" type="text" name="demo-secret" :placeholder="t('輸入密碼', '输入密码', 'Enter password')" v-bind="NATIVE_INPUT" />
             <div class="am__dlg-actions">
               <button class="am__cancel" @click="dialog = 'none'">{{ t("取消", "取消", "Cancel") }}</button>
               <button class="am__ok" :class="{ 'am__ok--off': encrypt && pass.length < 4, 'ml-hint': !encrypt || pass.length >= 4 }" :disabled="encrypt && pass.length < 4" @click="doExport">{{ t("匯出", "导出", "Export") }}</button>

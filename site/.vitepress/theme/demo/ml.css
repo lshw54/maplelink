@@ -42,6 +42,14 @@
   font: inherit;
   color: inherit;
 }
+/* A text field drawn as a password field. Real password inputs make the
+   browser offer to save whatever was typed into a demo. */
+.ml .ml-secret {
+  -webkit-text-security: disc;
+}
+.ml .ml-secret::placeholder {
+  -webkit-text-security: none;
+}
 
 /* The coach bar's current target */
 .ml-hint {
