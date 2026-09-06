@@ -12,8 +12,8 @@ import styles from "./NoticeBar.module.css";
  */
 export default function NoticeBar() {
   const locale = useLocale();
-  const prefix = locale === "zh-TW" ? "" : `/${locale}`;
-  const announcements = useBaseUrl(`${prefix}/announcements`);
+  // useBaseUrl already includes the current locale's path segment.
+  const announcements = useBaseUrl("/announcements");
 
   const items = NOTICES.map((n) => ({
     id: n.id,
