@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
+import { withBase } from "vitepress";
 import { useT } from "./i18n";
 import UiFrame from "./UiFrame.vue";
 import UiCoach from "./UiCoach.vue";
@@ -47,7 +48,7 @@ const coach = computed(() =>
         <div class="ml-glow"></div>
         <UiTitlebar page="login" region="HK" />
         <div class="an__bg">
-          <img src="/logo.png" alt="" />
+          <img :src="withBase('/logo.png')" alt="" />
           <span>MAPLELINK</span>
         </div>
         <div v-if="!dismissed" class="an__overlay">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { withBase } from "vitepress";
 import { useT } from "./i18n";
 import UiFrame from "./UiFrame.vue";
 import UiCoach from "./UiCoach.vue";
@@ -107,7 +108,7 @@ const coach = computed(() => {
         </div>
 
         <form v-else class="se__login" @submit.prevent="submit">
-          <img src="/logo.png" alt="" />
+          <img :src="withBase('/logo.png')" alt="" />
           <span class="se__brand">MAPLELINK</span>
           <label>{{ t("帳號", "账号", "Username") }}</label>
           <input v-model="account" type="text" :placeholder="t('輸入你的帳號', '输入你的账号', 'Enter your username')" autocomplete="off" />

@@ -4,6 +4,10 @@ title: MapleLink
 titleTemplate: 《新楓之谷》的第三方登入啟動器
 ---
 
+<script setup>
+import { withBase } from "vitepress";
+</script>
+
 <div class="landing">
 
 <section class="landing-hero">
@@ -12,7 +16,7 @@ titleTemplate: 《新楓之谷》的第三方登入啟動器
     <h1>《新楓之谷》的<br>登入啟動器</h1>
     <p class="landing-lead">更快捷的帳號管理，更好的登入體驗。</p>
     <LatestRelease product="maplelink" variant="hero" />
-    <p class="landing-fine">只從本站或 GitHub Releases 下載。<a href="/download#verify">核對 SHA256</a> · <a href="/guide/">新手教學</a><br>也玩其他橘子遊戲？我們同時維護原版 <a href="https://github.com/pungin/Beanfun">Beanfun</a> 啟動器。</p>
+    <p class="landing-fine">只從本站或 GitHub Releases 下載。<a :href="withBase('/download#verify')">核對 SHA256</a> · <a :href="withBase('/guide/')">新手教學</a><br>也玩其他橘子遊戲？我們同時維護原版 <a href="https://github.com/pungin/Beanfun">Beanfun</a> 啟動器。</p>
   </div>
   <div class="landing-window"><AppWindow /></div>
 </section>
@@ -21,7 +25,7 @@ titleTemplate: 《新楓之谷》的第三方登入啟動器
   <div>
     <h2>開始使用</h2>
     <ul>
-      <li><a href="/guide/">新手教學</a>：下載、解壓、登入、取 OTP，約五分鐘</li>
+      <li><a :href="withBase('/guide/')">新手教學</a>：下載、解壓、登入、取 OTP，約五分鐘</li>
       <li>需要 Windows 10 / 11（64 位元）及 WebView2</li>
       <li>不需要安裝，整個資料夾放哪裏都可以</li>
     </ul>
@@ -29,8 +33,8 @@ titleTemplate: 《新楓之谷》的第三方登入啟動器
   <div>
     <h2>遇到問題</h2>
     <ul>
-      <li><a href="/faq#webview2">打不開、白屏、閃退</a>：安裝 WebView2</li>
-      <li><a href="/faq">SmartScreen 警告、防毒誤判、加速器認不到</a></li>
+      <li><a :href="withBase('/faq#webview2')">打不開、白屏、閃退</a>：安裝 WebView2</li>
+      <li><a :href="withBase('/faq')">SmartScreen 警告、防毒誤判、加速器認不到</a></li>
       <li>其他問題到 <a href="https://github.com/lshw54/maplelink/issues">GitHub Issues</a> 回報</li>
     </ul>
   </div>
@@ -38,7 +42,7 @@ titleTemplate: 《新楓之谷》的第三方登入啟動器
     <h2>下載與更新</h2>
     <ul>
       <li>只從本站或 <a href="https://github.com/lshw54/maplelink/releases">GitHub Releases</a> 下載</li>
-      <li>執行前<a href="/download#verify">核對 SHA256</a>，不一致就刪除</li>
+      <li>執行前<a :href="withBase('/download#verify')">核對 SHA256</a>，不一致就刪除</li>
       <li>已在使用的話，程式會自動更新</li>
     </ul>
   </div>

@@ -4,6 +4,10 @@ title: MapleLink
 titleTemplate: Third-party sign-in launcher for MapleStory
 ---
 
+<script setup>
+import { withBase } from "vitepress";
+</script>
+
 <div class="landing">
 
 <section class="landing-hero">
@@ -12,7 +16,7 @@ titleTemplate: Third-party sign-in launcher for MapleStory
     <h1>The sign-in launcher<br>for MapleStory</h1>
     <p class="landing-lead">Faster account management. A better sign-in experience.</p>
     <LatestRelease product="maplelink" variant="hero" />
-    <p class="landing-fine">Download only from this site or GitHub Releases. <a href="/en/download#verify">Check the SHA256</a> · <a href="/en/guide/">Beginner guide</a><br>Play other Gamania games too? We also maintain the original <a href="https://github.com/pungin/Beanfun">Beanfun</a> launcher.</p>
+    <p class="landing-fine">Download only from this site or GitHub Releases. <a :href="withBase('/en/download#verify')">Check the SHA256</a> · <a :href="withBase('/en/guide/')">Beginner guide</a><br>Play other Gamania games too? We also maintain the original <a href="https://github.com/pungin/Beanfun">Beanfun</a> launcher.</p>
   </div>
   <div class="landing-window"><AppWindow /></div>
 </section>
@@ -21,7 +25,7 @@ titleTemplate: Third-party sign-in launcher for MapleStory
   <div>
     <h2>Getting started</h2>
     <ul>
-      <li><a href="/en/guide/">Beginner guide</a>: download, unpack, sign in, get an OTP. About five minutes</li>
+      <li><a :href="withBase('/en/guide/')">Beginner guide</a>: download, unpack, sign in, get an OTP. About five minutes</li>
       <li>Needs Windows 10 / 11 (64-bit) and WebView2</li>
       <li>Nothing to install. Keep the folder anywhere</li>
     </ul>
@@ -29,8 +33,8 @@ titleTemplate: Third-party sign-in launcher for MapleStory
   <div>
     <h2>Something wrong?</h2>
     <ul>
-      <li><a href="/en/faq#webview2">Won't open, blank window, closes at once</a>: install WebView2</li>
-      <li><a href="/en/faq">SmartScreen warning, antivirus flag, accelerator can't see it</a></li>
+      <li><a :href="withBase('/en/faq#webview2')">Won't open, blank window, closes at once</a>: install WebView2</li>
+      <li><a :href="withBase('/en/faq')">SmartScreen warning, antivirus flag, accelerator can't see it</a></li>
       <li>Anything else: open an issue on <a href="https://github.com/lshw54/maplelink/issues">GitHub</a></li>
     </ul>
   </div>
@@ -38,7 +42,7 @@ titleTemplate: Third-party sign-in launcher for MapleStory
     <h2>Downloads and updates</h2>
     <ul>
       <li>Download only from this site or <a href="https://github.com/lshw54/maplelink/releases">GitHub Releases</a></li>
-      <li><a href="/en/download#verify">Check the SHA256</a> before running; delete it if it differs</li>
+      <li><a :href="withBase('/en/download#verify')">Check the SHA256</a> before running; delete it if it differs</li>
       <li>Once installed, the app updates itself</li>
     </ul>
   </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { withBase } from "vitepress";
 import { useT } from "./i18n";
 import UiFrame from "./UiFrame.vue";
 import UiCoach from "./UiCoach.vue";
@@ -35,7 +36,7 @@ const coach = computed(() => {
       <div class="ml rn">
         <div class="ml-glow"></div>
         <UiTitlebar page="login" region="HK" />
-        <div class="rn__bg"><img src="/logo.png" alt="" /><span>MAPLELINK</span></div>
+        <div class="rn__bg"><img :src="withBase('/logo.png')" alt="" /><span>MAPLELINK</span></div>
         <div v-if="!done" class="rn__overlay">
           <div class="rn__card">
             <div class="rn__head"><span>🚀</span><b>{{ t("改名以配合加速器？", "改名以配合加速器？", "Rename for accelerator?") }}</b></div>

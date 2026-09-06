@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useData } from "vitepress";
+import { useData, withBase } from "vitepress";
 import { NOTICES } from "../notices";
 
 /**
@@ -19,7 +19,7 @@ const items = computed(() =>
     id: n.id,
     date: n.date,
     title: n.title[key.value],
-    href: `${base.value}/announcements#${n.id}`,
+    href: withBase(`${base.value}/announcements#${n.id}`),
   })),
 );
 const label = computed(() =>
@@ -45,7 +45,7 @@ const duration = computed(() => `${Math.max(20, items.value.length * 12)}s`);
         </template>
       </div>
     </div>
-    <a class="notice__more" :href="`${base}/announcements`">{{ more }}</a>
+    <a class="notice__more" :href="withBase(`${base}/announcements`)">{{ more }}</a>
   </div>
 </template>
 

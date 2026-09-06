@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { withBase } from "vitepress";
 import { useT } from "./i18n";
 import { useLatestVersion } from "./release";
 
@@ -35,13 +36,13 @@ defineExpose({
 
 <template>
   <div class="play">
-    <img class="play__ghost" src="/MapleStory.png" alt="" />
+    <img class="play__ghost" :src="withBase('/MapleStory.png')" alt="" />
     <div class="play__col">
       <div v-if="canClassic" class="play__pill">
         <button :class="{ 'ml-grad-deep play__pill--on': !classic }" @click="classic = false">{{ t("正式服", "正式服", "Live") }}</button>
         <button :class="{ 'ml-grad-deep play__pill--on': classic }" @click="classic = true">{{ t("懷舊服", "怀旧服", "Classic") }}</button>
       </div>
-      <div class="play__game"><img src="/MapleStory.png" alt="" /></div>
+      <div class="play__game"><img :src="withBase('/MapleStory.png')" alt="" /></div>
       <div class="play__name">{{ classic ? t("新楓之谷：經典版", "新枫之谷：经典版", "MapleStory Classic") : "MapleStory" }}</div>
       <div class="play__sub">Gamania · MMORPG</div>
       <button class="play__btn ml-grad-deep" :class="{ 'play__btn--busy': launching, 'ml-hint': hint }" @click="play">

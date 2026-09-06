@@ -7,6 +7,12 @@ const REPO_URL = `https://github.com/${PRODUCTS.maplelink.repo}`;
 /** Set once the domain is bought; used for canonical URLs and the CNAME file. */
 export const SITE_URL = "";
 
+/**
+ * Where the site is served from. The Pages workflow passes `/<repo>/` until a
+ * CNAME exists, then `/`. Components use `withBase` for every absolute path.
+ */
+const BASE = process.env.SITE_BASE ?? "/";
+
 const editLink = (text: string) => ({ pattern: `${REPO_URL}/edit/main/site/:path`, text });
 
 
@@ -50,9 +56,10 @@ function tokenize(text: string): string[] {
 }
 
 export default defineConfig({
+  base: BASE,
   title: "MapleLink",
   head: [
-    ["link", { rel: "icon", href: "/logo.png" }],
+    ["link", { rel: "icon", href: `${BASE}logo.png` }],
     ["meta", { name: "theme-color", content: "#e0432b" }],
   ],
   cleanUrls: true,

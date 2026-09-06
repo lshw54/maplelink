@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { withBase } from "vitepress";
 import { useT } from "./i18n";
 import UiFrame from "./UiFrame.vue";
 import UiTitlebar from "./UiTitlebar.vue";
@@ -63,7 +64,7 @@ const coach = computed(() => {
 
         <div class="login__body">
           <div class="login__logo">
-            <img src="/logo.png" alt="" />
+            <img :src="withBase('/logo.png')" alt="" />
             <span>MAPLELINK</span>
           </div>
 
