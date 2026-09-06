@@ -14,6 +14,9 @@
   --ifm-color-primary-lighter: #e0432b;
   --ifm-color-primary-lightest: #e86450;
   --ifm-color-primary-contrast-background: rgba(224, 67, 43, 0.12);
+  /* Infima leaves the light background transparent; anything mixed from it
+     (the ticker) would let the page show through. */
+  --ifm-background-color: #ffffff;
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
