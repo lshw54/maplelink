@@ -1,0 +1,90 @@
+---
+title: Download
+slug: /download
+pagination_next: null
+pagination_prev: null
+---
+
+# Download
+
+<LatestRelease product="maplelink" />
+
+## Which file
+
+| | Who | What to do |
+|---|---|---|
+| **MapleLink-Setup.exe** | First time | Double-click to unpack a folder with the app and a readme |
+| **MapleLink.exe** | Already using it, or want to place it yourself | Run it directly. This is the file auto-update replaces |
+
+Neither needs installing. Either runs from any folder. Settings and accounts live in `%APPDATA%\com.maplelink.app`, not next to the program; see the [guide](/en/guide).
+
+## Requirements
+
+- Windows 10 or 11 (64-bit)
+- Microsoft Edge WebView2. Usually preinstalled; [how to add it](/en/faq#webview2) if missing
+- Classic server also needs Nexon Game Manager; the app detects it and prompts you
+
+## Check the file is genuine {#verify}
+
+Repackaged copies of the launcher are being handed around. There are exactly two recognised sources; anything from elsewhere did not come from us:
+
+1. The download buttons on this site
+2. [https://github.com/lshw54/maplelink/releases](https://github.com/lshw54/maplelink/releases)
+
+This site hosts no executables; the buttons link straight to GitHub. MapleLink and Beanfun publish separately and never hand out files on each other's behalf.
+
+### Check the SHA256
+
+Every release's notes, and the card above, list the SHA256 of `MapleLink.exe`.
+
+<details>
+<summary>How</summary>
+
+1. If you downloaded `MapleLink-Setup.exe`, double-click to extract it first.
+2. Right-click inside the extracted folder, choose "Open in Terminal", and run:
+
+```powershell
+Get-FileHash .\MapleLink.exe -Algorithm SHA256
+```
+
+3. Compare the `Hash` output with the value in the release notes. **If it differs, delete the file. Do not run it.**
+
+</details>
+### Check the signature (advanced)
+
+Each release ships `MapleLink.exe.sig`, signed with the development team's minisign private key.
+
+<details>
+<summary>How</summary>
+
+Public key (key ID `64B3B19BBF3B13D1`):
+
+```
+RWTREzu/m7GzZL+ob+fnHI6ktK+56Tw+gqQRv7hWCbSb/+z47yo5EBAy
+```
+
+The same key is compiled into the app; compare it with [update_signature.rs](https://github.com/lshw54/maplelink/blob/main/src-tauri/src/services/update_signature.rs) and trust it only if both match. It changes only if the private key is lost or compromised.
+
+The `MapleLink.exe.sig` on GitHub is in Tauri's format, a minisign signature file wrapped in base64, so decode it first. Download the Windows build from [minisign's GitHub Releases](https://github.com/jedisct1/minisign/releases) and unzip `minisign.exe`; nothing to install. Put it next to `MapleLink.exe` and `MapleLink.exe.sig` and run there:
+
+```powershell
+[IO.File]::WriteAllBytes("MapleLink.exe.minisig", [Convert]::FromBase64String((Get-Content MapleLink.exe.sig -Raw).Trim()))
+minisign -Vm MapleLink.exe -x MapleLink.exe.minisig -P RWTREzu/m7GzZL+ob+fnHI6ktK+56Tw+gqQRv7hWCbSb/+z47yo5EBAy
+```
+
+`Signature and comment signature verified` means the file was published by whoever holds the private key and has not been altered since.
+
+</details>
+### Why Windows still warns you
+
+<details>
+<summary>Expand</summary>
+
+The SHA256 and the signature prove the file is unmodified. Windows SmartScreen asks a different question: does Windows know this publisher? The app has no commercial certificate, so SmartScreen has no reputation record for it. Once the SHA256 matches, click "More info" then "Run anyway".
+
+<DemoSmartScreen />
+
+</details>
+## All versions
+
+Older versions and pre-releases are on [GitHub Releases](https://github.com/lshw54/maplelink/releases).

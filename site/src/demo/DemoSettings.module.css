@@ -1,0 +1,126 @@
+.demo {
+  margin: 20px 0 28px;
+}
+.st {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.st__empty {
+  padding: 24px 4px;
+  font-size: 12px;
+  color: var(--ml-dim);
+}
+.st__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.st__sec h3 {
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ml-faint);
+}
+.st__card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #141619;
+  overflow: hidden;
+}
+.st__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+}
+.st__row + .st__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.st__label {
+  flex: 1;
+  min-width: 76px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.st__label small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--ml-faint);
+}
+.st__val {
+  max-width: 300px;
+  text-align: right;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ml-dim);
+  word-break: break-all;
+}
+.st__mono {
+  font-family: var(--ml-mono);
+}
+.st__btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ml-dim);
+}
+.st__btn:hover {
+  border-color: var(--ml-accent);
+  color: var(--ml-accent);
+}
+.st__seg {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+}
+.st__seg > * {
+  padding: 4px 10px;
+  color: var(--ml-dim);
+}
+.st__seg b {
+  background: var(--ml-accent);
+  color: #fff;
+}
+.st__dd {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.st__toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--ml-border);
+  transition: background 0.15s;
+}
+.st__toggle i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.st__toggle--on {
+  background: var(--ml-accent);
+}
+.st__toggle--on i {
+  transform: translateX(16px);
+}

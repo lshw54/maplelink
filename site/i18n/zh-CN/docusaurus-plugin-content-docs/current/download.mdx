@@ -1,0 +1,90 @@
+---
+title: 下载
+slug: /download
+pagination_next: null
+pagination_prev: null
+---
+
+# 下载
+
+<LatestRelease product="maplelink" />
+
+## 选哪个文件
+
+| | 适合谁 | 做法 |
+|---|---|---|
+| **MapleLink-Setup.exe** | 第一次使用 | 双击解压，得到一个文件夹，内有程序和说明 |
+| **MapleLink.exe** | 已在使用、或想自己放位置 | 直接运行。自动更新换的就是这个文件 |
+
+两个都不需要安装，放在任何文件夹都能跑。设置与账号存放在 `%APPDATA%\com.maplelink.app`，不在程序所在的文件夹，详见[新手教学](/zh-CN/guide)。
+
+## 系统需求
+
+- Windows 10 或 11（64 位）
+- Microsoft Edge WebView2。通常已内置，[缺少时这样装](/zh-CN/faq#webview2)
+- 怀旧服另需 Nexon Game Manager，程序会自动检测并提示
+
+## 确认文件是真的 {#verify}
+
+有人在派发重新打包的启动器。认可来源只有两个，其他地方拿到的都不是我们发出的：
+
+1. 本站的下载按钮
+2. [https://github.com/lshw54/maplelink/releases](https://github.com/lshw54/maplelink/releases)
+
+本站不存放任何可执行文件，按钮直接连到 GitHub。MapleLink 与 Beanfun 各自独立发布，不会互相代发文件。
+
+### 核对 SHA256
+
+每个版本的发布说明和上方卡片都列出 `MapleLink.exe` 的 SHA256。
+
+<details>
+<summary>怎样核对</summary>
+
+1. 若下载的是 `MapleLink-Setup.exe`，先双击解压。
+2. 在解出来的文件夹右键，选「在终端中打开」，运行：
+
+```powershell
+Get-FileHash .\MapleLink.exe -Algorithm SHA256
+```
+
+3. 把输出的 `Hash` 与发布说明上的值比对。**不一致就删除，不要运行。**
+
+</details>
+### 核对签名（进阶）
+
+每次发布附有 `MapleLink.exe.sig`，由开发团队的 minisign 私钥签署。
+
+<details>
+<summary>怎样验证</summary>
+
+公钥（key ID `64B3B19BBF3B13D1`）：
+
+```
+RWTREzu/m7GzZL+ob+fnHI6ktK+56Tw+gqQRv7hWCbSb/+z47yo5EBAy
+```
+
+这条公钥同时编译在程序里，可以到 [update_signature.rs](https://github.com/lshw54/maplelink/blob/main/src-tauri/src/services/update_signature.rs) 对照，两处一致才算数。除非私钥遗失或外泄，它不会更换。
+
+GitHub 上的 `MapleLink.exe.sig` 是 Tauri 格式，即 minisign 签名文件再经 base64 编码，验证前要先解码。到 [minisign 的 GitHub Releases](https://github.com/jedisct1/minisign/releases) 下载 Windows 版，解压得到 `minisign.exe`，不需安装。把它放到与 `MapleLink.exe`、`MapleLink.exe.sig` 相同的文件夹，然后在该文件夹运行：
+
+```powershell
+[IO.File]::WriteAllBytes("MapleLink.exe.minisig", [Convert]::FromBase64String((Get-Content MapleLink.exe.sig -Raw).Trim()))
+minisign -Vm MapleLink.exe -x MapleLink.exe.minisig -P RWTREzu/m7GzZL+ob+fnHI6ktK+56Tw+gqQRv7hWCbSb/+z47yo5EBAy
+```
+
+显示 `Signature and comment signature verified` 代表文件确实由持有私钥的开发团队发出，且内容未被更改。
+
+</details>
+### 为什么 Windows 仍然警告
+
+<details>
+<summary>展开</summary>
+
+SHA256 与签名证明「文件没有被改过」；Windows SmartScreen 看的是「Windows 是否认识这个发行者」。程序没有购买商业证书，所以 SmartScreen 没有它的信誉记录。核对过 SHA256 后，点「更多信息」再点「仍要运行」即可。
+
+<DemoSmartScreen />
+
+</details>
+## 所有版本
+
+历史版本与预览版在 [GitHub Releases](https://github.com/lshw54/maplelink/releases)。

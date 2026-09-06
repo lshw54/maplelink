@@ -1,0 +1,6 @@
+{
+  "item.label.下載": { "message": "Download", "description": "Navbar item with label 下載" },
+  "item.label.新手教學": { "message": "Guide", "description": "Navbar item with label 新手教學" },
+  "item.label.常見問題": { "message": "FAQ", "description": "Navbar item with label 常見問題" },
+  "item.label.公告": { "message": "Announcements", "description": "Navbar item with label 公告" }
+}

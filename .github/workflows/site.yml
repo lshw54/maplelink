@@ -1,6 +1,6 @@
 name: Site
 
-# The VitePress site under site/. Pull requests get a build check; pushes to
+# The Docusaurus site under site/. Pull requests get a build check; pushes to
 # main deploy to GitHub Pages. Nothing here touches the app's own CI.
 on:
   push:
@@ -39,15 +39,17 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      # With a custom domain the site lives at the root. Until site/public/CNAME
+      # With a custom domain the site lives at the root. Until site/static/CNAME
       # exists it is served under the repository name on github.io.
       - name: Pick base path
         id: base
         run: |
-          if [ -f site/public/CNAME ]; then
+          if [ -f site/static/CNAME ]; then
             echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "url=https://$(cat site/static/CNAME)" >> "$GITHUB_OUTPUT"
           else
             echo "base=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_OUTPUT"
+            echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io" >> "$GITHUB_OUTPUT"
           fi
 
       - run: npm ci
@@ -57,10 +59,11 @@ jobs:
         working-directory: site
         env:
           SITE_BASE: ${{ steps.base.outputs.base }}
+          SITE_URL: ${{ steps.base.outputs.url }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site/.vitepress/dist
+          path: site/build
 
   deploy:
     if: github.event_name != 'pull_request'

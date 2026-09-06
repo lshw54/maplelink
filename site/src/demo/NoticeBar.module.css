@@ -1,0 +1,99 @@
+/* Pinned to the top of the viewport, 36px tall. The layout pushes the nav,
+   sidebar and content down by the same amount, so nothing hides under the
+   bar at any width. */
+.notice {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: calc(var(--ifm-z-index-fixed) + 1);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 36px;
+  padding: 0 24px;
+  background: color-mix(in srgb, var(--ifm-color-primary) 12%, var(--ifm-background-color));
+  color: var(--ifm-font-color-base);
+  font-size: 13px;
+  border-bottom: 1px solid var(--ifm-color-emphasis-300);
+}
+.notice__label {
+  flex: none;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ifm-color-primary);
+}
+.notice__track {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+.notice__reel {
+  display: flex;
+  width: max-content;
+  animation: notice-scroll var(--duration) linear infinite;
+}
+.notice__track:hover .notice__reel,
+.notice__track:focus-within .notice__reel {
+  animation-play-state: paused;
+}
+.notice__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 64px;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+.notice__item:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.notice__date {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 11px;
+  color: var(--ifm-color-emphasis-600);
+}
+.notice__more {
+  flex: none;
+  font-size: 12px;
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.notice__more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@keyframes notice-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice__reel {
+    animation: none;
+  }
+  .notice__item:not(:first-child) {
+    display: none;
+  }
+  .notice__item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (max-width: 640px) {
+  .notice {
+    padding: 0 16px;
+    gap: 10px;
+  }
+  .notice__more {
+    display: none;
+  }
+}
