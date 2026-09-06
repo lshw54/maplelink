@@ -1,0 +1,74 @@
+name: Site
+
+# The VitePress site under site/. Pull requests get a build check; pushes to
+# main deploy to GitHub Pages. Nothing here touches the app's own CI.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/site.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: site-pages
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # With a custom domain the site lives at the root. Until site/public/CNAME
+      # exists it is served under the repository name on github.io.
+      - name: Pick base path
+        id: base
+        run: |
+          if [ -f site/public/CNAME ]; then
+            echo "base=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm ci
+        working-directory: site
+
+      - run: npm run build
+        working-directory: site
+        env:
+          SITE_BASE: ${{ steps.base.outputs.base }}
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
