@@ -9,6 +9,46 @@ export const SITE_URL = "";
 
 const editLink = (text: string) => ({ pattern: `${REPO_URL}/edit/main/site/:path`, text });
 
+
+/**
+ * Tokenizer for the local search, used both when the index is built (Node)
+ * and when a visitor types (browser). MiniSearch's default splits on spaces
+ * and punctuation, which leaves a Chinese sentence as one token, so searching
+ * 密碼 never matched 帳號密碼. Chinese runs are cut into words with
+ * Intl.Segmenter where available, and into single characters and character
+ * pairs otherwise, so any short query still lands.
+ */
+function tokenize(text: string): string[] {
+  // Self-contained on purpose: VitePress serialises this function into the
+  // page, so it must not reach for anything outside its own body.
+  const CJK = /[぀-ヿ㐀-鿿豈-﫿]/;
+  const out: string[] = [];
+  const seg =
+    typeof Intl !== "undefined" && "Segmenter" in Intl
+      ? new Intl.Segmenter("zh", { granularity: "word" })
+      : null;
+  for (const run of text.toLowerCase().split(/[\s　\p{P}]+/u)) {
+    if (!run) continue;
+    if (!CJK.test(run)) {
+      out.push(run);
+      continue;
+    }
+    // Words from the segmenter when we have one, plus every character and
+    // every adjacent pair, so a colloquial query (換電腦 against 更換電腦) or
+    // a segmenter mismatch between index time and query time still matches.
+    if (seg) {
+      for (const { segment, isWordLike } of seg.segment(run)) {
+        if (isWordLike) out.push(segment);
+      }
+    }
+    for (let i = 0; i < run.length; i++) {
+      out.push(run[i]);
+      if (i + 1 < run.length) out.push(run.slice(i, i + 2));
+    }
+  }
+  return out;
+}
+
 export default defineConfig({
   title: "MapleLink",
   head: [
@@ -25,7 +65,15 @@ export default defineConfig({
   themeConfig: {
     logo: "/logo.png",
     socialLinks: [{ icon: "github", link: REPO_URL }],
-    search: { provider: "local" },
+    search: {
+      provider: "local",
+      options: {
+        miniSearch: {
+          options: { tokenize },
+          searchOptions: { prefix: true, fuzzy: 0.2, combineWith: "AND" },
+        },
+      },
+    },
     aside: true,
   },
   locales: {
