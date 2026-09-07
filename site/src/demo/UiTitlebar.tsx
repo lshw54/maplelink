@@ -32,7 +32,9 @@ export default function UiTitlebar({
             🍁{classic && <i className={styles.under} />}
           </button>
           <button className={clsx(styles.btn, hint === "region" && "ml-hint")} title={t("切換地區", "切换地区", "Toggle region")} onClick={onToggleRegion}>
-            {region === "TW" ? "🇹🇼" : "🇭🇰"}
+            {/* The app uses flag emoji here; Windows has no flag glyphs and draws
+                the letters instead, which is what players actually see. */}
+            {region}
             {!classic && <i className={styles.under} />}
           </button>
         </>
