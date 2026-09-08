@@ -4,6 +4,7 @@ pub mod account_storage;
 pub mod announcement_service;
 pub mod autopaste_service;
 pub mod beanfun_service;
+pub mod bencode;
 pub mod browser_window;
 pub mod cafe_service;
 pub mod classic_service;

@@ -4,10 +4,12 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  /** `md` (default) fits a short form; `lg` is for text-heavy content. */
+  size?: "md" | "lg";
   children: ReactNode;
 }
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+export function Modal({ isOpen, onClose, title, size = "md", children }: ModalProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,7 +31,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       onMouseDown={onClose}
     >
       <div
-        className="w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
+        className={`${size === "lg" ? "w-[560px]" : "w-[340px]"} max-w-[calc(100vw-32px)] rounded-[14px] border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_12px_40px_rgba(0,0,0,0.3)]`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header with close button */}

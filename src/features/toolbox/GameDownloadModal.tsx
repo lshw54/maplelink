@@ -53,6 +53,7 @@ function DownloadRow({ item }: { item: GameDownloadDto }) {
 function FullClientSection({ isOpen }: { isOpen: boolean }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const {
     data: info,
     isLoading,
@@ -72,6 +73,18 @@ function FullClientSection({ isOpen }: { isOpen: boolean }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function save() {
+    setSaveState("saving");
+    let next: "idle" | "saved" | "error";
+    try {
+      next = (await commands.saveGameFullClientTorrent()) ? "saved" : "idle";
+    } catch {
+      next = "error";
+    }
+    setSaveState(next);
+    if (next === "saved") setTimeout(() => setSaveState("idle"), 2000);
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <span className="text-[10px] font-semibold tracking-[2px] text-text-faint uppercase">
@@ -80,6 +93,12 @@ function FullClientSection({ isOpen }: { isOpen: boolean }) {
       <p className="text-[11px] leading-relaxed text-text-dim">
         {t("toolbox.download.full.intro")}
       </p>
+      <details className="rounded-[10px] border border-[var(--tb-border)] px-3 py-2 text-[11px] leading-relaxed text-text-dim">
+        <summary className="cursor-pointer font-semibold text-[var(--text)] select-none">
+          {t("toolbox.download.full.why_title")}
+        </summary>
+        <p className="mt-1.5">{t("toolbox.download.full.why_body")}</p>
+      </details>
 
       {isLoading && (
         <div className="flex items-center gap-2 py-2 text-[12px] text-text-dim">
@@ -119,30 +138,43 @@ function FullClientSection({ isOpen }: { isOpen: boolean }) {
                 onClick={copy}
                 className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
               >
-                {copied ? t("toolbox.download.copied") : t("toolbox.download.full.copy_torrent")}
+                {copied ? t("toolbox.download.copied") : t("toolbox.download.full.copy_official")}
               </button>
               <button
-                onClick={() => openExternal(info.torrentUrl)}
-                className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-2.5 py-1 text-[11px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
+                onClick={save}
+                disabled={saveState === "saving"}
+                className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-2.5 py-1 text-[11px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95 disabled:opacity-60"
               >
-                {t("toolbox.download.full.open_torrent")}
+                {saveState === "saving"
+                  ? t("toolbox.download.full.saving")
+                  : saveState === "saved"
+                    ? t("toolbox.download.full.saved")
+                    : t("toolbox.download.full.save_torrent")}
               </button>
             </div>
           </div>
+          {saveState === "error" && (
+            <p className="text-[11px] text-red-400">{t("toolbox.download.full.save_error")}</p>
+          )}
           <code className="block truncate rounded-md bg-[var(--surface-hover)] px-2 py-1 text-[10px] text-text-dim select-all">
             {info.torrentUrl}
           </code>
-          <div className="mt-1 flex flex-col gap-1">
-            <span className="text-[11px] font-semibold text-[var(--text)]">
+          <details className="mt-1 text-[11px] leading-relaxed text-text-dim">
+            <summary className="cursor-pointer font-semibold text-[var(--text)] select-none">
               {t("toolbox.download.full.steps_title")}
-            </span>
-            <ol className="list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-text-dim">
+            </summary>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-4">
               <li>{t("toolbox.download.full.step_1")}</li>
               <li>{t("toolbox.download.full.step_2")}</li>
-              <li>{t("toolbox.download.full.step_3", { version: info.version })}</li>
+              <li>
+                {t("toolbox.download.full.step_3", {
+                  folder: info.folderName,
+                  version: info.version,
+                })}
+              </li>
               <li>{t("toolbox.download.full.step_4", { exe: info.exeName })}</li>
             </ol>
-          </div>
+          </details>
         </div>
       )}
     </div>
@@ -167,7 +199,7 @@ export function GameDownloadModal({ isOpen, onClose }: { isOpen: boolean; onClos
   const patches = items?.filter((i) => i.kind !== "game") ?? [];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t("toolbox.download.title")}>
+    <Modal isOpen={isOpen} onClose={onClose} title={t("toolbox.download.title")} size="lg">
       <div className="flex max-h-[65vh] flex-col gap-4 overflow-y-auto">
         {/* Security note: official links only, we never touch client files */}
         <p className="rounded-[10px] border border-[rgba(59,130,246,0.3)] bg-[rgba(59,130,246,0.06)] px-3 py-2 text-[11px] leading-relaxed text-blue-400">

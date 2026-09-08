@@ -363,3 +363,220 @@ mod full_client_tests {
         assert_eq!(got.exe_name, "");
     }
 }
+
+// ---------------------------------------------------------------------------
+// The torrent itself.
+//
+// beanfun's torrent is built for GGM, not for a BitTorrent client: its root
+// folder is named `Bin64`, but the CDN serves the files under the folder that
+// `executionPath` names (e.g. `P2PdPoyK5obH`). A client following BEP 19 asks
+// the web seed for `{url-list}Bin64/<file>` and gets 404 for every file, and
+// there are no peers because GGM never seeds. Renaming the root to the CDN
+// folder makes the web seed resolve. Nothing else is touched — the piece
+// hashes are the official ones, so the client still verifies every byte
+// against what beanfun published.
+// ---------------------------------------------------------------------------
+
+/// A `.torrent` is ~430 KB today; the cap leaves room for a much bigger client.
+const TORRENT_CAP: u64 = 32 * 1024 * 1024;
+
+/// Fetch beanfun's torrent for the full client and return it with its root
+/// folder renamed to the CDN folder, plus the record the UI already shows.
+pub async fn fetch_full_client_torrent() -> Result<(FullClientInfo, Vec<u8>), String> {
+    let info = fetch_full_client_info().await?;
+    if info.folder_name.is_empty() {
+        return Err("product info names no game folder".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .user_agent(UA)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let resp = client
+        .get(&info.torrent_url)
+        .send()
+        .await
+        .map_err(|e| format!("torrent request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("torrent returned HTTP {}", resp.status()));
+    }
+    let raw = crate::services::http_util::read_capped(resp, TORRENT_CAP)
+        .await
+        .map_err(|e| format!("torrent body unreadable: {e}"))?;
+    let fixed = relocate_torrent_root(&raw, &info.folder_name)?;
+    Ok((info, fixed))
+}
+
+/// Rename the torrent's root folder (`info.name`) to `folder`, leaving every
+/// other byte of the file as published. Refuses anything that does not look
+/// like a multi-file torrent with a web seed, and anything whose encoding is
+/// not canonical (so we can be sure the only difference is the one we made).
+fn relocate_torrent_root(raw: &[u8], folder: &str) -> Result<Vec<u8>, String> {
+    use crate::services::bencode::{decode, encode, Value};
+
+    if folder.is_empty() || folder.contains(['/', '\\']) || folder == "." || folder == ".." {
+        return Err(format!("unusable folder name {folder:?}"));
+    }
+    let mut top = decode(raw).map_err(|e| format!("torrent is not valid bencode: {e}"))?;
+    if encode(&top) != raw {
+        return Err("torrent is not canonically encoded".to_string());
+    }
+    let dict = top.as_dict_mut().ok_or("torrent is not a dictionary")?;
+    let has_web_seed = dict.get(b"url-list".as_slice()).is_some_and(|v| {
+        v.as_bytes().is_some_and(|b| !b.is_empty()) || v.as_list().is_some_and(|l| !l.is_empty())
+    });
+    if !has_web_seed {
+        return Err("torrent has no web seed (url-list)".to_string());
+    }
+    let info = dict
+        .get_mut(b"info".as_slice())
+        .and_then(Value::as_dict_mut)
+        .ok_or("torrent has no info dictionary")?;
+    let is_multi_file = info
+        .get(b"files".as_slice())
+        .and_then(Value::as_list)
+        .is_some_and(|l| !l.is_empty());
+    if !is_multi_file {
+        return Err("torrent is not a multi-file torrent".to_string());
+    }
+    if !info.contains_key(b"pieces".as_slice()) || !info.contains_key(b"piece length".as_slice()) {
+        return Err("torrent info lacks piece data".to_string());
+    }
+    let name = info
+        .get_mut(b"name".as_slice())
+        .ok_or("torrent info has no name")?;
+    if name.as_bytes().is_none() {
+        return Err("torrent name is not a string".to_string());
+    }
+    *name = Value::Bytes(folder.as_bytes().to_vec());
+    Ok(encode(&top))
+}
+
+#[cfg(test)]
+mod torrent_tests {
+    use super::*;
+    use crate::services::bencode::{decode, encode, Value};
+
+    /// A torrent shaped like beanfun's, built canonically.
+    fn official(name: &str, url_list: Option<Value>) -> Vec<u8> {
+        let mut info = std::collections::BTreeMap::new();
+        info.insert(
+            b"files".to_vec(),
+            Value::List(vec![Value::Dict(
+                [
+                    (b"length".to_vec(), Value::Int(191)),
+                    (
+                        b"path".to_vec(),
+                        Value::List(vec![Value::Bytes(b"beanfun.url".to_vec())]),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            )]),
+        );
+        info.insert(b"name".to_vec(), Value::Bytes(name.as_bytes().to_vec()));
+        info.insert(b"piece length".to_vec(), Value::Int(4194304));
+        info.insert(b"pieces".to_vec(), Value::Bytes(vec![7u8; 20]));
+        let mut top = std::collections::BTreeMap::new();
+        top.insert(b"announce".to_vec(), Value::Bytes(b"udp://t:1".to_vec()));
+        top.insert(b"info".to_vec(), Value::Dict(info));
+        if let Some(u) = url_list {
+            top.insert(b"url-list".to_vec(), u);
+        }
+        encode(&Value::Dict(top))
+    }
+
+    fn web_seed() -> Option<Value> {
+        Some(Value::List(vec![Value::Bytes(
+            b"https://maplestory-download.beanfun.com/maplestory/download/".to_vec(),
+        )]))
+    }
+
+    fn name_of(torrent: &[u8]) -> Vec<u8> {
+        decode(torrent).unwrap().as_dict().unwrap()[b"info".as_slice()]
+            .as_dict()
+            .unwrap()[b"name".as_slice()]
+        .as_bytes()
+        .unwrap()
+        .to_vec()
+    }
+
+    #[test]
+    fn only_the_root_name_changes() {
+        let raw = official("Bin64", web_seed());
+        let fixed = relocate_torrent_root(&raw, "P2PdPoyK5obH").unwrap();
+        assert_eq!(name_of(&fixed), b"P2PdPoyK5obH");
+        assert_eq!(fixed, official("P2PdPoyK5obH", web_seed()));
+        // The pieces and web seed are byte-identical.
+        let (a, b) = (decode(&raw).unwrap(), decode(&fixed).unwrap());
+        let (a, b) = (a.as_dict().unwrap(), b.as_dict().unwrap());
+        assert_eq!(a[b"url-list".as_slice()], b[b"url-list".as_slice()]);
+        assert_eq!(
+            a[b"info".as_slice()].as_dict().unwrap()[b"pieces".as_slice()],
+            b[b"info".as_slice()].as_dict().unwrap()[b"pieces".as_slice()]
+        );
+    }
+
+    #[test]
+    fn a_torrent_without_a_web_seed_is_refused() {
+        let raw = official("Bin64", None);
+        assert!(relocate_torrent_root(&raw, "X")
+            .unwrap_err()
+            .contains("web seed"));
+        let raw = official("Bin64", Some(Value::List(vec![])));
+        assert!(relocate_torrent_root(&raw, "X")
+            .unwrap_err()
+            .contains("web seed"));
+    }
+
+    #[test]
+    fn a_non_canonical_or_broken_file_is_refused() {
+        let raw = official("Bin64", web_seed());
+        // Reorder two top-level keys: still decodes, but no longer round-trips.
+        let text = String::from_utf8_lossy(&raw).to_string();
+        assert!(text.starts_with("d8:announce"));
+        assert!(relocate_torrent_root(b"d3:foo3:bare", "X").is_err());
+        assert!(relocate_torrent_root(b"not bencode", "X").is_err());
+        assert!(relocate_torrent_root(&raw[..raw.len() - 1], "X").is_err());
+    }
+
+    #[test]
+    fn a_folder_name_that_could_escape_is_refused() {
+        let raw = official("Bin64", web_seed());
+        for bad in ["", "..", ".", "a/b", "a\\b"] {
+            assert!(relocate_torrent_root(&raw, bad).is_err(), "{bad:?}");
+        }
+    }
+}
+
+/// Live check against beanfun. Ignored by default (network); run with
+/// `cargo test live_torrent -- --ignored`. Set `MAPLELINK_TORRENT_OUT` to also
+/// write the result to a file.
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_torrent_root_matches_the_cdn_folder() {
+        let (info, fixed) = fetch_full_client_torrent().await.unwrap();
+        let top = crate::services::bencode::decode(&fixed).unwrap();
+        let name = top.as_dict().unwrap()[b"info".as_slice()]
+            .as_dict()
+            .unwrap()[b"name".as_slice()]
+        .as_bytes()
+        .unwrap()
+        .to_vec();
+        assert_eq!(name, info.folder_name.as_bytes());
+        assert!(!info.folder_name.is_empty());
+        eprintln!(
+            "version={} folder={} bytes={}",
+            info.version,
+            info.folder_name,
+            fixed.len()
+        );
+        if let Ok(out) = std::env::var("MAPLELINK_TORRENT_OUT") {
+            std::fs::write(out, &fixed).unwrap();
+        }
+    }
+}

@@ -804,6 +804,51 @@ pub async fn get_game_full_client_info(
         })
 }
 
+/// Save beanfun's full-client torrent, with its root folder renamed to the CDN
+/// folder so a BitTorrent client's web seed resolves (see `game_download`).
+/// Returns `false` if the user cancelled the save dialog. The only file
+/// written is the `.torrent` the user chose a path for.
+#[tauri::command]
+pub async fn save_game_full_client_torrent(app: tauri::AppHandle) -> Result<bool, ErrorDto> {
+    let (info, bytes) = crate::services::game_download::fetch_full_client_torrent()
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_FULL_CLIENT_TORRENT_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Network,
+            details: None,
+        })?;
+
+    let default_name = format!("MapleStory_{}.torrent", info.version);
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    app.dialog()
+        .file()
+        .add_filter("Torrent", &["torrent"])
+        .set_title("Save full-client torrent")
+        .set_file_name(&default_name)
+        .save_file(move |path| {
+            let _ = tx.send(path.map(|p| p.to_string()));
+        });
+    let path = rx.await.map_err(|_| ErrorDto {
+        code: "SYS_DIALOG_FAILED".to_string(),
+        message: "Save dialog was cancelled unexpectedly".to_string(),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+    let Some(path) = path else {
+        return Ok(false);
+    };
+
+    tokio::fs::write(&path, bytes).await.map_err(|e| ErrorDto {
+        code: "SYS_FULL_CLIENT_TORRENT_WRITE_FAILED".to_string(),
+        message: format!("failed to write torrent file: {e}"),
+        category: ErrorCategory::FileSystem,
+        details: None,
+    })?;
+    tracing::info!("saved full-client torrent {} to {path}", info.version);
+    Ok(true)
+}
+
 /// Clean up game cache directories, failed update leftovers, crash dumps,
 /// and stale DLL files from the game directory.
 ///
