@@ -46,6 +46,18 @@ export interface GameDownloadDto {
   kind: "game" | "patch" | "other";
 }
 
+/** Full-client torrent details, read from the Gamania Games Manager's public download chain. */
+export interface FullClientInfoDto {
+  productName: string;
+  version: string;
+  publishDate: string;
+  sizeBytes: number;
+  fileCount: number;
+  torrentUrl: string;
+  folderName: string;
+  exeName: string;
+}
+
 /** One selectable game account from GamaPass's classic sign-in chooser. */
 export interface ClassicAccountDto {
   value: string;

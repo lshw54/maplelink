@@ -135,3 +135,231 @@ fn extract_request_token(html: &str) -> Option<String> {
         Some(token.to_string())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Full client via the Gamania Games Manager's own download chain.
+//
+// GGM does not download an installer: it reads a public catalog, then the
+// game's `productInfo.json`, then fetches a torrent whose web seed is the
+// official beanfun CDN. We surface the torrent link (plus the version and size
+// the manifest states) and, as with the list above, never download a file.
+// ---------------------------------------------------------------------------
+
+const PRODUCT_LIST_URL: &str = "http://p2p-gamania.cdn.hinet.net/product_list.json";
+const MAPLESTORY_PRODUCT_ID: &str = "MS";
+/// `product_list.json` is a few KB; `productInfo.json` carries a per-file
+/// manifest (~330 KB today). Generous caps so a bad day upstream can't balloon.
+const CATALOG_CAP: u64 = 1024 * 1024;
+const MANIFEST_CAP: u64 = 16 * 1024 * 1024;
+
+/// What the UI needs to hand the player the official torrent for the full client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullClientInfo {
+    pub product_name: String,
+    /// Version label as beanfun states it (e.g. "V282").
+    pub version: String,
+    /// "YYYY/MM/DD" as published; empty when the manifest omits it.
+    pub publish_date: String,
+    pub size_bytes: i64,
+    pub file_count: usize,
+    /// `{baseUrl}torrent/{productId}_{version}.torrent` — the file GGM fetches.
+    pub torrent_url: String,
+    /// First segment of the manifest's `executionPath`: the folder the game
+    /// lives in under the CDN root.
+    pub folder_name: String,
+    pub exe_name: String,
+}
+
+#[derive(Deserialize)]
+struct ProductList {
+    products: Vec<ProductEntry>,
+}
+
+#[derive(Deserialize)]
+struct ProductEntry {
+    #[serde(rename = "productId")]
+    product_id: String,
+    #[serde(rename = "infoData")]
+    info_data: String,
+}
+
+#[derive(Deserialize)]
+struct ProductInfo {
+    #[serde(rename = "productName", default)]
+    product_name: String,
+    #[serde(rename = "productId")]
+    product_id: String,
+    version: String,
+    #[serde(rename = "publishDate", default)]
+    publish_date: String,
+    #[serde(rename = "baseUrl")]
+    base_url: String,
+    #[serde(rename = "executionPath", default)]
+    execution_path: String,
+    #[serde(rename = "sizeInBytes", default)]
+    size_in_bytes: i64,
+    #[serde(default)]
+    files: Vec<serde_json::Value>,
+}
+
+/// Fetch the full-client torrent details for MapleStory TW.
+pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
+    let client = reqwest::Client::builder()
+        .user_agent(UA)
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let resp = client
+        .get(PRODUCT_LIST_URL)
+        .send()
+        .await
+        .map_err(|e| format!("product list request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("product list returned HTTP {}", resp.status()));
+    }
+    let body = crate::services::http_util::read_capped_text(resp, CATALOG_CAP)
+        .await
+        .ok_or_else(|| "product list body unreadable".to_string())?;
+    let info_url = product_info_url(&body)?;
+
+    let resp = client
+        .get(&info_url)
+        .send()
+        .await
+        .map_err(|e| format!("product info request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("product info returned HTTP {}", resp.status()));
+    }
+    let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
+        .await
+        .ok_or_else(|| "product info body unreadable".to_string())?;
+    full_client_info(&body)
+}
+
+/// The MapleStory entry's `infoData` URL out of the catalog body.
+fn product_info_url(catalog_json: &str) -> Result<String, String> {
+    let list: ProductList = serde_json::from_str(catalog_json)
+        .map_err(|e| format!("failed to parse product list: {e}"))?;
+    list.products
+        .into_iter()
+        .find(|p| p.product_id == MAPLESTORY_PRODUCT_ID)
+        .map(|p| p.info_data)
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        .ok_or_else(|| "MapleStory is not in the product list".to_string())
+}
+
+/// Build the UI record from a `productInfo.json` body, the way GGM does:
+/// torrent at `{baseUrl}torrent/{productId}_{version}.torrent`, and the
+/// game folder is the first segment of `executionPath`.
+fn full_client_info(product_info_json: &str) -> Result<FullClientInfo, String> {
+    let info: ProductInfo = serde_json::from_str(product_info_json)
+        .map_err(|e| format!("failed to parse product info: {e}"))?;
+    if info.version.trim().is_empty() {
+        return Err("product info has no version".to_string());
+    }
+    let mut base = info.base_url.trim().to_string();
+    if !base.starts_with("http://") && !base.starts_with("https://") {
+        return Err("product info has no usable baseUrl".to_string());
+    }
+    if !base.ends_with('/') {
+        base.push('/');
+    }
+    let mut segments = info.execution_path.split('/').filter(|s| !s.is_empty());
+    let folder_name = segments.next().unwrap_or_default().to_string();
+    let exe_name = segments.next_back().unwrap_or_default().to_string();
+    Ok(FullClientInfo {
+        product_name: info.product_name,
+        torrent_url: format!("{base}torrent/{}_{}.torrent", info.product_id, info.version),
+        version: info.version,
+        publish_date: info.publish_date,
+        size_bytes: info.size_in_bytes,
+        file_count: info.files.len(),
+        folder_name,
+        exe_name,
+    })
+}
+
+#[cfg(test)]
+mod full_client_tests {
+    use super::*;
+
+    const CATALOG: &str = r#"{"products":[
+        {"seq":2,"productId":"ELS","infoData":"http://elsword-download.beanfun.com/Elsword/productInfo.json"},
+        {"seq":9,"productId":"MS","infoData":"http://maplestory-download.beanfun.com/maplestory/productInfo.json"}
+    ]}"#;
+
+    const INFO: &str = r#"{
+        "productName":"新楓之谷","productId":"MS","sizeInBytes":72733461215,
+        "version":"V282","publishDate":"2026/09/04",
+        "baseUrl":"https://maplestory-download.beanfun.com/maplestory/download/",
+        "executionPath":"P2PdPoyK5obH/MapleStory.exe",
+        "files":[{"path":"a","sizeInBytes":1},{"path":"b","sizeInBytes":"2"}]
+    }"#;
+
+    #[test]
+    fn picks_maplestory_out_of_the_catalog() {
+        assert_eq!(
+            product_info_url(CATALOG).unwrap(),
+            "http://maplestory-download.beanfun.com/maplestory/productInfo.json"
+        );
+    }
+
+    #[test]
+    fn a_catalog_without_maplestory_is_an_error() {
+        let err = product_info_url(r#"{"products":[{"productId":"ELS","infoData":"http://x/"}]}"#)
+            .unwrap_err();
+        assert!(err.contains("not in the product list"));
+    }
+
+    #[test]
+    fn a_non_http_info_url_is_refused() {
+        let err =
+            product_info_url(r#"{"products":[{"productId":"MS","infoData":"file:///c:/x"}]}"#)
+                .unwrap_err();
+        assert!(err.contains("not in the product list"));
+    }
+
+    #[test]
+    fn builds_the_torrent_url_the_way_ggm_does() {
+        let got = full_client_info(INFO).unwrap();
+        assert_eq!(
+            got,
+            FullClientInfo {
+                product_name: "新楓之谷".into(),
+                version: "V282".into(),
+                publish_date: "2026/09/04".into(),
+                size_bytes: 72_733_461_215,
+                file_count: 2,
+                torrent_url:
+                    "https://maplestory-download.beanfun.com/maplestory/download/torrent/MS_V282.torrent"
+                        .into(),
+                folder_name: "P2PdPoyK5obH".into(),
+                exe_name: "MapleStory.exe".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_base_url_without_a_trailing_slash_gets_one() {
+        let body = INFO.replace("/maplestory/download/\"", "/maplestory/download\"");
+        let got = full_client_info(&body).unwrap();
+        assert!(got
+            .torrent_url
+            .ends_with("/download/torrent/MS_V282.torrent"));
+    }
+
+    #[test]
+    fn missing_version_or_base_url_is_an_error() {
+        assert!(full_client_info(&INFO.replace("\"V282\"", "\"\"")).is_err());
+        assert!(full_client_info(&INFO.replace("https://maplestory-download", "ftp://x")).is_err());
+    }
+
+    #[test]
+    fn an_empty_execution_path_yields_empty_names_not_a_panic() {
+        let got = full_client_info(&INFO.replace("P2PdPoyK5obH/MapleStory.exe", "")).unwrap();
+        assert_eq!(got.folder_name, "");
+        assert_eq!(got.exe_name, "");
+    }
+}

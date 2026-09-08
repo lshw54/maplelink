@@ -789,6 +789,21 @@ pub async fn get_game_download_list(
         })
 }
 
+/// Full-client torrent details, read from the same public chain the Gamania
+/// Games Manager uses. Links only — MapleLink never downloads client files.
+#[tauri::command]
+pub async fn get_game_full_client_info(
+) -> Result<crate::services::game_download::FullClientInfo, ErrorDto> {
+    crate::services::game_download::fetch_full_client_info()
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_FULL_CLIENT_INFO_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Network,
+            details: None,
+        })
+}
+
 /// Clean up game cache directories, failed update leftovers, crash dumps,
 /// and stale DLL files from the game directory.
 ///

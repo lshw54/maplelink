@@ -334,6 +334,7 @@ pub fn run() {
             commands::system::check_beanfun_rename,
             commands::system::apply_beanfun_rename,
             commands::system::get_game_download_list,
+            commands::system::get_game_full_client_info,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
             commands::system::onboarding_is_seen,
