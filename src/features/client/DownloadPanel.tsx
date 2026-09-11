@@ -68,6 +68,7 @@ export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) 
     queryFn: () => commands.getGameFullClientInfo(),
     staleTime: 5 * 60 * 1000,
   });
+  const manifestUrl = full.data?.manifestUrl ?? "";
   const list = useQuery({
     queryKey: ["gameDownloadList"],
     queryFn: () => commands.getGameDownloadList(),
@@ -182,13 +183,13 @@ export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) 
 
         {/* The manifest is public, so the comparison is checkable rather than
             something a player has to take our word for. */}
-        {full.data?.manifestUrl && (
+        {manifestUrl && (
           <div className="flex items-center gap-3">
             <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-text-dim">
               {t("client.manifest_hint")}
             </p>
             <button
-              onClick={() => openExternal(full.data!.manifestUrl)}
+              onClick={() => openExternal(manifestUrl)}
               className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
             >
               {t("client.manifest_open")}

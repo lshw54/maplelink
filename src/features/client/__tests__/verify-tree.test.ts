@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { allDirPaths, buildTree } from "../file-tree";
+import { allDirPaths, buildTree, type DirNode } from "../file-tree";
 import type { ClientCheckedFileDto } from "../../../lib/types";
+
+/** Look a folder up, failing the test rather than asserting it is there. */
+function dir(node: DirNode, name: string): DirNode {
+  const found = node.dirs.get(name);
+  if (!found) throw new Error(`no folder named ${name}`);
+  return found;
+}
 
 function file(path: string, broken = false): ClientCheckedFileDto {
   return {
@@ -23,9 +30,9 @@ describe("the folder view's tree", () => {
     // Files with no folder stay at the root.
     expect(tree.files.map((f) => f.path)).toEqual(["MapleStory.exe"]);
 
-    const data = tree.dirs.get("Data")!;
+    const data = dir(tree, "Data");
     expect([...data.dirs.keys()]).toEqual(["Map", "Mob"]);
-    expect(data.dirs.get("Map")!.files.map((f) => f.path)).toEqual([
+    expect(dir(data, "Map").files.map((f) => f.path)).toEqual([
       "Data/Map/Map001.wz",
       "Data/Map/Map002.wz",
     ]);
@@ -41,11 +48,11 @@ describe("the folder view's tree", () => {
     expect(tree.total).toBe(3);
     expect(tree.issues).toBe(2);
 
-    const data = tree.dirs.get("Data")!;
+    const data = dir(tree, "Data");
     expect(data.total).toBe(3);
     expect(data.issues).toBe(2);
-    expect(data.dirs.get("Map")!.issues).toBe(1);
-    expect(data.dirs.get("Mob")!.issues).toBe(1);
+    expect(dir(data, "Map").issues).toBe(1);
+    expect(dir(data, "Mob").issues).toBe(1);
   });
 
   it("gives every folder a full path, so expanding one cannot open its namesake", () => {
