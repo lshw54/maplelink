@@ -15,6 +15,7 @@ import { QrLoginForm } from "./QrLoginForm";
 import { TotpForm } from "./TotpForm";
 import { VerifyForm } from "./VerifyForm";
 import type { SessionDto } from "../../lib/types";
+import { errorMessage } from "../../lib/errors";
 
 type LoginView = "normal" | "qr" | "totp" | "verify" | "gamepass";
 
@@ -110,10 +111,7 @@ export function LoginPage() {
   const handleGamePass = useCallback(() => {
     setView("gamepass");
     commands.openGamePassLogin().catch((err) => {
-      const msg =
-        typeof err === "object" && err !== null && "message" in err
-          ? String((err as Record<string, unknown>).message)
-          : String(err);
+      const msg = errorMessage(err);
       useErrorToastStore.getState().addToast({
         message: msg,
         category: "authentication",
@@ -286,10 +284,7 @@ async function doDirectLaunch() {
       setGameRunning(true);
     }
   } catch (err) {
-    const msg =
-      typeof err === "object" && err !== null && "message" in err
-        ? String((err as Record<string, unknown>).message)
-        : String(err);
+    const msg = errorMessage(err);
     useErrorToastStore.getState().addToast({
       message: msg,
       category: "process",

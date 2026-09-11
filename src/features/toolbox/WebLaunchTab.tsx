@@ -4,6 +4,7 @@ import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { commands } from "../../lib/tauri";
 import type { WebLaunchStatus, WebLaunchTestCode } from "../../lib/types";
+import { errorMessage } from "../../lib/errors";
 
 type CheckState = "ok" | "bad";
 
@@ -181,9 +182,7 @@ export function WebLaunchTab() {
       await commands.setWebLaunchIntercept(next);
       setToggleMsg(next ? t("web_launch.enabled_msg") : t("web_launch.disabled_msg"));
     } catch (e) {
-      setToggleMsg(
-        `${t("web_launch.toggle_failed")}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      setToggleMsg(`${t("web_launch.toggle_failed")}: ${errorMessage(e)}`);
     } finally {
       setToggling(false);
       await refresh();

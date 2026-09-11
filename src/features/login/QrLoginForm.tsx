@@ -7,6 +7,7 @@ import { useConfigStore } from "../../lib/stores/config-store";
 import { finishLogin } from "../../lib/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import type { QrCodeData, QrPollResult } from "../../lib/types";
+import { errorMessage } from "../../lib/errors";
 
 /**
  * The QR image as a PNG blob, decoded from the `data:` URL it arrives in.
@@ -181,11 +182,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
 
       startPolling(sessionId, data);
     } catch (err) {
-      setError(
-        typeof err === "object" && err !== null && "message" in err
-          ? String((err as Record<string, unknown>).message)
-          : String(err),
-      );
+      setError(errorMessage(err));
       setStatus("error");
       startedRef.current = false;
     }

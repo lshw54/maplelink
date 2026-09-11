@@ -17,6 +17,7 @@ import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../../components/Modal";
 import type { GameAccountDto, ClassicCheckDto } from "../../lib/types";
+import { errorMessage } from "../../lib/errors";
 
 export function MainPage() {
   const { t } = useTranslation();
@@ -249,10 +250,7 @@ export function MainPage() {
           setGameRunning(true);
         }
       } catch (err) {
-        const msg =
-          typeof err === "object" && err !== null && "message" in err
-            ? String((err as Record<string, unknown>).message)
-            : String(err);
+        const msg = errorMessage(err);
         useErrorToastStore.getState().addToast({
           message: msg,
           category: "process",

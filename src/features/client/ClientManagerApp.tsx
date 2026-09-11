@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { errorMessage } from "../../lib/errors";
 // The same hooks the main window uses, so both react to theme, language and
 // accent identically instead of drifting apart.
 import { useInitialConfigSync, useThemeEffect } from "../../lib/hooks/use-app-chrome";
@@ -252,7 +253,7 @@ export function ClientManagerApp() {
       setPhase("scanned");
       return r;
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
       setPhase("idle");
       return null;
     }
@@ -288,7 +289,7 @@ export function ClientManagerApp() {
         setError(t("client.manifest_still_offline"));
       }
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     } finally {
       setRefreshing(false);
     }
@@ -313,7 +314,7 @@ export function ClientManagerApp() {
         }
       } catch (e) {
         if (!live) return;
-        setError(String(e));
+        setError(errorMessage(e));
         setPhase("idle");
       }
     })();
@@ -336,7 +337,7 @@ export function ClientManagerApp() {
         setOutcome(r);
         setPhase("done");
       } catch (e) {
-        setError(String(e));
+        setError(errorMessage(e));
         setPhase("scanned");
       }
     },

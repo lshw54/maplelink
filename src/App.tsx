@@ -24,6 +24,7 @@ import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
 import { WebLaunchPage } from "./features/toolbox/WebLaunchPage";
 import type { UpdateInfoDto, BeanfunRenameCheck, ClassicAccountDto } from "./lib/types";
+import { errorMessage } from "./lib/errors";
 
 function PageRouter() {
   const currentPage = useUiStore((s) => s.currentPage);
@@ -411,7 +412,7 @@ export function App() {
             commands.applyBeanfunRename().catch((err) => {
               setRenameCheck(null);
               useErrorToastStore.getState().addToast({
-                message: err instanceof Error ? err.message : String(err),
+                message: errorMessage(err),
                 category: "process",
                 critical: false,
               });

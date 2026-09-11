@@ -6,6 +6,7 @@ import { useConfigStore } from "../stores/config-store";
 import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
 import type { SessionDto } from "../types";
+import { errorMessage } from "../errors";
 
 /** Translate outside React render (mutation callbacks) using the current language. */
 const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
@@ -233,12 +234,7 @@ export function useLogin() {
         }
         // Login failed — clean up the session
         useAuthStore.getState().setPendingCredentials(null);
-        throw new Error(
-          typeof err === "object" && err !== null && "message" in err
-            ? String((err as Record<string, unknown>).message)
-            : String(err),
-          { cause: err },
-        );
+        throw new Error(errorMessage(err), { cause: err });
       }
     },
     onSuccess: (session: SessionDto) => finishLogin(queryClient, session),

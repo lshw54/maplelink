@@ -5,6 +5,7 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
+import { errorMessage } from "../../lib/errors";
 
 /** beanfun's handler returns the contract as newline-separated plain text.
  *  Tags are stripped anyway in case the HK handler ever wraps it in markup,
@@ -74,8 +75,7 @@ export function AddServiceAccountDialog({
       setContract(text ? contractToText(text) : "");
     } catch (e) {
       // Surface beanfun's / the bridge's own error so a refusal is diagnosable.
-      const err = e as { message?: string } | string;
-      setContractError(typeof err === "string" ? err : (err?.message ?? String(e)));
+      setContractError(errorMessage(e));
       setContract("");
     } finally {
       setContractLoading(false);
