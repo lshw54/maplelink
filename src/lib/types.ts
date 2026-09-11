@@ -46,6 +46,49 @@ export interface GameDownloadDto {
   kind: "game" | "patch" | "other";
 }
 
+/** The official manifest, as the client manager window shows it. */
+export interface ClientManifestDto {
+  productName: string;
+  version: string;
+  totalBytes: number;
+  fileCount: number;
+  exeName: string;
+}
+
+export type ClientIssueKind = "missing" | "sizeMismatch" | "hashMismatch" | "unreadable";
+
+export interface ClientFileIssueDto {
+  path: string;
+  kind: ClientIssueKind;
+  expectedSize: number;
+  localSize: number | null;
+}
+
+export interface ClientScanReportDto {
+  totalFiles: number;
+  okFiles: number;
+  issues: ClientFileIssueDto[];
+  bytesToFetch: number;
+  extraFiles: string[];
+  cancelled: boolean;
+}
+
+/** Progress for a running scan or download. */
+export interface ClientProgressDto {
+  done: number;
+  total: number;
+  bytesDone: number;
+  bytesTotal: number;
+  current: string;
+}
+
+export interface ClientDownloadReportDto {
+  requested: number;
+  written: number;
+  failures: { path: string; error: string }[];
+  cancelled: boolean;
+}
+
 /** Full-client torrent details, read from the Gamania Games Manager's public download chain. */
 export interface FullClientInfoDto {
   productName: string;

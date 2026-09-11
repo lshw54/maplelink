@@ -129,6 +129,17 @@ export function ToolsTab() {
         />
         <ToolRow
           card={{
+            icon: "🩺",
+            iconBg: "bg-[rgba(234,179,8,0.1)]",
+            name: t("toolbox.tools.verify_client"),
+            desc: t("toolbox.tools.verify_client_desc"),
+            onClick: () => {
+              commands.openClientManagerWindow().catch(() => {});
+            },
+          }}
+        />
+        <ToolRow
+          card={{
             icon: "📂",
             iconBg: "bg-[rgba(99,102,241,0.1)]",
             name: t("toolbox.tools.data_folder"),

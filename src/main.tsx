@@ -1,7 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { App } from "./App";
+import { ClientManagerApp } from "./features/client/ClientManagerApp";
 import "./styles/globals.css";
 
 const queryClient = new QueryClient({
@@ -28,13 +30,25 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/**
+ * Extra windows share this bundle and pick their UI by window label. Reading it
+ * needs the Tauri IPC, so a plain browser falls back to the main app.
+ */
+function rootView() {
+  let label: string;
+  try {
+    label = getCurrentWindow().label;
+  } catch {
+    label = "main";
+  }
+  return label === "client_manager" ? <ClientManagerApp /> : <App />;
+}
+
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>{rootView()}</QueryClientProvider>
     </StrictMode>,
   );
 }

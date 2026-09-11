@@ -1,0 +1,985 @@
+//! Compare a local MapleStory TW install against beanfun's official manifest,
+//! and fetch back whatever does not match.
+//!
+//! This is the one place in MapleLink that writes into the player's game
+//! folder, so the rules it follows are deliberate:
+//!
+//! - A file that already matches the manifest is never opened for writing.
+//! - Every download lands in a `.mlpart` file next to its target and is only
+//!   renamed over the real file once its SHA-256 equals the published one. A
+//!   failed download leaves the existing file untouched.
+//! - Nothing is ever deleted. Files the manifest does not mention are reported
+//!   and left alone.
+//! - Manifest paths arrive over the network, so every one is re-validated
+//!   against the target folder before it can name a file on disk.
+//!
+//! A full install is the same code path as a repair: scanning an empty folder
+//! reports every file as missing. That also gives resume for free — an
+//! interrupted run is just a folder that scans as partly complete.
+
+use serde::{Deserialize, Deserializer, Serialize};
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+
+/// How many files to fetch at once. beanfun's CDN is fine with this and it
+/// keeps a slow file from stalling the run, without looking like an attack.
+const DOWNLOAD_CONCURRENCY: usize = 6;
+/// Read buffer for hashing. Large enough that 67 GB does not die of syscalls.
+const HASH_BUFFER: usize = 1024 * 1024;
+
+/// One file as beanfun publishes it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ManifestFile {
+    /// Forward-slash relative path under the game folder.
+    pub path: String,
+    #[serde(rename = "sizeInBytes", deserialize_with = "flexible_u64")]
+    pub size: u64,
+    /// Lowercase hex SHA-256. Empty when beanfun published none.
+    #[serde(default)]
+    pub sha256: String,
+}
+
+/// The manifest, reduced to what the client manager needs.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientManifest {
+    pub product_name: String,
+    pub version: String,
+    pub total_bytes: u64,
+    pub file_count: usize,
+    /// Where a file lives: `{base_url}{folder_name}/{path}`.
+    #[serde(skip)]
+    pub base_url: String,
+    #[serde(skip)]
+    pub folder_name: String,
+    pub exe_name: String,
+    #[serde(skip)]
+    pub files: Vec<ManifestFile>,
+}
+
+#[derive(Deserialize)]
+struct RawInfo {
+    #[serde(rename = "productName", default)]
+    product_name: String,
+    version: String,
+    #[serde(rename = "baseUrl")]
+    base_url: String,
+    #[serde(rename = "executionPath", default)]
+    execution_path: String,
+    #[serde(default)]
+    files: Vec<ManifestFile>,
+}
+
+/// `sizeInBytes` comes back as a number or as a string, depending on the entry.
+fn flexible_u64<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    use serde::de::Error;
+    match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .ok_or_else(|| D::Error::custom("size is not a whole number")),
+        serde_json::Value::String(s) => s.trim().parse().map_err(D::Error::custom),
+        other => Err(D::Error::custom(format!("size is {other}"))),
+    }
+}
+
+/// Fetch and parse the official manifest.
+pub async fn fetch_manifest() -> Result<ClientManifest, String> {
+    let body = crate::services::game_download::fetch_product_info_body().await?;
+    parse_manifest(&body)
+}
+
+fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
+    let raw: RawInfo =
+        serde_json::from_str(body).map_err(|e| format!("failed to parse product info: {e}"))?;
+    if raw.version.trim().is_empty() {
+        return Err("product info has no version".to_string());
+    }
+    let mut base = raw.base_url.trim().to_string();
+    if !base.starts_with("http://") && !base.starts_with("https://") {
+        return Err("product info has no usable baseUrl".to_string());
+    }
+    if !base.ends_with('/') {
+        base.push('/');
+    }
+    let mut segments = raw.execution_path.split('/').filter(|s| !s.is_empty());
+    let folder_name = segments.next().unwrap_or_default().to_string();
+    let exe_name = segments.next_back().unwrap_or_default().to_string();
+    if folder_name.is_empty() {
+        return Err("product info names no game folder".to_string());
+    }
+    if raw.files.is_empty() {
+        return Err("product info lists no files".to_string());
+    }
+    // Every path must be usable before anything else runs.
+    for f in &raw.files {
+        check_relative_path(&f.path)?;
+    }
+    Ok(ClientManifest {
+        product_name: raw.product_name,
+        version: raw.version,
+        total_bytes: raw.files.iter().map(|f| f.size).sum(),
+        file_count: raw.files.len(),
+        base_url: base,
+        folder_name,
+        exe_name,
+        files: raw.files,
+    })
+}
+
+/// Reject anything that could name a file outside the game folder. Manifest
+/// paths come off the network; this is the gate that makes them safe to join.
+fn check_relative_path(rel: &str) -> Result<(), String> {
+    if rel.is_empty() {
+        return Err("manifest has an empty path".to_string());
+    }
+    if rel.starts_with('/') || rel.len() >= 2 && rel.as_bytes()[1] == b':' {
+        return Err(format!("manifest path is absolute: {rel:?}"));
+    }
+    for seg in rel.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." {
+            return Err(format!("manifest path has a bad segment: {rel:?}"));
+        }
+        if seg.contains('\\') || seg.contains(':') {
+            return Err(format!("manifest path has a bad segment: {rel:?}"));
+        }
+        // Windows strips a trailing dot or space, which would let two manifest
+        // entries collide on one real file.
+        if seg.ends_with('.') || seg.ends_with(' ') {
+            return Err(format!("manifest path has a bad segment: {rel:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// Join a validated manifest path onto the game folder.
+fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    check_relative_path(rel)?;
+    let mut out = root.to_path_buf();
+    for seg in rel.split('/') {
+        out.push(seg);
+    }
+    Ok(out)
+}
+
+/// How hard to look. `Quick` only compares sizes, which catches missing and
+/// truncated files in seconds; `Full` hashes every byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanMode {
+    Quick,
+    Full,
+}
+
+/// Why a file needs fetching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IssueKind {
+    Missing,
+    SizeMismatch,
+    HashMismatch,
+    Unreadable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileIssue {
+    pub path: String,
+    pub kind: IssueKind,
+    pub expected_size: u64,
+    pub local_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanReport {
+    pub total_files: usize,
+    pub ok_files: usize,
+    pub issues: Vec<FileIssue>,
+    pub bytes_to_fetch: u64,
+    /// Present on disk, absent from the manifest. Reported only; never removed.
+    pub extra_files: Vec<String>,
+    pub cancelled: bool,
+}
+
+/// Progress during a scan or a download.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub done: usize,
+    pub total: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub current: String,
+}
+
+/// Shared stop flag. Set it and the run finishes early, reporting `cancelled`.
+pub type Cancel = Arc<AtomicBool>;
+
+fn cancelled(c: &Cancel) -> bool {
+    c.load(Ordering::Relaxed)
+}
+
+/// Compare `dir` against the manifest.
+///
+/// Runs on a blocking thread: hashing a full install reads ~67 GB.
+pub async fn scan(
+    dir: PathBuf,
+    manifest: Arc<ClientManifest>,
+    mode: ScanMode,
+    cancel: Cancel,
+    on_progress: impl Fn(Progress) + Send + 'static,
+) -> Result<ScanReport, String> {
+    tokio::task::spawn_blocking(move || scan_blocking(&dir, &manifest, mode, &cancel, &on_progress))
+        .await
+        .map_err(|e| format!("scan task failed: {e}"))?
+}
+
+fn scan_blocking(
+    dir: &Path,
+    manifest: &ClientManifest,
+    mode: ScanMode,
+    cancel: &Cancel,
+    on_progress: &(impl Fn(Progress) + Send),
+) -> Result<ScanReport, String> {
+    let total = manifest.files.len();
+    let bytes_total: u64 = manifest.files.iter().map(|f| f.size).sum();
+    let mut report = ScanReport {
+        total_files: total,
+        ..Default::default()
+    };
+    let mut bytes_done = 0u64;
+
+    for (i, f) in manifest.files.iter().enumerate() {
+        if cancelled(cancel) {
+            report.cancelled = true;
+            return Ok(report);
+        }
+        let target = safe_join(dir, &f.path)?;
+        let issue = inspect_one(&target, f, mode);
+        match issue {
+            Some(kind) => {
+                let local_size = std::fs::metadata(&target).ok().map(|m| m.len());
+                report.bytes_to_fetch += f.size;
+                report.issues.push(FileIssue {
+                    path: f.path.clone(),
+                    kind,
+                    expected_size: f.size,
+                    local_size,
+                });
+            }
+            None => report.ok_files += 1,
+        }
+        bytes_done += f.size;
+        // One event per file would flood the UI on 1263 files; every 25 is
+        // smooth enough and keeps the last file always reported.
+        if i % 25 == 0 || i + 1 == total {
+            on_progress(Progress {
+                done: i + 1,
+                total,
+                bytes_done,
+                bytes_total,
+                current: f.path.clone(),
+            });
+        }
+    }
+
+    report.extra_files = find_extra_files(dir, manifest, cancel);
+    Ok(report)
+}
+
+/// `None` when the file is good enough for the mode asked for.
+fn inspect_one(target: &Path, f: &ManifestFile, mode: ScanMode) -> Option<IssueKind> {
+    let meta = match std::fs::metadata(target) {
+        Ok(m) => m,
+        Err(_) => return Some(IssueKind::Missing),
+    };
+    if !meta.is_file() {
+        return Some(IssueKind::Missing);
+    }
+    if meta.len() != f.size {
+        return Some(IssueKind::SizeMismatch);
+    }
+    if mode == ScanMode::Quick || f.sha256.is_empty() {
+        return None;
+    }
+    match hash_file(target) {
+        Ok(got) if got.eq_ignore_ascii_case(&f.sha256) => None,
+        Ok(_) => Some(IssueKind::HashMismatch),
+        Err(_) => Some(IssueKind::Unreadable),
+    }
+}
+
+fn hash_file(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; HASH_BUFFER];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex(&hasher.finalize()))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Files on disk the manifest does not list. Reported so the player can decide;
+/// the client manager never removes anything itself.
+fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> Vec<String> {
+    use std::collections::HashSet;
+    let known: HashSet<&str> = manifest.files.iter().map(|f| f.path.as_str()).collect();
+    let mut extra = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        if cancelled(cancel) || extra.len() >= 500 {
+            break;
+        }
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            let Ok(rel) = p.strip_prefix(dir) else {
+                continue;
+            };
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            // Our own in-flight downloads are not the player's stray files.
+            if rel.ends_with(PART_SUFFIX) {
+                continue;
+            }
+            if !known.contains(rel.as_str()) {
+                extra.push(rel);
+            }
+        }
+    }
+    extra.sort();
+    extra
+}
+
+const PART_SUFFIX: &str = ".mlpart";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadReport {
+    pub requested: usize,
+    pub written: usize,
+    pub failures: Vec<DownloadFailure>,
+    pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadFailure {
+    pub path: String,
+    pub error: String,
+}
+
+/// Live counters for a download, so a caller can report smooth progress while
+/// a single large file is still in flight.
+#[derive(Debug, Default)]
+pub struct DownloadProgress {
+    pub files_done: AtomicU64,
+    pub files_total: AtomicU64,
+    pub bytes_done: AtomicU64,
+    pub bytes_total: AtomicU64,
+}
+
+impl DownloadProgress {
+    pub fn snapshot(&self) -> Progress {
+        Progress {
+            done: self.files_done.load(Ordering::Relaxed) as usize,
+            total: self.files_total.load(Ordering::Relaxed) as usize,
+            bytes_done: self.bytes_done.load(Ordering::Relaxed),
+            bytes_total: self.bytes_total.load(Ordering::Relaxed),
+            current: String::new(),
+        }
+    }
+}
+
+/// Fetch the named manifest paths into `dir`.
+///
+/// Each file is written beside its target and renamed over it only after its
+/// SHA-256 matches what beanfun published, so a failure anywhere leaves the
+/// existing file exactly as it was.
+pub async fn download(
+    dir: PathBuf,
+    manifest: Arc<ClientManifest>,
+    paths: Vec<String>,
+    cancel: Cancel,
+    progress: Arc<DownloadProgress>,
+) -> Result<DownloadReport, String> {
+    use futures_util::stream::StreamExt;
+
+    let wanted: std::collections::HashSet<String> = paths.into_iter().collect();
+    let files: Vec<ManifestFile> = manifest
+        .files
+        .iter()
+        .filter(|f| wanted.contains(&f.path))
+        .cloned()
+        .collect();
+    if files.len() != wanted.len() {
+        return Err("asked for a file the manifest does not list".to_string());
+    }
+
+    let total = files.len();
+    progress.files_total.store(total as u64, Ordering::Relaxed);
+    progress
+        .bytes_total
+        .store(files.iter().map(|f| f.size).sum(), Ordering::Relaxed);
+    let client = reqwest::Client::builder()
+        .user_agent(crate::services::http_util::USER_AGENT)
+        // No overall timeout: a 186 MB file on a slow line is not a failure.
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let failures = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    futures_util::stream::iter(files)
+        .for_each_concurrent(DOWNLOAD_CONCURRENCY, |f| {
+            let (client, dir, manifest, cancel) = (
+                client.clone(),
+                dir.clone(),
+                manifest.clone(),
+                cancel.clone(),
+            );
+            let (failures, progress) = (failures.clone(), progress.clone());
+            async move {
+                if cancelled(&cancel) {
+                    return;
+                }
+                // Bytes already counted for this file, so a retry or a failure
+                // can be rolled back out of the running total.
+                let counted = Arc::new(AtomicU64::new(0));
+                let tally = counted.clone();
+                let p = progress.clone();
+                let result = fetch_one(&client, &dir, &manifest, &f, &cancel, move |n| {
+                    tally.fetch_add(n, Ordering::Relaxed);
+                    p.bytes_done.fetch_add(n, Ordering::Relaxed);
+                })
+                .await;
+                if let Err(e) = result {
+                    // The file did not land, so its bytes are not progress.
+                    progress
+                        .bytes_done
+                        .fetch_sub(counted.load(Ordering::Relaxed), Ordering::Relaxed);
+                    if !cancelled(&cancel) {
+                        tracing::warn!("client manager: {} failed: {e}", f.path);
+                        failures.lock().await.push(DownloadFailure {
+                            path: f.path.clone(),
+                            error: e,
+                        });
+                    }
+                }
+                progress.files_done.fetch_add(1, Ordering::Relaxed);
+            }
+        })
+        .await;
+
+    let failures = failures.lock().await.clone();
+    Ok(DownloadReport {
+        requested: total,
+        written: total - failures.len(),
+        failures,
+        cancelled: cancelled(&cancel),
+    })
+}
+
+/// Download one file, verify it, then put it in place.
+async fn fetch_one(
+    client: &reqwest::Client,
+    dir: &Path,
+    manifest: &ClientManifest,
+    f: &ManifestFile,
+    cancel: &Cancel,
+    mut on_bytes: impl FnMut(u64),
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let target = safe_join(dir, &f.path)?;
+    let part = target.with_extension(format!(
+        "{}{}",
+        target
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        PART_SUFFIX
+    ));
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+    }
+
+    let url = format!("{}{}/{}", manifest.base_url, manifest.folder_name, f.path);
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let mut file = tokio::fs::File::create(&part)
+        .await
+        .map_err(|e| format!("could not open {}: {e}", part.display()))?;
+    let mut hasher = Sha256::new();
+    let mut written = 0u64;
+    let mut stream = resp.bytes_stream();
+    let outcome = loop {
+        if cancelled(cancel) {
+            break Err("cancelled".to_string());
+        }
+        match stream.next().await {
+            None => break Ok(()),
+            Some(Err(e)) => break Err(format!("transfer failed: {e}")),
+            Some(Ok(chunk)) => {
+                written += chunk.len() as u64;
+                if written > f.size {
+                    break Err("server sent more than the manifest states".to_string());
+                }
+                hasher.update(&chunk);
+                if let Err(e) = file.write_all(&chunk).await {
+                    break Err(format!("write failed: {e}"));
+                }
+                on_bytes(chunk.len() as u64);
+            }
+        }
+    };
+    let flushed = file.flush().await.map_err(|e| format!("flush failed: {e}"));
+    drop(file);
+
+    let verdict = outcome.and(flushed).and_then(|()| {
+        if written != f.size {
+            return Err(format!("got {written} bytes, manifest says {}", f.size));
+        }
+        let got = hex(&hasher.finalize());
+        if !f.sha256.is_empty() && !got.eq_ignore_ascii_case(&f.sha256) {
+            return Err("SHA-256 does not match the manifest".to_string());
+        }
+        Ok(())
+    });
+
+    match verdict {
+        Ok(()) => {
+            // Only now does the player's file change.
+            tokio::fs::rename(&part, &target)
+                .await
+                .map_err(|e| format!("could not replace {}: {e}", target.display()))
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            Err(e)
+        }
+    }
+}
+
+/// Free bytes on the volume holding `dir`, for the "do you have room" check.
+#[cfg(target_os = "windows")]
+pub fn free_space(dir: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let mut wide: Vec<u16> = dir.as_os_str().encode_wide().collect();
+    wide.push(0);
+    let mut free: u64 = 0;
+    // SAFETY: `wide` is a NUL-terminated UTF-16 path that outlives the call,
+    // and `free` is a valid writable u64 for the out-parameter.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    (ok != 0).then_some(free)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn free_space(_dir: &Path) -> Option<u64> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A temp folder that removes itself; the repo has no tempdir crate.
+    pub(super) struct TempDir(pub PathBuf);
+
+    impl TempDir {
+        pub(super) fn new(tag: &str) -> Self {
+            static N: AtomicU64 = AtomicU64::new(0);
+            let p = std::env::temp_dir().join(format!(
+                "maplelink_{tag}_{}_{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&p).unwrap();
+            Self(p)
+        }
+
+        pub(super) fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const INFO: &str = r#"{
+        "productName":"新楓之谷","productId":"MS","sizeInBytes":3,
+        "version":"V282","publishDate":"2026/09/04",
+        "baseUrl":"https://cdn.example.com/maplestory/download/",
+        "executionPath":"P2PdPoyK5obH/MapleStory.exe",
+        "files":[
+            {"path":"a.txt","sizeInBytes":5,"sha256":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},
+            {"path":"sub/b.bin","sizeInBytes":"3","sha256":"a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"}
+        ]
+    }"#;
+
+    fn manifest() -> ClientManifest {
+        parse_manifest(INFO).unwrap()
+    }
+
+    #[test]
+    fn parses_sizes_given_as_numbers_or_strings() {
+        let m = manifest();
+        assert_eq!(m.version, "V282");
+        assert_eq!(m.folder_name, "P2PdPoyK5obH");
+        assert_eq!(m.exe_name, "MapleStory.exe");
+        assert_eq!(m.file_count, 2);
+        assert_eq!(m.files[0].size, 5);
+        assert_eq!(m.files[1].size, 3);
+        assert_eq!(m.total_bytes, 8);
+    }
+
+    #[test]
+    fn a_manifest_without_files_or_version_is_refused() {
+        assert!(parse_manifest(&INFO.replace("\"V282\"", "\"\"")).is_err());
+        let no_files = INFO.replace("\"files\":[", "\"files\":[],\"unused\":[");
+        assert!(parse_manifest(&no_files).is_err());
+    }
+
+    #[test]
+    fn a_manifest_that_tries_to_escape_the_game_folder_is_refused() {
+        for bad in [
+            "../evil.exe",
+            "a/../../evil.exe",
+            "/etc/passwd",
+            "C:/Windows/system32/evil.dll",
+            "sub/",
+            "trailingdot.",
+        ] {
+            let body = INFO.replace("a.txt", bad);
+            assert!(
+                parse_manifest(&body).is_err(),
+                "{bad:?} should have been refused"
+            );
+        }
+    }
+
+    /// Separators and drive letters are checked against the validator itself:
+    /// routing them through the JSON fixture would turn `\b` into an escape
+    /// rather than the backslash the test means to feed it.
+    #[test]
+    fn the_path_validator_refuses_separators_and_drive_letters() {
+        for bad in [
+            "sub\\b.bin",
+            "..\\evil.exe",
+            "C:\\Windows\\evil.dll",
+            "a:b",
+            "../evil.exe",
+            "",
+            "ends.",
+            "ends ",
+        ] {
+            assert!(
+                check_relative_path(bad).is_err(),
+                "{bad:?} should have been refused"
+            );
+        }
+        for good in ["a.txt", "sub/b.bin", "a/b/c/d.dat", "Data-1_x.wz"] {
+            assert!(check_relative_path(good).is_ok(), "{good:?} should be fine");
+        }
+    }
+
+    #[test]
+    fn safe_join_builds_paths_under_the_root_only() {
+        let root = Path::new("C:\\Games\\MapleStory");
+        assert_eq!(
+            safe_join(root, "sub/b.bin").unwrap(),
+            root.join("sub").join("b.bin")
+        );
+        assert!(safe_join(root, "../x").is_err());
+        assert!(safe_join(root, "").is_err());
+    }
+
+    /// A folder holding `a.txt` correct, `sub/b.bin` corrupted at the same
+    /// size, plus a file the manifest never mentions.
+    fn sample_dir() -> TempDir {
+        let dir = TempDir::new("mlscan");
+        std::fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub").join("b.bin"), b"XXX").unwrap();
+        std::fs::write(dir.path().join("mine.ini"), b"keep me").unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn a_quick_scan_sees_sizes_and_a_full_scan_sees_content() {
+        let dir = sample_dir();
+        let m = Arc::new(manifest());
+        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+
+        let quick = scan(
+            dir.path().to_path_buf(),
+            m.clone(),
+            ScanMode::Quick,
+            cancel.clone(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        // Both files are the right size, so a quick scan is happy.
+        assert_eq!(quick.ok_files, 2);
+        assert!(quick.issues.is_empty());
+
+        let full = scan(dir.path().to_path_buf(), m, ScanMode::Full, cancel, |_| {})
+            .await
+            .unwrap();
+        assert_eq!(full.ok_files, 1);
+        assert_eq!(full.issues.len(), 1);
+        assert_eq!(full.issues[0].path, "sub/b.bin");
+        assert_eq!(full.issues[0].kind, IssueKind::HashMismatch);
+        assert_eq!(full.bytes_to_fetch, 3);
+        assert_eq!(full.extra_files, vec!["mine.ini".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn an_empty_folder_reports_every_file_missing() {
+        let dir = TempDir::new("mlempty");
+        let m = Arc::new(manifest());
+        let report = scan(
+            dir.path().to_path_buf(),
+            m,
+            ScanMode::Quick,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.ok_files, 0);
+        assert_eq!(report.issues.len(), 2);
+        assert!(report
+            .issues
+            .iter()
+            .all(|i| i.kind == IssueKind::Missing && i.local_size.is_none()));
+        assert_eq!(report.bytes_to_fetch, 8);
+    }
+
+    #[tokio::test]
+    async fn a_truncated_file_is_caught_without_hashing() {
+        let dir = sample_dir();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+        let report = scan(
+            dir.path().to_path_buf(),
+            Arc::new(manifest()),
+            ScanMode::Quick,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].kind, IssueKind::SizeMismatch);
+        assert_eq!(report.issues[0].local_size, Some(2));
+    }
+
+    #[tokio::test]
+    async fn cancelling_stops_the_scan_and_says_so() {
+        let dir = sample_dir();
+        let cancel: Cancel = Arc::new(AtomicBool::new(true));
+        let report = scan(
+            dir.path().to_path_buf(),
+            Arc::new(manifest()),
+            ScanMode::Full,
+            cancel,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(report.cancelled);
+    }
+
+    #[tokio::test]
+    async fn progress_reaches_the_last_file() {
+        let dir = sample_dir();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        scan(
+            dir.path().to_path_buf(),
+            Arc::new(manifest()),
+            ScanMode::Quick,
+            Arc::new(AtomicBool::new(false)),
+            move |p| sink.lock().unwrap().push(p),
+        )
+        .await
+        .unwrap();
+        let seen = seen.lock().unwrap();
+        let last = seen.last().unwrap();
+        assert_eq!(last.done, 2);
+        assert_eq!(last.total, 2);
+        assert_eq!(last.bytes_done, last.bytes_total);
+    }
+
+    #[tokio::test]
+    async fn downloading_a_file_the_manifest_does_not_list_is_refused() {
+        let dir = TempDir::new("mldl");
+        let err = download(
+            dir.path().to_path_buf(),
+            Arc::new(manifest()),
+            vec!["not-in-manifest.dll".to_string()],
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(DownloadProgress::default()),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("does not list"));
+    }
+}
+
+/// Live checks against beanfun. Ignored by default (network + real files);
+/// run with `cargo test live_client -- --ignored --nocapture`.
+#[cfg(test)]
+mod live_tests {
+    use super::tests::TempDir;
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_client_fetches_and_verifies_two_small_files() {
+        let manifest = Arc::new(fetch_manifest().await.unwrap());
+        eprintln!(
+            "manifest: {} {} — {} files, {} bytes",
+            manifest.product_name, manifest.version, manifest.file_count, manifest.total_bytes
+        );
+
+        // Two of the smallest files, so the test is quick but real.
+        let mut small: Vec<&ManifestFile> = manifest.files.iter().collect();
+        small.sort_by_key(|f| f.size);
+        let picked: Vec<String> = small.iter().take(2).map(|f| f.path.clone()).collect();
+        eprintln!("picked: {picked:?}");
+
+        let dir = TempDir::new("mllive");
+        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        let progress = Arc::new(DownloadProgress::default());
+
+        // An empty folder scans as entirely missing — the full-install path.
+        let before = scan(
+            dir.path().to_path_buf(),
+            manifest.clone(),
+            ScanMode::Quick,
+            cancel.clone(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(before.issues.len(), manifest.file_count);
+
+        let report = download(
+            dir.path().to_path_buf(),
+            manifest.clone(),
+            picked.clone(),
+            cancel.clone(),
+            progress.clone(),
+        )
+        .await
+        .unwrap();
+        eprintln!("download: {report:?}");
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert_eq!(report.written, 2);
+
+        // Every fetched file now passes a full hash check, and no stray part
+        // files are left behind.
+        for path in &picked {
+            let f = manifest.files.iter().find(|f| &f.path == path).unwrap();
+            let target = safe_join(dir.path(), path).unwrap();
+            assert_eq!(std::fs::metadata(&target).unwrap().len(), f.size);
+            assert!(hash_file(&target).unwrap().eq_ignore_ascii_case(&f.sha256));
+        }
+        let after = scan(
+            dir.path().to_path_buf(),
+            manifest.clone(),
+            ScanMode::Full,
+            cancel,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(after.ok_files, 2);
+        assert!(after.extra_files.is_empty(), "{:?}", after.extra_files);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_client_leaves_a_good_file_alone_when_a_download_fails() {
+        let mut manifest = fetch_manifest().await.unwrap();
+        let mut small: Vec<ManifestFile> = manifest.files.clone();
+        small.sort_by_key(|f| f.size);
+        let victim = small[0].clone();
+
+        // Point the manifest at a path that does not exist on the CDN, so the
+        // fetch fails after the local file is already in place.
+        manifest.folder_name = "definitely-not-a-real-folder".to_string();
+        let manifest = Arc::new(manifest);
+
+        let dir = TempDir::new("mllive_fail");
+        let target = safe_join(dir.path(), &victim.path).unwrap();
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, b"existing content the player owns").unwrap();
+
+        let report = download(
+            dir.path().to_path_buf(),
+            manifest,
+            vec![victim.path.clone()],
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(DownloadProgress::default()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.written, 0);
+        assert_eq!(report.failures.len(), 1);
+        eprintln!("expected failure: {:?}", report.failures[0]);
+
+        // Untouched, and nothing half-written left next to it.
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"existing content the player owns"
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(target.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(PART_SUFFIX))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+}

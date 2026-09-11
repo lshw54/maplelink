@@ -8,6 +8,7 @@ pub mod bencode;
 pub mod browser_window;
 pub mod cafe_service;
 pub mod classic_service;
+pub mod client_manager;
 pub mod config_service;
 pub mod cookie_native;
 pub mod data_transfer;

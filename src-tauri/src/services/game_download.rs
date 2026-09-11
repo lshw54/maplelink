@@ -203,8 +203,12 @@ struct ProductInfo {
     files: Vec<serde_json::Value>,
 }
 
-/// Fetch the full-client torrent details for MapleStory TW.
-pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
+/// Fetch beanfun's `productInfo.json` for MapleStory TW, as raw text.
+///
+/// Two public GETs: the catalog names the game's manifest URL, the manifest
+/// carries the version, the CDN base and the per-file list. Shared by the
+/// torrent view here and by the client manager, which needs the file list.
+pub async fn fetch_product_info_body() -> Result<String, String> {
     let client = reqwest::Client::builder()
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(20))
@@ -232,10 +236,14 @@ pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
     if !resp.status().is_success() {
         return Err(format!("product info returned HTTP {}", resp.status()));
     }
-    let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
+    crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
         .await
-        .ok_or_else(|| "product info body unreadable".to_string())?;
-    full_client_info(&body)
+        .ok_or_else(|| "product info body unreadable".to_string())
+}
+
+/// Fetch the full-client torrent details for MapleStory TW.
+pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
+    full_client_info(&fetch_product_info_body().await?)
 }
 
 /// The MapleStory entry's `infoData` URL out of the catalog body.

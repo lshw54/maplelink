@@ -17,6 +17,9 @@ import type {
   WebLaunchTestCode,
   GameDownloadDto,
   FullClientInfoDto,
+  ClientManifestDto,
+  ClientScanReportDto,
+  ClientDownloadReportDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
   BrowserBookmark,
@@ -190,6 +193,20 @@ export const commands = {
   getGameDownloadList: () => invoke<GameDownloadDto[]>("get_game_download_list"),
   getGameFullClientInfo: () => invoke<FullClientInfoDto>("get_game_full_client_info"),
   saveGameFullClientTorrent: () => invoke<boolean>("save_game_full_client_torrent"),
+
+  // Client manager (its own window): compare a local install and fetch back
+  // whatever does not match the official manifest.
+  openClientManagerWindow: () => invoke("open_client_manager_window"),
+  clientLoadManifest: () => invoke<ClientManifestDto>("client_load_manifest"),
+  clientScan: (dir: string, mode: "quick" | "full") =>
+    invoke<ClientScanReportDto>("client_scan", { dir, mode }),
+  clientDownload: (dir: string, paths: string[]) =>
+    invoke<ClientDownloadReportDto>("client_download", { dir, paths }),
+  clientCancel: () => invoke("client_cancel"),
+  clientFreeSpace: (dir: string) => invoke<number | null>("client_free_space", { dir }),
+  clientPickFolder: (startIn: string | null) =>
+    invoke<string | null>("client_pick_folder", { startIn }),
+  clientDefaultFolder: () => invoke<string | null>("client_default_folder"),
 
   // Announcement "seen" state (global; stored outside config.ini)
   announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),

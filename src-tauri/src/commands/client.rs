@@ -1,0 +1,286 @@
+//! Client manager: compare a local install against beanfun's manifest and
+//! fetch back what does not match.
+//!
+//! The work itself lives in [`crate::services::client_manager`]. These wrappers
+//! own the window, the one-job-at-a-time rule, and the progress events.
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
+
+use crate::models::error::{ErrorCategory, ErrorDto};
+use crate::services::client_manager::{
+    self, Cancel, ClientManifest, DownloadProgress, DownloadReport, ScanMode, ScanReport,
+};
+
+/// The window the client manager runs in. `main.tsx` reads this label to decide
+/// which UI to mount.
+pub const CLIENT_WINDOW_LABEL: &str = "client_manager";
+
+const SCAN_PROGRESS_EVENT: &str = "client-scan-progress";
+const DOWNLOAD_PROGRESS_EVENT: &str = "client-download-progress";
+/// How often a running download reports itself. Often enough to look live,
+/// rarely enough that 1263 files do not flood the webview.
+const TICK: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// One scan or download at a time, plus the manifest they share.
+#[derive(Default)]
+pub struct ClientJobs {
+    manifest: tokio::sync::RwLock<Option<Arc<ClientManifest>>>,
+    cancel: std::sync::Mutex<Option<Cancel>>,
+    busy: AtomicBool,
+}
+
+impl ClientJobs {
+    /// Claim the single job slot, handing back a guard that frees it.
+    fn start(&self) -> Result<JobGuard<'_>, ErrorDto> {
+        if self.busy.swap(true, Ordering::SeqCst) {
+            return Err(err(
+                "CLIENT_BUSY",
+                "another scan or download is already running",
+                ErrorCategory::Process,
+            ));
+        }
+        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        *self.cancel.lock().expect("client job lock") = Some(cancel.clone());
+        Ok(JobGuard { jobs: self, cancel })
+    }
+}
+
+struct JobGuard<'a> {
+    jobs: &'a ClientJobs,
+    cancel: Cancel,
+}
+
+impl Drop for JobGuard<'_> {
+    fn drop(&mut self) {
+        *self.jobs.cancel.lock().expect("client job lock") = None;
+        self.jobs.busy.store(false, Ordering::SeqCst);
+    }
+}
+
+fn err(code: &str, message: impl Into<String>, category: ErrorCategory) -> ErrorDto {
+    ErrorDto {
+        code: code.to_string(),
+        message: message.into(),
+        category,
+        details: None,
+    }
+}
+
+fn net(code: &str) -> impl Fn(String) -> ErrorDto + '_ {
+    move |e| err(code, e, ErrorCategory::Network)
+}
+
+/// Open (or focus) the client manager window.
+#[tauri::command]
+pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    if let Some(existing) = app.get_webview_window(CLIENT_WINDOW_LABEL) {
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    // WebView2 refuses a second environment over the same user data folder
+    // unless its options match the first one exactly (HRESULT 0x8007139F), so
+    // this window has to ask for whatever the main window declared.
+    let browser_args = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .and_then(|w| w.additional_browser_args.clone())
+        .unwrap_or_default();
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        CLIENT_WINDOW_LABEL,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .additional_browser_args(&browser_args)
+    .title("MapleLink")
+    // A file list plus progress needs far more room than the main window has.
+    .inner_size(980.0, 680.0)
+    .min_inner_size(720.0, 520.0)
+    .resizable(true)
+    // Native decorations: this window can run a long job, and the player must
+    // always be able to close it even if our own chrome fails to render.
+    .decorations(true)
+    .center()
+    .build()
+    .map_err(|e| {
+        err(
+            "CLIENT_WINDOW_FAILED",
+            format!("could not open the client manager window: {e}"),
+            ErrorCategory::Process,
+        )
+    })?;
+    Ok(())
+}
+
+/// Fetch the official manifest and remember it for the scan and download that
+/// follow, so all three always talk about the same published version.
+#[tauri::command]
+pub async fn client_load_manifest(
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<ClientManifest, ErrorDto> {
+    let manifest = client_manager::fetch_manifest()
+        .await
+        .map_err(net("CLIENT_MANIFEST_FAILED"))?;
+    let shared = Arc::new(manifest.clone());
+    *jobs.manifest.write().await = Some(shared);
+    Ok(manifest)
+}
+
+async fn manifest_of(jobs: &tauri::State<'_, ClientJobs>) -> Result<Arc<ClientManifest>, ErrorDto> {
+    jobs.manifest.read().await.clone().ok_or_else(|| {
+        err(
+            "CLIENT_NO_MANIFEST",
+            "load the manifest first",
+            ErrorCategory::Process,
+        )
+    })
+}
+
+/// Compare `dir` against the manifest, reporting progress as it goes.
+#[tauri::command]
+pub async fn client_scan(
+    dir: String,
+    mode: ScanMode,
+    app: tauri::AppHandle,
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<ScanReport, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    let guard = jobs.start()?;
+    let handle = app.clone();
+    let report = client_manager::scan(
+        PathBuf::from(&dir),
+        manifest,
+        mode,
+        guard.cancel.clone(),
+        move |p| {
+            let _ = handle.emit(SCAN_PROGRESS_EVENT, p);
+        },
+    )
+    .await
+    .map_err(|e| err("CLIENT_SCAN_FAILED", e, ErrorCategory::FileSystem))?;
+    tracing::info!(
+        "client scan of {dir}: {} ok, {} to fetch, {} extra",
+        report.ok_files,
+        report.issues.len(),
+        report.extra_files.len()
+    );
+    Ok(report)
+}
+
+/// Fetch the named files into `dir`. Only paths the manifest lists are allowed,
+/// and each one is verified before it replaces anything.
+#[tauri::command]
+pub async fn client_download(
+    dir: String,
+    paths: Vec<String>,
+    app: tauri::AppHandle,
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<DownloadReport, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    let guard = jobs.start()?;
+    let progress = Arc::new(DownloadProgress::default());
+
+    // Report while the transfer runs; a single 186 MB file would otherwise be
+    // a long silence.
+    let ticker = {
+        let (progress, app) = (progress.clone(), app.clone());
+        let stop = guard.cancel.clone();
+        tokio::spawn(async move {
+            let mut timer = tokio::time::interval(TICK);
+            loop {
+                timer.tick().await;
+                let snapshot = progress.snapshot();
+                let _ = app.emit(DOWNLOAD_PROGRESS_EVENT, &snapshot);
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
+            }
+        })
+    };
+
+    let report = client_manager::download(
+        PathBuf::from(&dir),
+        manifest,
+        paths,
+        guard.cancel.clone(),
+        progress.clone(),
+    )
+    .await
+    .map_err(|e| err("CLIENT_DOWNLOAD_FAILED", e, ErrorCategory::Network));
+
+    ticker.abort();
+    // One last event so the bar always finishes where the report says it did.
+    let _ = app.emit(DOWNLOAD_PROGRESS_EVENT, progress.snapshot());
+
+    let report = report?;
+    tracing::info!(
+        "client download into {dir}: {} of {} written, {} failed",
+        report.written,
+        report.requested,
+        report.failures.len()
+    );
+    Ok(report)
+}
+
+/// Ask the running scan or download to stop. Safe to call when nothing runs.
+#[tauri::command]
+pub fn client_cancel(jobs: tauri::State<'_, ClientJobs>) {
+    if let Some(cancel) = jobs.cancel.lock().expect("client job lock").as_ref() {
+        cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Free bytes on the volume holding `dir`, so the UI can warn before a 67 GB
+/// download starts. `None` when the platform or the path cannot answer.
+#[tauri::command]
+pub fn client_free_space(dir: String) -> Option<u64> {
+    client_manager::free_space(std::path::Path::new(&dir))
+}
+
+/// Pick the game folder. Starts at `start_in` when the caller has one, so the
+/// player lands next to their existing install rather than at the drive root.
+#[tauri::command]
+pub async fn client_pick_folder(
+    start_in: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, ErrorDto> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    let mut dialog = app.dialog().file().set_title("Select the game folder");
+    if let Some(dir) = start_in.filter(|d| !d.is_empty()) {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.pick_folder(move |path| {
+        let _ = tx.send(path.map(|p| p.to_string()));
+    });
+    rx.await.map_err(|_| {
+        err(
+            "CLIENT_DIALOG_FAILED",
+            "folder dialog closed unexpectedly",
+            ErrorCategory::Process,
+        )
+    })
+}
+
+/// The game folder the app already knows about, if the player has set one.
+/// `game_path` points at `MapleStory.exe`; the manager works on its folder.
+#[tauri::command]
+pub async fn client_default_folder(
+    state: tauri::State<'_, crate::models::app_state::AppState>,
+) -> Result<Option<String>, ErrorDto> {
+    let game_path = state.config.read().await.game_path.clone();
+    if game_path.is_empty() {
+        return Ok(None);
+    }
+    Ok(std::path::Path::new(&game_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string()))
+}

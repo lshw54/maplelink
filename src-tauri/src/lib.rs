@@ -336,6 +336,14 @@ pub fn run() {
             commands::system::get_game_download_list,
             commands::system::get_game_full_client_info,
             commands::system::save_game_full_client_torrent,
+            commands::client::open_client_manager_window,
+            commands::client::client_load_manifest,
+            commands::client::client_scan,
+            commands::client::client_download,
+            commands::client::client_cancel,
+            commands::client::client_free_space,
+            commands::client::client_pick_folder,
+            commands::client::client_default_folder,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
             commands::system::onboarding_is_seen,
@@ -498,6 +506,8 @@ pub fn run() {
             };
 
             app.manage(state);
+            // The client manager keeps its own job slot and cached manifest.
+            app.manage(commands::client::ClientJobs::default());
 
             // 4a. Auto-detect game path on first launch (if not set).
             {
