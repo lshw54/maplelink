@@ -51,6 +51,9 @@ export interface ClientManifestDto {
   productName: string;
   version: string;
   publishDate: string;
+  /** When the current executable build was published; the only public marker
+   *  of a minor update, since beanfun keeps the version number unchanged. */
+  exePatchDate: string | null;
   totalBytes: number;
   fileCount: number;
   exeName: string;

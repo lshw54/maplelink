@@ -4,7 +4,7 @@ import { useTranslation } from "./lib/i18n";
 import { commands } from "./lib/tauri";
 import { useUiStore } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
-import { useConfig, useSetConfig, writeConfig } from "./lib/hooks/use-config";
+import { useSetConfig, writeConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
 import { ErrorToastContainer } from "./features/shared/ErrorToast";
 import { UpdateDialog } from "./features/shared/UpdateDialog";
@@ -18,7 +18,7 @@ import { useErrorToastStore } from "./lib/stores/error-toast-store";
 import { ANNOUNCEMENT_ID } from "./lib/announcement";
 import { useConfigStore } from "./lib/stores/config-store";
 import { ONBOARDING_ID } from "./lib/onboarding";
-import { applyAccent } from "./lib/accent";
+import { useThemeEffect, useInitialConfigSync } from "./lib/hooks/use-app-chrome";
 import { LoginPage } from "./features/login/LoginPage";
 import { MainPage } from "./features/launcher/MainPage";
 import { ToolboxPage } from "./features/toolbox/ToolboxPage";
@@ -38,47 +38,6 @@ function PageRouter() {
     case "web_launch":
       return <WebLaunchPage />;
   }
-}
-
-function useThemeEffect() {
-  const theme = useUiStore((s) => s.theme);
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    function applyTheme(mode: "dark" | "light") {
-      if (mode === "light") {
-        root.classList.add("light");
-      } else {
-        root.classList.remove("light");
-      }
-    }
-
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: light)");
-      applyTheme(mq.matches ? "light" : "dark");
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches ? "light" : "dark");
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-
-    applyTheme(theme);
-  }, [theme]);
-}
-
-function useInitialConfigSync() {
-  const { data: config, isLoading } = useConfig();
-  const setTheme = useUiStore((s) => s.setTheme);
-  const setLanguage = useUiStore((s) => s.setLanguage);
-
-  useEffect(() => {
-    if (!config) return;
-    setTheme(config.theme);
-    setLanguage(config.language);
-    applyAccent(config.accentColor ?? "");
-  }, [config, setTheme, setLanguage]);
-
-  return isLoading;
 }
 
 /**

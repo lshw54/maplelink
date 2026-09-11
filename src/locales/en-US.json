@@ -478,8 +478,6 @@
   "client.scanning": "Checking",
   "client.downloading": "Downloading",
   "client.loading_manifest": "Fetching the official manifest…",
-  "client.summary_ok": "{{count}} fine",
-  "client.summary_issues": "{{count}} to fix",
   "client.summary_extra": "{{count}} extra files",
   "client.extra_hint": "These files are not in the official manifest. MapleLink leaves them alone; they are listed for your information.",
   "client.all_good": "This folder matches the official manifest exactly. Nothing to do.",
@@ -488,7 +486,6 @@
   "client.issue_size": "wrong size",
   "client.issue_hash": "wrong content",
   "client.issue_unreadable": "unreadable",
-  "client.select_all": "Select all / none",
   "client.selected": "{{count}} selected, {{size}}",
   "client.free_space": "{{size}} free",
   "client.not_enough_space": "Not enough room — only {{size}} free",
@@ -496,7 +493,6 @@
   "client.download_done": "Done. {{count}} files written.",
   "client.download_failed_some": "{{written}} written, {{failed}} failed. The files that failed were left exactly as they were.",
   "client.rescan_hint": "Check again to confirm. After an interruption, checking again picks up where it left off — finished files are not fetched twice.",
-  "client.cancelled": "cancelled",
   "client.official_version": "Official",
   "client.local_version": "Installed",
   "client.published": "published {{date}}",
@@ -512,6 +508,11 @@
   "client.group_hash": "Wrong content",
   "client.group_unreadable": "Unreadable",
   "client.group_count": "{{count}} files · {{size}}",
-  "client.scan_done": "Check complete",
-  "client.what_changed": "{{count}} files to download, {{size}} in total. Afterwards this folder matches the official {{version}}."
+  "client.what_changed": "{{count}} files to download, {{size}} in total. Afterwards this folder matches the official {{version}}.",
+  "client.exe_dated": "executable {{date}}",
+  "client.ready": "Ready",
+  "client.ready_hint": "Pick a check and press Check files to compare this folder against the official manifest.",
+  "client.needs_repair": "{{count}} files need attention",
+  "client.show_files": "Show the file list",
+  "client.hide_files": "Hide the file list"
 }

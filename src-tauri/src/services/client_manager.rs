@@ -61,6 +61,10 @@ pub struct ClientManifest {
     /// The manifest ships the base executable; the game's own updater replaces
     /// it with this build, so an install carrying it is current, not damaged.
     pub exe_patch_size: Option<u64>,
+    /// When that build was published. beanfun replaces `ExePatch.dat` in place
+    /// for a minor update without changing the version number, so this date is
+    /// the only public marker of which minor build is current.
+    pub exe_patch_date: Option<String>,
     #[serde(skip)]
     pub files: Vec<ManifestFile>,
 }
@@ -112,14 +116,23 @@ pub fn exe_patch_url(version: &str) -> Option<String> {
 pub async fn fetch_manifest() -> Result<ClientManifest, String> {
     let body = crate::services::game_download::fetch_product_info_body().await?;
     let mut manifest = parse_manifest(&body)?;
-    manifest.exe_patch_size = probe_exe_patch_size(&manifest.version).await;
+    let (size, date) = probe_exe_patch(&manifest.version).await;
+    manifest.exe_patch_size = size;
+    manifest.exe_patch_date = date;
     Ok(manifest)
 }
 
-/// `Content-Length` of this version's `ExePatch.dat`, or `None` when the CDN
-/// does not answer. Best effort: a scan still works without it, it just cannot
-/// tell a self-patched executable from a damaged one.
-async fn probe_exe_patch_size(version: &str) -> Option<u64> {
+/// Size and publish date of this version's `ExePatch.dat`. Best effort: a scan
+/// still works without them, it just cannot tell a self-patched executable from
+/// a damaged one.
+async fn probe_exe_patch(version: &str) -> (Option<u64>, Option<String>) {
+    match probe_exe_patch_inner(version).await {
+        Some((size, date)) => (Some(size), date),
+        None => (None, None),
+    }
+}
+
+async fn probe_exe_patch_inner(version: &str) -> Option<(u64, Option<String>)> {
     let url = exe_patch_url(version)?;
     let client = reqwest::Client::builder()
         .user_agent(crate::services::http_util::USER_AGENT)
@@ -134,6 +147,13 @@ async fn probe_exe_patch_size(version: &str) -> Option<u64> {
         );
         return None;
     }
+    // beanfun replaces this file in place for a minor update without moving the
+    // version number, so its date is the only public marker of the minor build.
+    let date = resp
+        .headers()
+        .get(reqwest::header::LAST_MODIFIED)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     // `content_length()` reports the body length, which is 0 for a HEAD
     // response; the header is the only place the real size shows up.
     let size = resp
@@ -144,8 +164,8 @@ async fn probe_exe_patch_size(version: &str) -> Option<u64> {
         .trim()
         .parse()
         .ok()?;
-    tracing::info!("client manager: ExePatch for {version} is {size} bytes");
-    Some(size)
+    tracing::info!("client manager: ExePatch for {version} is {size} bytes, published {date:?}");
+    Some((size, date))
 }
 
 fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
@@ -184,6 +204,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         folder_name,
         exe_name,
         exe_patch_size: None,
+        exe_patch_date: None,
         files: raw.files,
     })
 }

@@ -478,8 +478,6 @@
   "client.scanning": "檢查中",
   "client.downloading": "下載中",
   "client.loading_manifest": "取得官方清單中…",
-  "client.summary_ok": "{{count}} 個正常",
-  "client.summary_issues": "{{count}} 個需要處理",
   "client.summary_extra": "{{count}} 個額外檔案",
   "client.extra_hint": "以下檔案不在官方清單內。MapleLink 不會動它們，僅供你參考。",
   "client.all_good": "這個資料夾與官方清單完全一致，不需要任何處理。",
@@ -488,7 +486,6 @@
   "client.issue_size": "大小不符",
   "client.issue_hash": "內容不符",
   "client.issue_unreadable": "無法讀取",
-  "client.select_all": "全選／全不選",
   "client.selected": "已選 {{count}} 個，共 {{size}}",
   "client.free_space": "可用空間 {{size}}",
   "client.not_enough_space": "空間不足，只剩 {{size}}",
@@ -496,7 +493,6 @@
   "client.download_done": "完成，已寫入 {{count}} 個檔案。",
   "client.download_failed_some": "已寫入 {{written}} 個，{{failed}} 個失敗。失敗的檔案維持原狀，未被改動。",
   "client.rescan_hint": "可以再檢查一次確認結果。中斷後重新檢查即可接續，已完成的檔案不會重複下載。",
-  "client.cancelled": "已取消",
   "client.official_version": "官方版本",
   "client.local_version": "本機版本",
   "client.published": "發布於 {{date}}",
@@ -512,6 +508,11 @@
   "client.group_hash": "內容不符",
   "client.group_unreadable": "無法讀取",
   "client.group_count": "{{count}} 個 · {{size}}",
-  "client.scan_done": "檢查完成",
-  "client.what_changed": "需要下載 {{count}} 個檔案，共 {{size}}。完成後這個資料夾就會與官方 {{version}} 一致。"
+  "client.what_changed": "需要下載 {{count}} 個檔案，共 {{size}}。完成後這個資料夾就會與官方 {{version}} 一致。",
+  "client.exe_dated": "主程式 {{date}}",
+  "client.ready": "準備就緒",
+  "client.ready_hint": "選擇檢查方式後按「開始檢查」，比對本機檔案與官方清單。",
+  "client.needs_repair": "{{count}} 個檔案需要處理",
+  "client.show_files": "顯示檔案清單",
+  "client.hide_files": "收起檔案清單"
 }

@@ -32,15 +32,22 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, ErrorDt
 pub async fn set_config(
     key: String,
     value: String,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), ErrorDto> {
-    let mut config = state.config.write().await;
+    {
+        let mut config = state.config.write().await;
+        apply_config_field(&mut config, &key, &value).map_err(to_dto)?;
+        config_service::save_config(&state.config_path, &config)
+            .await
+            .map_err(to_dto)?;
+    }
 
-    apply_config_field(&mut config, &key, &value).map_err(to_dto)?;
-
-    config_service::save_config(&state.config_path, &config)
-        .await
-        .map_err(to_dto)?;
+    // Every window keeps its own copy, so the others have to be told: without
+    // this, a theme or language change in one window leaves the rest as they
+    // were until they are reopened.
+    use tauri::Emitter;
+    let _ = app.emit("config-changed", &key);
 
     tracing::info!("config updated: {key} = {value}");
     Ok(())
