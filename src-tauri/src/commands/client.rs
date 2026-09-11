@@ -183,7 +183,7 @@ pub async fn client_scan(
     tracing::info!(
         "client scan of {dir}: {} ok, {} to fetch, {} extra, cancelled={}",
         report.ok_files,
-        report.issues.len(),
+        report.issue_count,
         report.extra_files.len(),
         report.cancelled
     );

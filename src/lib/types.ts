@@ -51,9 +51,11 @@ export interface ClientManifestDto {
   productName: string;
   version: string;
   publishDate: string;
-  /** When the current executable build was published; the only public marker
-   *  of a minor update, since beanfun keeps the version number unchanged. */
+  /** When the current executable build was published. */
   exePatchDate: string | null;
+  /** Version including the minor part (`"V282.2"`), read off beanfun's own
+   *  download page; `version` only ever carries the major. */
+  fullVersion: string | null;
   totalBytes: number;
   fileCount: number;
   exeName: string;
@@ -68,9 +70,10 @@ export interface ClientLocalVersionDto {
 
 export type ClientIssueKind = "missing" | "sizeMismatch" | "hashMismatch" | "unreadable";
 
-export interface ClientFileIssueDto {
+/** One file the scan looked at. `kind` is null when it matches the manifest. */
+export interface ClientCheckedFileDto {
   path: string;
-  kind: ClientIssueKind;
+  kind: ClientIssueKind | null;
   expectedSize: number;
   localSize: number | null;
 }
@@ -78,7 +81,8 @@ export interface ClientFileIssueDto {
 export interface ClientScanReportDto {
   totalFiles: number;
   okFiles: number;
-  issues: ClientFileIssueDto[];
+  files: ClientCheckedFileDto[];
+  issueCount: number;
   bytesToFetch: number;
   extraFiles: string[];
   cancelled: boolean;

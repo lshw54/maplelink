@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { Modal } from "../../components/Modal";
-import { GameDownloadModal } from "./GameDownloadModal";
 import { Section } from "./ToolboxUi";
 
 function getMaintenanceInfo(t: (key: string) => string) {
@@ -58,7 +57,6 @@ export function ToolsTab() {
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showWebviewConfirm, setShowWebviewConfirm] = useState(false);
-  const [showDownload, setShowDownload] = useState(false);
 
   async function doResetWebview() {
     setShowWebviewConfirm(false);
@@ -120,19 +118,10 @@ export function ToolsTab() {
       <Section title={t("toolbox.tools.section_client")}>
         <ToolRow
           card={{
-            icon: "⬇️",
+            icon: "🎮",
             iconBg: "bg-[rgba(34,197,94,0.1)]",
-            name: t("toolbox.tools.download_client"),
-            desc: t("toolbox.tools.download_client_desc"),
-            onClick: () => setShowDownload(true),
-          }}
-        />
-        <ToolRow
-          card={{
-            icon: "🩺",
-            iconBg: "bg-[rgba(234,179,8,0.1)]",
-            name: t("toolbox.tools.verify_client"),
-            desc: t("toolbox.tools.verify_client_desc"),
+            name: t("toolbox.tools.client_manager"),
+            desc: t("toolbox.tools.client_manager_desc"),
             onClick: () => {
               commands.openClientManagerWindow().catch(() => {});
             },
@@ -207,9 +196,6 @@ export function ToolsTab() {
           }}
         />
       </Section>
-
-      {/* Official client download list */}
-      <GameDownloadModal isOpen={showDownload} onClose={() => setShowDownload(false)} />
 
       {/* Cleanup confirm modal */}
       <Modal

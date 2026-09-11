@@ -62,9 +62,13 @@ pub struct ClientManifest {
     /// it with this build, so an install carrying it is current, not damaged.
     pub exe_patch_size: Option<u64>,
     /// When that build was published. beanfun replaces `ExePatch.dat` in place
-    /// for a minor update without changing the version number, so this date is
-    /// the only public marker of which minor build is current.
+    /// for a minor update without changing the version number, so this date
+    /// marks which minor build the CDN is serving.
     pub exe_patch_date: Option<String>,
+    /// The full version including the minor part, e.g. `"V282.2"`. `version`
+    /// only ever carries the major (`"V282"`); the minor shows up in the names
+    /// on beanfun's own download page and nowhere else public.
+    pub full_version: Option<String>,
     #[serde(skip)]
     pub files: Vec<ManifestFile>,
 }
@@ -119,6 +123,16 @@ pub async fn fetch_manifest() -> Result<ClientManifest, String> {
     let (size, date) = probe_exe_patch(&manifest.version).await;
     manifest.exe_patch_size = size;
     manifest.exe_patch_date = date;
+    manifest.full_version = match crate::services::game_download::fetch_download_list().await {
+        Ok(items) => {
+            let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+            minor_version(&names, &manifest.version)
+        }
+        Err(e) => {
+            tracing::info!("client manager: download list unavailable for minor version: {e}");
+            None
+        }
+    };
     Ok(manifest)
 }
 
@@ -205,6 +219,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         exe_name,
         exe_patch_size: None,
         exe_patch_date: None,
+        full_version: None,
         files: raw.files,
     })
 }
@@ -263,13 +278,23 @@ pub enum IssueKind {
     Unreadable,
 }
 
+/// Every file the scan looked at, whatever the verdict. The UI lists the
+/// untouched ones too, so a player can see what was left alone rather than
+/// only what went wrong.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FileIssue {
+pub struct CheckedFile {
     pub path: String,
-    pub kind: IssueKind,
+    /// `None` when the file matches the manifest.
+    pub kind: Option<IssueKind>,
     pub expected_size: u64,
     pub local_size: Option<u64>,
+}
+
+impl CheckedFile {
+    pub fn is_issue(&self) -> bool {
+        self.kind.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -277,7 +302,9 @@ pub struct FileIssue {
 pub struct ScanReport {
     pub total_files: usize,
     pub ok_files: usize,
-    pub issues: Vec<FileIssue>,
+    /// Every file examined, in manifest order.
+    pub files: Vec<CheckedFile>,
+    pub issue_count: usize,
     pub bytes_to_fetch: u64,
     /// Present on disk, absent from the manifest. Reported only; never removed.
     pub extra_files: Vec<String>,
@@ -343,20 +370,19 @@ fn scan_blocking(
         let self_patched = (f.path == manifest.exe_name)
             .then_some(manifest.exe_patch_size)
             .flatten();
-        let issue = inspect_one(&target, f, mode, self_patched);
-        match issue {
-            Some(kind) => {
-                let local_size = std::fs::metadata(&target).ok().map(|m| m.len());
-                report.bytes_to_fetch += f.size;
-                report.issues.push(FileIssue {
-                    path: f.path.clone(),
-                    kind,
-                    expected_size: f.size,
-                    local_size,
-                });
-            }
-            None => report.ok_files += 1,
+        let kind = inspect_one(&target, f, mode, self_patched);
+        if kind.is_some() {
+            report.bytes_to_fetch += f.size;
+            report.issue_count += 1;
+        } else {
+            report.ok_files += 1;
         }
+        report.files.push(CheckedFile {
+            path: f.path.clone(),
+            kind,
+            expected_size: f.size,
+            local_size: std::fs::metadata(&target).ok().map(|m| m.len()),
+        });
         bytes_done += f.size;
         // A quick scan runs through 1263 files in seconds, so it reports in
         // batches; a full scan hashes every byte and is slow enough that one
@@ -685,6 +711,26 @@ async fn fetch_one(
     }
 }
 
+/// Pull the full version out of beanfun's download-page item names.
+///
+/// The manifest only ever states the major (`"V282"`), but the download page
+/// lists entries like `【官方載點】V282.2 手動更新`. Only minors belonging to
+/// the published major count, and the highest one wins.
+fn minor_version(names: &[&str], version: &str) -> Option<String> {
+    let major = version_number(version)?;
+    let pattern = regex::Regex::new(r"[Vv]?(\d+)\.(\d+)").ok()?;
+    let best = names
+        .iter()
+        .flat_map(|name| pattern.captures_iter(name))
+        .filter_map(|c| {
+            let found: u32 = c.get(1)?.as_str().parse().ok()?;
+            let minor: u32 = c.get(2)?.as_str().parse().ok()?;
+            (found == major).then_some(minor)
+        })
+        .max()?;
+    Some(format!("V{major}.{best}"))
+}
+
 /// What the installed client's own data says about its version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -914,15 +960,22 @@ mod tests {
         .unwrap();
         // Both files are the right size, so a quick scan is happy.
         assert_eq!(quick.ok_files, 2);
-        assert!(quick.issues.is_empty());
+        assert_eq!(quick.issue_count, 0);
+        assert_eq!(quick.files.len(), 2);
 
         let full = scan(dir.path().to_path_buf(), m, ScanMode::Full, cancel, |_| {})
             .await
             .unwrap();
         assert_eq!(full.ok_files, 1);
-        assert_eq!(full.issues.len(), 1);
-        assert_eq!(full.issues[0].path, "sub/b.bin");
-        assert_eq!(full.issues[0].kind, IssueKind::HashMismatch);
+        assert_eq!(full.issue_count, 1);
+        let bad: Vec<&CheckedFile> = full.files.iter().filter(|f| f.is_issue()).collect();
+        assert_eq!(bad[0].path, "sub/b.bin");
+        assert_eq!(bad[0].kind, Some(IssueKind::HashMismatch));
+        // The untouched file is still reported, so the UI can show it.
+        assert!(full
+            .files
+            .iter()
+            .any(|f| f.path == "a.txt" && !f.is_issue()));
         assert_eq!(full.bytes_to_fetch, 3);
         assert_eq!(full.extra_files, vec!["mine.ini".to_string()]);
     }
@@ -941,11 +994,11 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(report.ok_files, 0);
-        assert_eq!(report.issues.len(), 2);
+        assert_eq!(report.issue_count, 2);
         assert!(report
-            .issues
+            .files
             .iter()
-            .all(|i| i.kind == IssueKind::Missing && i.local_size.is_none()));
+            .all(|f| f.kind == Some(IssueKind::Missing) && f.local_size.is_none()));
         assert_eq!(report.bytes_to_fetch, 8);
     }
 
@@ -962,9 +1015,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(report.issues.len(), 1);
-        assert_eq!(report.issues[0].kind, IssueKind::SizeMismatch);
-        assert_eq!(report.issues[0].local_size, Some(2));
+        assert_eq!(report.issue_count, 1);
+        let bad = report.files.iter().find(|f| f.is_issue()).unwrap();
+        assert_eq!(bad.kind, Some(IssueKind::SizeMismatch));
+        assert_eq!(bad.local_size, Some(2));
     }
 
     #[tokio::test]
@@ -1002,6 +1056,25 @@ mod tests {
         assert_eq!(last.done, 2);
         assert_eq!(last.total, 2);
         assert_eq!(last.bytes_done, last.bytes_total);
+    }
+
+    #[test]
+    fn the_minor_version_comes_from_the_download_page_names() {
+        let names = [
+            "遊戲橘子遊戲管理器(推薦)",
+            "【官方載點】V282.2 手動更新",
+            "【官方載點】V281~V282",
+            "【官方載點】V280~V282",
+        ];
+        assert_eq!(minor_version(&names, "V282").as_deref(), Some("V282.2"));
+        // A minor belonging to another major is not this client's.
+        assert_eq!(minor_version(&names, "V281"), None);
+        // The highest minor wins.
+        let later = ["V282.2 手動更新", "V282.10 手動更新"];
+        assert_eq!(minor_version(&later, "V282").as_deref(), Some("V282.10"));
+        // Nothing to find, and an unparsable version, both come back empty.
+        assert_eq!(minor_version(&["完整程式"], "V282"), None);
+        assert_eq!(minor_version(&names, "L.250508.1_2"), None);
     }
 
     #[test]
@@ -1080,7 +1153,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(plain.issues.iter().any(|i| i.path == "a.txt"));
+        assert!(plain
+            .files
+            .iter()
+            .any(|f| f.path == "a.txt" && f.is_issue()));
 
         // With it, the same folder is clean.
         m.exe_patch_size = Some(b"patched build".len() as u64);
@@ -1093,7 +1169,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(!aware.issues.iter().any(|i| i.path == "a.txt"));
+        assert!(aware
+            .files
+            .iter()
+            .any(|f| f.path == "a.txt" && !f.is_issue()));
     }
 
     #[tokio::test]
@@ -1148,7 +1227,7 @@ mod live_tests {
         )
         .await
         .unwrap();
-        assert_eq!(before.issues.len(), manifest.file_count);
+        assert_eq!(before.issue_count, manifest.file_count);
 
         let report = download(
             dir.path().to_path_buf(),
