@@ -63,6 +63,8 @@ export interface ClientManifestDto {
   exeName: string;
   /** When beanfun could not be reached, the time this copy was cached (RFC 3339). */
   cachedAt: string | null;
+  /** The manifest the scan compares against, so a player can open it themselves. */
+  manifestUrl: string;
 }
 
 /** What the installed client's own Base.wz says about its version. */

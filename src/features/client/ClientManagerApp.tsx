@@ -560,7 +560,22 @@ export function ClientManagerApp() {
                 {t("client.browse")}
               </button>
             </div>
-            <p className="mt-1 text-[10px] text-text-faint">{t("client.folder_note")}</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <p className="min-w-0 flex-1 text-[10px] text-text-faint">
+                {t("client.folder_note")}
+              </p>
+              {/* The list the scan compares against, on the tab that does the
+                  comparing — not only on the download tab. */}
+              {manifest?.manifestUrl && (
+                <button
+                  onClick={() => commands.openExternal(manifest.manifestUrl).catch(() => {})}
+                  title={t("client.manifest_hint")}
+                  className="shrink-0 text-[10px] font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent"
+                >
+                  {t("client.manifest_open")}
+                </button>
+              )}
+            </div>
             <div className="mt-3">
               <Progress
                 fraction={fraction}

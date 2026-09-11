@@ -72,6 +72,9 @@ pub struct ClientManifest {
     /// RFC 3339 time the cached copy was fetched, when this manifest came from
     /// the cache instead of the network. `None` means it is fresh.
     pub cached_at: Option<String>,
+    /// Where the manifest itself lives, so a player can open the same list the
+    /// scan compares against.
+    pub manifest_url: String,
     #[serde(skip)]
     pub files: Vec<ManifestFile>,
 }
@@ -188,7 +191,7 @@ pub async fn fetch_manifest(cache_dir: &Path) -> Result<ClientManifest, String> 
     };
     let mut manifest = parse_manifest(&body)?;
     manifest.cached_at = cached_at;
-    let _ = url;
+    manifest.manifest_url = url;
     let (size, date) = probe_exe_patch(&manifest.version).await;
     manifest.exe_patch_size = size;
     manifest.exe_patch_date = date;
@@ -290,6 +293,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         exe_patch_date: None,
         full_version: None,
         cached_at: None,
+        manifest_url: String::new(),
         files: raw.files,
     })
 }
