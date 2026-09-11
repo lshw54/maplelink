@@ -26,6 +26,10 @@ pub struct GameDownloadItem {
     /// "game" (full client, `type` 1) or "patch" (update, `type` 2); "other"
     /// for any future/unknown type so nothing is silently dropped.
     pub kind: String,
+    /// The Gamania Games Manager installer. beanfun labels it "(推薦)", but it
+    /// takes back the `gamaniagames://` registry key, which turns off
+    /// MapleLink's web-launch interception — so the UI says otherwise.
+    pub manager: bool,
 }
 
 #[derive(Deserialize)]
@@ -107,6 +111,7 @@ pub async fn fetch_download_list() -> Result<Vec<GameDownloadItem>, String> {
         .into_iter()
         .map(|it| GameDownloadItem {
             id: it.id,
+            manager: is_manager(&it.name, &it.point),
             name: it.name,
             size: it.size,
             url: it.point,
@@ -119,6 +124,15 @@ pub async fn fetch_download_list() -> Result<Vec<GameDownloadItem>, String> {
         })
         .collect();
     Ok(items)
+}
+
+/// Whether an entry is the Gamania Games Manager installer rather than the
+/// game itself. Its download lives under `/ggm/`; the name is the fallback for
+/// the day that path changes.
+fn is_manager(name: &str, url: &str) -> bool {
+    url.to_ascii_lowercase().contains("/ggm/")
+        || name.contains("遊戲管理器")
+        || name.contains("遊戲管理員")
 }
 
 /// Pull the `__RequestVerificationToken` hidden-input value out of the page HTML.
@@ -586,5 +600,30 @@ mod live_tests {
         if let Ok(out) = std::env::var("MAPLELINK_TORRENT_OUT") {
             std::fs::write(out, &fixed).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod manager_tests {
+    use super::*;
+
+    #[test]
+    fn the_game_manager_entry_is_recognised() {
+        assert!(is_manager(
+            "遊戲橘子遊戲管理器(推薦)",
+            "https://tw.beanfun.com/ggm/GGMSetup_1.5.0.2.exe"
+        ));
+        // Either signal alone is enough.
+        assert!(is_manager("something else", "https://x/GGM/setup.exe"));
+        assert!(is_manager("遊戲橘子遊戲管理員", "https://x/other.exe"));
+        // The game's own downloads are not the manager.
+        assert!(!is_manager(
+            "【官方載點】V282.2 手動更新",
+            "https://download.beanfun.com/maplestory/patch.exe"
+        ));
+        assert!(!is_manager(
+            "【官方載點】V281~V282",
+            "https://x/v281to282.exe"
+        ));
     }
 }

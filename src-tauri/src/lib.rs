@@ -341,6 +341,7 @@ pub fn run() {
             commands::client::client_scan,
             commands::client::client_download,
             commands::client::client_cancel,
+            commands::client::client_set_paused,
             commands::client::client_free_space,
             commands::client::client_pick_folder,
             commands::client::client_default_folder,

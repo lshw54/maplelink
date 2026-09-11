@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "../../lib/i18n";
@@ -19,6 +19,17 @@ import type {
 type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done";
 type Tone = "busy" | "ok" | "warn";
 type Tab = "verify" | "download";
+
+/** "3 分 20 秒" is noise in a progress line; "3:20" is not. */
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rest = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(rest)}` : `${m}:${pad(rest)}`;
+}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -126,6 +137,11 @@ export function ClientManagerApp() {
   const [outcome, setOutcome] = useState<ClientDownloadReportDto | null>(null);
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
+  const [paused, setPaused] = useState(false);
+  const [direct, setDirect] = useState(false);
+  // Bytes per second, measured between progress events rather than assumed.
+  const [rate, setRate] = useState(0);
+  const rateSample = useRef<{ at: number; bytes: number } | null>(null);
 
   useEffect(() => {
     document.title = t("client.title");
@@ -155,10 +171,21 @@ export function ClientManagerApp() {
   }, []);
 
   useEffect(() => {
-    const scan = listen<ClientProgressDto>("client-scan-progress", (e) => setProgress(e.payload));
-    const down = listen<ClientProgressDto>("client-download-progress", (e) =>
-      setProgress(e.payload),
-    );
+    function track(p: ClientProgressDto) {
+      setProgress(p);
+      const now = performance.now();
+      const last = rateSample.current;
+      // Average over at least half a second, or the number jumps around.
+      if (last && now - last.at >= 500) {
+        const perSecond = ((p.bytesDone - last.bytes) * 1000) / (now - last.at);
+        setRate(Math.max(0, perSecond));
+        rateSample.current = { at: now, bytes: p.bytesDone };
+      } else if (!last) {
+        rateSample.current = { at: now, bytes: p.bytesDone };
+      }
+    }
+    const scan = listen<ClientProgressDto>("client-scan-progress", (e) => track(e.payload));
+    const down = listen<ClientProgressDto>("client-download-progress", (e) => track(e.payload));
     return () => {
       scan.then((un) => un());
       down.then((un) => un());
@@ -197,36 +224,69 @@ export function ClientManagerApp() {
     }
   }, [dir]);
 
-  const runScan = useCallback(async () => {
+  const scanInto = useCallback(async (target: string, how: "quick" | "full") => {
     setError(null);
+    setPaused(false);
+    setRate(0);
+    rateSample.current = null;
     setOutcome(null);
     setReport(null);
     setProgress(null);
     setPhase("scanning");
     try {
-      const r = await commands.clientScan(dir, mode);
+      const r = await commands.clientScan(target, how);
       setReport(r);
       setSelected(new Set(r.files.filter((f) => f.kind !== null).map((f) => f.path)));
       setPhase("scanned");
+      return r;
     } catch (e) {
       setError(String(e));
       setPhase("idle");
+      return null;
     }
-  }, [dir, mode]);
+  }, []);
 
-  const runDownload = useCallback(async () => {
-    setError(null);
-    setProgress(null);
-    setPhase("downloading");
-    try {
-      const r = await commands.clientDownload(dir, [...selected]);
-      setOutcome(r);
-      setPhase("done");
-    } catch (e) {
-      setError(String(e));
-      setPhase("scanned");
-    }
-  }, [dir, selected]);
+  const runScan = useCallback(() => scanInto(dir, mode), [scanInto, dir, mode]);
+
+  const downloadInto = useCallback(
+    async (target: string, paths: string[]) => {
+      setError(null);
+      setPaused(false);
+      setRate(0);
+      rateSample.current = null;
+      setProgress(null);
+      setPhase("downloading");
+      try {
+        const r = await commands.clientDownload(target, paths, direct);
+        setOutcome(r);
+        setPhase("done");
+      } catch (e) {
+        setError(String(e));
+        setPhase("scanned");
+      }
+    },
+    [direct],
+  );
+
+  const runDownload = useCallback(
+    () => downloadInto(dir, [...selected]),
+    [downloadInto, dir, selected],
+  );
+
+  /// Pick a folder, see what is missing, then fetch it — without making the
+  /// player press the same two buttons in order.
+  const startAutoInstall = useCallback(async () => {
+    const picked = await commands.clientPickFolder(dir || null).catch(() => null);
+    if (!picked) return;
+    setDir(picked);
+    setTab("verify");
+    const r = await scanInto(picked, "quick");
+    if (!r || r.cancelled || r.issueCount === 0) return;
+    await downloadInto(
+      picked,
+      r.files.filter((f) => f.kind !== null).map((f) => f.path),
+    );
+  }, [dir, scanInto, downloadInto]);
 
   const busy = phase === "scanning" || phase === "downloading";
   const selectedBytes = useMemo(
@@ -242,11 +302,25 @@ export function ClientManagerApp() {
   const hasWork = !!report && report.issueCount > 0 && !busy;
 
   const status: { headline: string; detail: string; tone: Tone } = (() => {
+    const left = progress ? progress.bytesTotal - progress.bytesDone : 0;
+    const speed =
+      rate > 0
+        ? ` · ${t("client.rate", { rate: formatBytes(rate) })}${
+            left > 0 ? ` · ${t("client.eta", { time: formatDuration(left / rate) })}` : ""
+          }`
+        : "";
     const counted = progress
-      ? `${progress.done} / ${progress.total} · ${formatBytes(progress.bytesDone)} / ${formatBytes(progress.bytesTotal)}`
+      ? `${progress.done} / ${progress.total} · ${formatBytes(progress.bytesDone)} / ${formatBytes(progress.bytesTotal)}${busy ? speed : ""}`
       : "";
     if (phase === "loading") {
       return { headline: t("client.loading_manifest"), detail: "", tone: "busy" };
+    }
+    if (busy && paused) {
+      return {
+        headline: t("client.paused"),
+        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        tone: "warn",
+      };
     }
     if (phase === "scanning") {
       return {
@@ -259,6 +333,17 @@ export function ClientManagerApp() {
       return { headline: t("client.downloading"), detail: counted, tone: "busy" };
     }
     if (outcome) {
+      // A cancelled run stopped part-way; saying "done" would be a lie.
+      if (outcome.cancelled) {
+        return {
+          headline: t("client.download_stopped", {
+            written: String(outcome.written),
+            total: String(outcome.requested),
+          }),
+          detail: t("client.rescan_hint"),
+          tone: "warn",
+        };
+      }
       return outcome.failures.length === 0
         ? {
             headline: t("client.download_done", { count: String(outcome.written) }),
@@ -377,6 +462,9 @@ export function ClientManagerApp() {
         <>
           <div className="shrink-0 px-6 pt-3">
             <div className="flex items-center gap-2">
+              <span className="shrink-0 text-[11px] font-semibold text-text-dim">
+                {t("client.folder_label")}
+              </span>
               <span
                 title={dir}
                 className="min-w-0 flex-1 truncate rounded-lg border border-[var(--tb-border)] bg-[var(--surface)] px-3 py-1.5 font-mono text-[11px] text-text-dim"
@@ -391,6 +479,7 @@ export function ClientManagerApp() {
                 {t("client.browse")}
               </button>
             </div>
+            <p className="mt-1 text-[10px] text-text-faint">{t("client.folder_note")}</p>
             <div className="mt-3">
               <Progress
                 fraction={fraction}
@@ -417,7 +506,7 @@ export function ClientManagerApp() {
           <VerifyPanel report={report} selected={selected} setSelected={setSelected} />
         </>
       ) : (
-        <DownloadPanel />
+        <DownloadPanel onAutoInstall={startAutoInstall} />
       )}
 
       {/* Action bar. */}
@@ -426,6 +515,17 @@ export function ClientManagerApp() {
           {tab === "verify" ? (
             <>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={direct}
+                    onChange={(e) => setDirect(e.target.checked)}
+                    disabled={busy}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span className="font-semibold">{t("client.direct")}</span>
+                  <span className="text-text-faint">{t("client.direct_hint")}</span>
+                </label>
                 {(["quick", "full"] as const).map((m) => (
                   <label key={m} className="flex cursor-pointer items-center gap-1.5 text-[11px]">
                     <input
@@ -464,12 +564,24 @@ export function ClientManagerApp() {
 
         {tab === "verify" &&
           (busy ? (
-            <button
-              onClick={() => commands.clientCancel()}
-              className="shrink-0 rounded-xl border border-border px-6 py-2.5 text-[13px] font-bold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
-            >
-              {t("client.cancel")}
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  const next = !paused;
+                  setPaused(next);
+                  commands.clientSetPaused(next).catch(() => {});
+                }}
+                className="shrink-0 rounded-xl border border-border px-5 py-2.5 text-[13px] font-bold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {paused ? t("client.resume") : t("client.pause")}
+              </button>
+              <button
+                onClick={() => commands.clientCancel()}
+                className="shrink-0 rounded-xl border border-border px-6 py-2.5 text-[13px] font-bold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("client.cancel")}
+              </button>
+            </>
           ) : (
             <>
               <button

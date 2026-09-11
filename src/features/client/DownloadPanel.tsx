@@ -19,25 +19,37 @@ function Row({ item }: { item: GameDownloadDto }) {
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-[var(--tb-border)] px-3.5 py-2.5 last:border-b-0">
-      <span className="min-w-0 flex-1 text-[12px] leading-snug font-semibold break-words text-[var(--text)]">
-        {item.name}
-      </span>
-      <span className="w-16 shrink-0 text-right font-mono text-[11px] text-text-dim">
-        {item.size}
-      </span>
-      <button
-        onClick={copy}
-        className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
-      >
-        {copied ? t("toolbox.download.copied") : t("toolbox.download.copy")}
-      </button>
-      <button
-        onClick={() => openExternal(item.url)}
-        className="shrink-0 rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-2.5 py-1 text-[11px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
-      >
-        {t("toolbox.download.download")}
-      </button>
+    <div className="flex flex-col gap-1 border-b border-[var(--tb-border)] px-3.5 py-2.5 last:border-b-0">
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 text-[12px] leading-snug font-semibold break-words text-[var(--text)]">
+          {item.name}
+          {item.manager && (
+            <span className="ml-2 rounded bg-[rgba(234,179,8,0.14)] px-1.5 py-0.5 text-[10px] font-bold text-yellow-500">
+              {t("toolbox.download.manager_badge")}
+            </span>
+          )}
+        </span>
+        <span className="w-16 shrink-0 text-right font-mono text-[11px] text-text-dim">
+          {item.size}
+        </span>
+        <button
+          onClick={copy}
+          className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+        >
+          {copied ? t("toolbox.download.copied") : t("toolbox.download.copy")}
+        </button>
+        <button
+          onClick={() => openExternal(item.url)}
+          className="shrink-0 rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-2.5 py-1 text-[11px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
+        >
+          {t("toolbox.download.download")}
+        </button>
+      </div>
+      {item.manager && (
+        <p className="text-[11px] leading-relaxed text-text-dim">
+          {t("toolbox.download.manager_why")}
+        </p>
+      )}
     </div>
   );
 }
@@ -47,9 +59,8 @@ function Row({ item }: { item: GameDownloadDto }) {
  * torrent the game manager itself uses, plus beanfun's own installer links.
  * MapleLink hands over links and a torrent file, and downloads nothing here.
  */
-export function DownloadPanel() {
+export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const full = useQuery({
@@ -75,18 +86,11 @@ export function DownloadPanel() {
     if (next === "saved") setTimeout(() => setSaveState("idle"), 2000);
   }
 
-  function copyOfficial() {
-    if (!full.data) return;
-    navigator.clipboard.writeText(full.data.torrentUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
   const games = list.data?.filter((i) => i.kind === "game") ?? [];
   const patches = list.data?.filter((i) => i.kind !== "game") ?? [];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-4">
       {/* Full client over BitTorrent. */}
       <section className="flex flex-col gap-2.5 rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -105,11 +109,10 @@ export function DownloadPanel() {
           </div>
           <div className="flex shrink-0 gap-2">
             <button
-              onClick={copyOfficial}
-              disabled={!full.data}
-              className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent disabled:opacity-50"
+              onClick={onAutoInstall}
+              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
             >
-              {copied ? t("toolbox.download.copied") : t("toolbox.download.full.copy_official")}
+              {t("client.auto_install")}
             </button>
             <button
               onClick={saveTorrent}
@@ -120,7 +123,7 @@ export function DownloadPanel() {
                 ? t("toolbox.download.full.saving")
                 : saveState === "saved"
                   ? t("toolbox.download.full.saved")
-                  : t("toolbox.download.full.save_torrent")}
+                  : t("client.manual_install")}
             </button>
           </div>
         </div>
@@ -146,6 +149,16 @@ export function DownloadPanel() {
         <p className="text-[11px] leading-relaxed text-text-dim">
           {t("toolbox.download.full.intro")}
         </p>
+        <ul className="flex flex-col gap-1 text-[11px] leading-relaxed text-text-dim">
+          <li>
+            <span className="font-semibold text-[var(--text)]">{t("client.auto_install")}</span>{" "}
+            {t("client.auto_install_hint")}
+          </li>
+          <li>
+            <span className="font-semibold text-[var(--text)]">{t("client.manual_install")}</span>{" "}
+            {t("client.manual_install_hint")}
+          </li>
+        </ul>
 
         <details className="text-[11px] leading-relaxed text-text-dim">
           <summary className="cursor-pointer font-semibold text-[var(--text)] select-none">

@@ -44,6 +44,8 @@ export interface GameDownloadDto {
   size: string;
   url: string;
   kind: "game" | "patch" | "other";
+  /** The Gamania Games Manager installer, which the UI flags rather than recommends. */
+  manager: boolean;
 }
 
 /** The official manifest, as the client manager window shows it. */

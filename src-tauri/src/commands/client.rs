@@ -11,8 +11,8 @@ use tauri::{Emitter, Manager};
 
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::client_manager::{
-    self, Cancel, ClientManifest, DownloadProgress, DownloadReport, LocalVersion, ScanMode,
-    ScanReport,
+    self, Cancel, ClientManifest, Control, DownloadProgress, DownloadReport, LocalVersion,
+    ScanMode, ScanReport,
 };
 
 /// The window the client manager runs in. `main.tsx` reads this label to decide
@@ -43,7 +43,7 @@ impl ClientJobs {
                 ErrorCategory::Process,
             ));
         }
-        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        let cancel: Cancel = Arc::new(Control::default());
         *self.cancel.lock().expect("client job lock") = Some(cancel.clone());
         Ok(JobGuard { jobs: self, cancel })
     }
@@ -196,6 +196,7 @@ pub async fn client_scan(
 pub async fn client_download(
     dir: String,
     paths: Vec<String>,
+    direct: bool,
     app: tauri::AppHandle,
     jobs: tauri::State<'_, ClientJobs>,
 ) -> Result<DownloadReport, ErrorDto> {
@@ -214,7 +215,7 @@ pub async fn client_download(
                 timer.tick().await;
                 let snapshot = progress.snapshot();
                 let _ = app.emit(DOWNLOAD_PROGRESS_EVENT, &snapshot);
-                if stop.load(Ordering::Relaxed) {
+                if stop.is_cancelled() {
                     return;
                 }
             }
@@ -225,6 +226,7 @@ pub async fn client_download(
         PathBuf::from(&dir),
         manifest,
         paths,
+        direct,
         guard.cancel.clone(),
         progress.clone(),
     )
@@ -237,10 +239,11 @@ pub async fn client_download(
 
     let report = report?;
     tracing::info!(
-        "client download into {dir}: {} of {} written, {} failed",
+        "client download into {dir} (direct={direct}): {} of {} written, {} failed, cancelled={}",
         report.written,
         report.requested,
-        report.failures.len()
+        report.failures.len(),
+        report.cancelled
     );
     Ok(report)
 }
@@ -249,7 +252,16 @@ pub async fn client_download(
 #[tauri::command]
 pub fn client_cancel(jobs: tauri::State<'_, ClientJobs>) {
     if let Some(cancel) = jobs.cancel.lock().expect("client job lock").as_ref() {
-        cancel.store(true, Ordering::Relaxed);
+        cancel.cancel();
+    }
+}
+
+/// Hold the running job, or let it continue. A paused job keeps its place, so
+/// resuming costs nothing; cancelling a paused job still works.
+#[tauri::command]
+pub fn client_set_paused(paused: bool, jobs: tauri::State<'_, ClientJobs>) {
+    if let Some(cancel) = jobs.cancel.lock().expect("client job lock").as_ref() {
+        cancel.set_paused(paused);
     }
 }
 

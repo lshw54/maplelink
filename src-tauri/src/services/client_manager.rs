@@ -20,7 +20,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// How many files to fetch at once. beanfun's CDN is fine with this and it
@@ -322,12 +322,53 @@ pub struct Progress {
     pub current: String,
 }
 
-/// Shared stop flag. Set it and the run finishes early, reporting `cancelled`.
-pub type Cancel = Arc<AtomicBool>;
-
-fn cancelled(c: &Cancel) -> bool {
-    c.load(Ordering::Relaxed)
+/// Shared run control: stop a job, or hold it without losing its place.
+#[derive(Debug, Default)]
+pub struct Control {
+    cancelled: AtomicBool,
+    paused: AtomicBool,
 }
+
+/// How often a paused job looks up to see whether it may continue.
+const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(120);
+
+impl Control {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        // A paused job must wake up to notice it was cancelled.
+        self.paused.store(false, Ordering::Relaxed);
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Block while paused. `false` means the job should stop.
+    fn hold_blocking(&self) -> bool {
+        while self.is_paused() && !self.is_cancelled() {
+            std::thread::sleep(PAUSE_POLL);
+        }
+        !self.is_cancelled()
+    }
+
+    /// The same, for a job running on the async runtime.
+    async fn hold_async(&self) -> bool {
+        while self.is_paused() && !self.is_cancelled() {
+            tokio::time::sleep(PAUSE_POLL).await;
+        }
+        !self.is_cancelled()
+    }
+}
+
+pub type Cancel = Arc<Control>;
 
 /// Compare `dir` against the manifest.
 ///
@@ -337,30 +378,36 @@ pub async fn scan(
     manifest: Arc<ClientManifest>,
     mode: ScanMode,
     cancel: Cancel,
-    on_progress: impl Fn(Progress) + Send + 'static,
+    on_progress: impl Fn(Progress) + Send + Sync + 'static,
 ) -> Result<ScanReport, String> {
     tokio::task::spawn_blocking(move || scan_blocking(&dir, &manifest, mode, &cancel, &on_progress))
         .await
         .map_err(|e| format!("scan task failed: {e}"))?
 }
 
+/// Two passes, because they cost wildly different amounts.
+///
+/// The first only asks the filesystem for sizes: 1263 of those take a moment
+/// and already catch everything missing or truncated. The second hashes what
+/// survived, which is the expensive part — so it is the only one that runs in
+/// parallel, and the only one whose progress is measured in bytes.
 fn scan_blocking(
     dir: &Path,
     manifest: &ClientManifest,
     mode: ScanMode,
     cancel: &Cancel,
-    on_progress: &(impl Fn(Progress) + Send),
+    on_progress: &(impl Fn(Progress) + Send + Sync),
 ) -> Result<ScanReport, String> {
     let total = manifest.files.len();
-    let bytes_total: u64 = manifest.files.iter().map(|f| f.size).sum();
     let mut report = ScanReport {
         total_files: total,
         ..Default::default()
     };
-    let mut bytes_done = 0u64;
 
+    // ---- pass 1: metadata -------------------------------------------------
+    let mut pending: Vec<usize> = Vec::new();
     for (i, f) in manifest.files.iter().enumerate() {
-        if cancelled(cancel) {
+        if !cancel.hold_blocking() {
             report.cancelled = true;
             return Ok(report);
         }
@@ -370,12 +417,9 @@ fn scan_blocking(
         let self_patched = (f.path == manifest.exe_name)
             .then_some(manifest.exe_patch_size)
             .flatten();
-        let kind = inspect_one(&target, f, mode, self_patched);
-        if kind.is_some() {
-            report.bytes_to_fetch += f.size;
-            report.issue_count += 1;
-        } else {
-            report.ok_files += 1;
+        let (kind, needs_hash) = inspect_metadata(&target, f, mode, self_patched);
+        if needs_hash {
+            pending.push(i);
         }
         report.files.push(CheckedFile {
             path: f.path.clone(),
@@ -383,56 +427,213 @@ fn scan_blocking(
             expected_size: f.size,
             local_size: std::fs::metadata(&target).ok().map(|m| m.len()),
         });
-        bytes_done += f.size;
-        // A quick scan runs through 1263 files in seconds, so it reports in
-        // batches; a full scan hashes every byte and is slow enough that one
-        // event per file is what makes the bar move.
-        let every = if mode == ScanMode::Full { 1 } else { 25 };
-        if i % every == 0 || i + 1 == total {
+        if i % 50 == 0 || i + 1 == total {
             on_progress(Progress {
                 done: i + 1,
                 total,
-                bytes_done,
-                bytes_total,
+                bytes_done: 0,
+                bytes_total: 0,
                 current: f.path.clone(),
             });
         }
     }
 
-    report.extra_files = find_extra_files(dir, manifest, cancel);
+    // ---- pass 2: hashing --------------------------------------------------
+    if !pending.is_empty() {
+        let bytes_total: u64 = pending.iter().map(|&i| manifest.files[i].size).sum();
+        let verdicts = hash_in_parallel(dir, manifest, &pending, cancel, bytes_total, on_progress)?;
+        for (&i, kind) in pending.iter().zip(verdicts) {
+            report.files[i].kind = kind;
+        }
+    }
+
+    if cancel.is_cancelled() {
+        report.cancelled = true;
+    }
+    for f in &report.files {
+        if f.is_issue() {
+            report.issue_count += 1;
+            report.bytes_to_fetch += f.expected_size;
+        } else {
+            report.ok_files += 1;
+        }
+    }
+    if !report.cancelled {
+        report.extra_files = find_extra_files(dir, manifest, cancel);
+    }
     Ok(report)
 }
 
-/// `None` when the file is good enough for the mode asked for.
-fn inspect_one(
+/// Hash the pending files across a few threads.
+///
+/// Reading several files at once is a large win on flash and a large loss on a
+/// spinning disk, where the heads end up seeking between them — so a spinning
+/// disk gets one worker.
+fn hash_in_parallel(
+    dir: &Path,
+    manifest: &ClientManifest,
+    pending: &[usize],
+    cancel: &Cancel,
+    bytes_total: u64,
+    on_progress: &(impl Fn(Progress) + Send + Sync),
+) -> Result<Vec<Option<IssueKind>>, String> {
+    let workers = hash_workers(dir).min(pending.len());
+    let next = AtomicUsize::new(0);
+    let bytes_done = AtomicU64::new(0);
+    let done = AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<IssueKind>>> = (0..pending.len())
+        .map(|_| std::sync::Mutex::new(None))
+        .collect();
+
+    tracing::info!(
+        "client scan: hashing {} files ({} bytes) with {workers} worker(s)",
+        pending.len(),
+        bytes_total
+    );
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                if !cancel.hold_blocking() {
+                    return;
+                }
+                let slot = next.fetch_add(1, Ordering::Relaxed);
+                let Some(&index) = pending.get(slot) else {
+                    return;
+                };
+                let f = &manifest.files[index];
+                let Ok(target) = safe_join(dir, &f.path) else {
+                    *out[slot].lock().expect("hash slot") = Some(IssueKind::Unreadable);
+                    continue;
+                };
+                let verdict = match hash_file(&target) {
+                    Ok(got) if got.eq_ignore_ascii_case(&f.sha256) => None,
+                    Ok(_) => Some(IssueKind::HashMismatch),
+                    Err(_) => Some(IssueKind::Unreadable),
+                };
+                *out[slot].lock().expect("hash slot") = verdict;
+
+                let seen = bytes_done.fetch_add(f.size, Ordering::Relaxed) + f.size;
+                let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                on_progress(Progress {
+                    done: n,
+                    total: pending.len(),
+                    bytes_done: seen,
+                    bytes_total,
+                    current: f.path.clone(),
+                });
+            });
+        }
+    });
+
+    Ok(out
+        .into_iter()
+        .map(|m| m.into_inner().expect("hash slot"))
+        .collect())
+}
+
+/// One worker on a spinning disk, a handful on anything else.
+fn hash_workers(dir: &Path) -> usize {
+    if spinning_disk(dir).unwrap_or(false) {
+        return 1;
+    }
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+    // Past about four readers the drive, not the CPU, is the limit.
+    cores.clamp(1, 4)
+}
+
+/// What the filesystem alone can say. The second element asks for a hash: the
+/// file is the right size, so only its contents are still in question.
+fn inspect_metadata(
     target: &Path,
     f: &ManifestFile,
     mode: ScanMode,
     self_patched_size: Option<u64>,
-) -> Option<IssueKind> {
+) -> (Option<IssueKind>, bool) {
     let meta = match std::fs::metadata(target) {
         Ok(m) => m,
-        Err(_) => return Some(IssueKind::Missing),
+        Err(_) => return (Some(IssueKind::Missing), false),
     };
     if !meta.is_file() {
-        return Some(IssueKind::Missing);
+        return (Some(IssueKind::Missing), false);
     }
     // Matching the build the game patches itself to is correct, and there is no
     // published hash for it, so the check ends here.
     if Some(meta.len()) == self_patched_size {
-        return None;
+        return (None, false);
     }
     if meta.len() != f.size {
-        return Some(IssueKind::SizeMismatch);
+        return (Some(IssueKind::SizeMismatch), false);
     }
-    if mode == ScanMode::Quick || f.sha256.is_empty() {
-        return None;
+    (None, mode == ScanMode::Full && !f.sha256.is_empty())
+}
+
+/// Whether the volume holding `dir` is a spinning disk. `None` when the system
+/// will not say, which is treated as "not spinning" by the caller.
+#[cfg(target_os = "windows")]
+fn spinning_disk(dir: &Path) -> Option<bool> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::Ioctl::{
+        StorageDeviceSeekPenaltyProperty, DEVICE_SEEK_PENALTY_DESCRIPTOR,
+        IOCTL_STORAGE_QUERY_PROPERTY, STORAGE_PROPERTY_QUERY,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    // `\\.\C:` — the volume the path sits on.
+    let root = dir.components().next()?;
+    let mut path: Vec<u16> = std::ffi::OsStr::new(r"\\.\")
+        .encode_wide()
+        .chain(root.as_os_str().encode_wide().take(2))
+        .collect();
+    path.push(0);
+
+    // SAFETY: `path` is a NUL-terminated UTF-16 device path; the query and
+    // descriptor are plain PODs sized by `size_of`, and the handle is closed on
+    // every path out.
+    unsafe {
+        let handle = CreateFileW(
+            path.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let query = STORAGE_PROPERTY_QUERY {
+            PropertyId: StorageDeviceSeekPenaltyProperty,
+            QueryType: 0,
+            AdditionalParameters: [0],
+        };
+        let mut desc: DEVICE_SEEK_PENALTY_DESCRIPTOR = std::mem::zeroed();
+        let mut returned = 0u32;
+        let ok = DeviceIoControl(
+            handle,
+            IOCTL_STORAGE_QUERY_PROPERTY,
+            &query as *const _ as *const _,
+            std::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32,
+            &mut desc as *mut _ as *mut _,
+            std::mem::size_of::<DEVICE_SEEK_PENALTY_DESCRIPTOR>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        );
+        CloseHandle(handle);
+        (ok != 0).then_some(desc.IncursSeekPenalty)
     }
-    match hash_file(target) {
-        Ok(got) if got.eq_ignore_ascii_case(&f.sha256) => None,
-        Ok(_) => Some(IssueKind::HashMismatch),
-        Err(_) => Some(IssueKind::Unreadable),
-    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn spinning_disk(_dir: &Path) -> Option<bool> {
+    None
 }
 
 fn hash_file(path: &Path) -> std::io::Result<String> {
@@ -462,7 +663,7 @@ fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> V
     let mut extra = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        if cancelled(cancel) || extra.len() >= 500 {
+        if cancel.is_cancelled() || extra.len() >= 500 {
             break;
         }
         let Ok(entries) = std::fs::read_dir(&current) else {
@@ -536,10 +737,14 @@ impl DownloadProgress {
 /// Each file is written beside its target and renamed over it only after its
 /// SHA-256 matches what beanfun published, so a failure anywhere leaves the
 /// existing file exactly as it was.
+/// `direct` bypasses the system proxy. Players running a game accelerator
+/// often reach beanfun's CDN faster without it, and the CDN is the same host
+/// either way — so this is a choice, not a default.
 pub async fn download(
     dir: PathBuf,
     manifest: Arc<ClientManifest>,
     paths: Vec<String>,
+    direct: bool,
     cancel: Cancel,
     progress: Arc<DownloadProgress>,
 ) -> Result<DownloadReport, String> {
@@ -561,14 +766,21 @@ pub async fn download(
     progress
         .bytes_total
         .store(files.iter().map(|f| f.size).sum(), Ordering::Relaxed);
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .user_agent(crate::services::http_util::USER_AGENT)
         // No overall timeout: a 186 MB file on a slow line is not a failure.
-        .connect_timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(20));
+    if direct {
+        builder = builder.no_proxy();
+    }
+    let client = builder
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     let failures = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    // Counted on success only. Deriving it from `total - failures` would call
+    // every file a cancelled run never reached "written".
+    let written = Arc::new(AtomicUsize::new(0));
 
     futures_util::stream::iter(files)
         .for_each_concurrent(DOWNLOAD_CONCURRENCY, |f| {
@@ -578,9 +790,10 @@ pub async fn download(
                 manifest.clone(),
                 cancel.clone(),
             );
-            let (failures, progress) = (failures.clone(), progress.clone());
+            let (failures, progress, written) =
+                (failures.clone(), progress.clone(), written.clone());
             async move {
-                if cancelled(&cancel) {
+                if !cancel.hold_async().await {
                     return;
                 }
                 // Bytes already counted for this file, so a retry or a failure
@@ -593,12 +806,15 @@ pub async fn download(
                     p.bytes_done.fetch_add(n, Ordering::Relaxed);
                 })
                 .await;
+                if result.is_ok() {
+                    written.fetch_add(1, Ordering::Relaxed);
+                }
                 if let Err(e) = result {
                     // The file did not land, so its bytes are not progress.
                     progress
                         .bytes_done
                         .fetch_sub(counted.load(Ordering::Relaxed), Ordering::Relaxed);
-                    if !cancelled(&cancel) {
+                    if !cancel.is_cancelled() {
                         tracing::warn!("client manager: {} failed: {e}", f.path);
                         failures.lock().await.push(DownloadFailure {
                             path: f.path.clone(),
@@ -614,9 +830,9 @@ pub async fn download(
     let failures = failures.lock().await.clone();
     Ok(DownloadReport {
         requested: total,
-        written: total - failures.len(),
+        written: written.load(Ordering::Relaxed),
         failures,
-        cancelled: cancelled(&cancel),
+        cancelled: cancel.is_cancelled(),
     })
 }
 
@@ -664,7 +880,8 @@ async fn fetch_one(
     let mut written = 0u64;
     let mut stream = resp.bytes_stream();
     let outcome = loop {
-        if cancelled(cancel) {
+        // Pausing mid-file matters: one of these is 177 MB.
+        if !cancel.hold_async().await {
             break Err("cancelled".to_string());
         }
         match stream.next().await {
@@ -947,7 +1164,7 @@ mod tests {
     async fn a_quick_scan_sees_sizes_and_a_full_scan_sees_content() {
         let dir = sample_dir();
         let m = Arc::new(manifest());
-        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        let cancel: Cancel = Arc::new(Control::default());
 
         let quick = scan(
             dir.path().to_path_buf(),
@@ -988,7 +1205,7 @@ mod tests {
             dir.path().to_path_buf(),
             m,
             ScanMode::Quick,
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Control::default()),
             |_| {},
         )
         .await
@@ -1010,7 +1227,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             ScanMode::Quick,
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Control::default()),
             |_| {},
         )
         .await
@@ -1024,7 +1241,8 @@ mod tests {
     #[tokio::test]
     async fn cancelling_stops_the_scan_and_says_so() {
         let dir = sample_dir();
-        let cancel: Cancel = Arc::new(AtomicBool::new(true));
+        let cancel: Cancel = Arc::new(Control::default());
+        cancel.cancel();
         let report = scan(
             dir.path().to_path_buf(),
             Arc::new(manifest()),
@@ -1046,7 +1264,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             ScanMode::Quick,
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Control::default()),
             move |p| sink.lock().unwrap().push(p),
         )
         .await
@@ -1056,6 +1274,23 @@ mod tests {
         assert_eq!(last.done, 2);
         assert_eq!(last.total, 2);
         assert_eq!(last.bytes_done, last.bytes_total);
+    }
+
+    #[test]
+    fn pausing_holds_a_run_and_cancelling_releases_it() {
+        let control = Control::default();
+        assert!(!control.is_paused());
+        // Not paused: the check returns at once and says carry on.
+        assert!(control.hold_blocking());
+
+        control.set_paused(true);
+        assert!(control.is_paused());
+
+        // Cancelling a paused run must wake it, or it would hold forever.
+        control.cancel();
+        assert!(!control.is_paused());
+        assert!(!control.hold_blocking());
+        assert!(control.is_cancelled());
     }
 
     #[test]
@@ -1148,7 +1383,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(m.clone()),
             ScanMode::Full,
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Control::default()),
             |_| {},
         )
         .await
@@ -1164,7 +1399,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(m),
             ScanMode::Full,
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(Control::default()),
             |_| {},
         )
         .await
@@ -1176,13 +1411,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_cancelled_download_does_not_claim_the_files_it_never_fetched() {
+        let dir = TempDir::new("mlcancel");
+        let cancel: Cancel = Arc::new(Control::default());
+        cancel.cancel();
+
+        let report = download(
+            dir.path().to_path_buf(),
+            Arc::new(manifest()),
+            vec!["a.txt".to_string(), "sub/b.bin".to_string()],
+            false,
+            cancel,
+            Arc::new(DownloadProgress::default()),
+        )
+        .await
+        .unwrap();
+
+        assert!(report.cancelled);
+        assert_eq!(report.requested, 2);
+        // Nothing was fetched, so nothing may be reported as written.
+        assert_eq!(report.written, 0);
+        assert!(report.failures.is_empty());
+    }
+
+    #[tokio::test]
     async fn downloading_a_file_the_manifest_does_not_list_is_refused() {
         let dir = TempDir::new("mldl");
         let err = download(
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             vec!["not-in-manifest.dll".to_string()],
-            Arc::new(AtomicBool::new(false)),
+            false,
+            Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
         )
         .await
@@ -1214,7 +1474,7 @@ mod live_tests {
         eprintln!("picked: {picked:?}");
 
         let dir = TempDir::new("mllive");
-        let cancel: Cancel = Arc::new(AtomicBool::new(false));
+        let cancel: Cancel = Arc::new(Control::default());
         let progress = Arc::new(DownloadProgress::default());
 
         // An empty folder scans as entirely missing — the full-install path.
@@ -1233,6 +1493,7 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest.clone(),
             picked.clone(),
+            false,
             cancel.clone(),
             progress.clone(),
         )
@@ -1285,7 +1546,8 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest,
             vec![victim.path.clone()],
-            Arc::new(AtomicBool::new(false)),
+            false,
+            Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
         )
         .await
