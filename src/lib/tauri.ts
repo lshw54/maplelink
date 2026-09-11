@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { errorMessage } from "./errors";
 import type {
   AccountLimitDto,
   AddServiceAccountDto,
@@ -283,6 +284,8 @@ export async function solveRecaptcha(
 
     commands
       .openRecaptchaWindow(step)
-      .catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
+      .catch((err) =>
+        finish(() => reject(err instanceof Error ? err : new Error(errorMessage(err)))),
+      );
   });
 }

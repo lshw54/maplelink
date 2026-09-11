@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { errorMessage } from "../../lib/errors";
 import { useAuthStore } from "../../lib/stores/auth-store";
 import { useLogin } from "../../lib/hooks/use-auth";
 import type { AdvanceCheckState } from "../../lib/types";
@@ -11,20 +12,6 @@ interface VerifyFormProps {
   onVerified: () => void;
   onAdvanceCheck: (url?: string) => void;
   onTotpRequired: () => void;
-}
-
-function extractErrorMessage(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (typeof err === "object" && err !== null) {
-    const obj = err as Record<string, unknown>;
-    if (typeof obj.message === "string" && obj.message) return obj.message;
-    try {
-      return JSON.stringify(err);
-    } catch {
-      /* fallback */
-    }
-  }
-  return String(err);
 }
 
 export function VerifyForm({
@@ -57,7 +44,7 @@ export function VerifyForm({
       setCheckState(state);
       setCaptchaImage(state.captchaImageBase64);
     } catch (err) {
-      const msg = extractErrorMessage(err);
+      const msg = errorMessage(err);
       if (msg.includes("advance_check_web:")) {
         const url = msg.replace("advance_check_web:", "").replace("Invalid credentials: ", "");
         setWebVerifyUrl(url);
@@ -167,7 +154,7 @@ export function VerifyForm({
         }
       }
     } catch (err) {
-      setError(extractErrorMessage(err));
+      setError(errorMessage(err));
       await handleRefreshCaptcha();
     } finally {
       setSubmitting(false);
