@@ -696,6 +696,11 @@ pub fn run() {
                     });
                     if on_screen {
                         let _ = win.set_position(tauri::Position::Physical(pos));
+                        // The check above only asks whether the corner landed on
+                        // a monitor. A window saved hanging off the right edge —
+                        // or one that is taller this launch than it was last —
+                        // still needs sliding back before it is shown.
+                        crate::commands::system::keep_on_screen(&win.as_ref().window());
                     } else {
                         tracing::info!("saved window position {x},{y} is off-screen, centering");
                     }
