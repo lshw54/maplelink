@@ -108,22 +108,23 @@ export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) 
             )}
           </div>
           <div className="flex shrink-0 gap-2">
-            <button
-              onClick={onAutoInstall}
-              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
-            >
-              {t("client.auto_install")}
-            </button>
+            {/* The quiet option first, the one most players want on the right. */}
             <button
               onClick={saveTorrent}
               disabled={saveState === "saving" || !full.data}
-              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95 disabled:opacity-50"
+              className="rounded-lg border border-border px-4 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent disabled:opacity-50"
             >
               {saveState === "saving"
                 ? t("toolbox.download.full.saving")
                 : saveState === "saved"
                   ? t("toolbox.download.full.saved")
                   : t("client.manual_install")}
+            </button>
+            <button
+              onClick={onAutoInstall}
+              className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90 active:scale-95"
+            >
+              {t("client.auto_install")}
             </button>
           </div>
         </div>
@@ -151,12 +152,12 @@ export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) 
         </p>
         <ul className="flex flex-col gap-1 text-[11px] leading-relaxed text-text-dim">
           <li>
-            <span className="font-semibold text-[var(--text)]">{t("client.auto_install")}</span>{" "}
-            {t("client.auto_install_hint")}
-          </li>
-          <li>
             <span className="font-semibold text-[var(--text)]">{t("client.manual_install")}</span>{" "}
             {t("client.manual_install_hint")}
+          </li>
+          <li>
+            <span className="font-semibold text-[var(--text)]">{t("client.auto_install")}</span>{" "}
+            {t("client.auto_install_hint")}
           </li>
         </ul>
 

@@ -522,7 +522,7 @@
   "client.search": "Search paths…",
   "client.nothing_here": "Nothing matches.",
   "client.select_all": "Select all / none",
-  "client.download_tab_hint": "MapleLink hands over official links and a torrent; it downloads and installs nothing here.",
+  "client.download_tab_hint": "This tab only hands over official links and a torrent; Download and install switches to Check & repair to do the work.",
   "client.pause": "Pause",
   "client.resume": "Resume",
   "client.paused": "Paused",
@@ -537,5 +537,9 @@
   "client.auto_install": "Download and install",
   "client.auto_install_hint": "Pick an empty folder and MapleLink fetches the whole client from the official CDN. You can pause it.",
   "client.manual_install": "Manual: save the torrent",
-  "client.manual_install_hint": "Download it yourself in a BitTorrent client; MapleLink carries none of the transfer."
+  "client.manual_install_hint": "Download it yourself in a BitTorrent client; MapleLink carries none of the transfer.",
+  "client.stat_published": "Published",
+  "client.stat_exe": "Executable",
+  "client.stat_files": "Files",
+  "client.stat_size": "Install size"
 }

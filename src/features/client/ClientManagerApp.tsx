@@ -138,7 +138,7 @@ export function ClientManagerApp() {
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
-  const [direct, setDirect] = useState(false);
+  const [direct, setDirect] = useState(true);
   // Bytes per second, measured between progress events rather than assumed.
   const [rate, setRate] = useState(0);
   const rateSample = useRef<{ at: number; bytes: number } | null>(null);
@@ -399,18 +399,23 @@ export function ClientManagerApp() {
 
       {/* Which game, which version, how it stands. */}
       <div className="shrink-0 px-6 pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[22px] leading-tight font-bold tracking-tight">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-[22px] leading-none font-bold tracking-tight">
             {manifest?.productName ?? "…"}
           </h1>
+          <span className="rounded-md bg-[var(--surface-hover)] px-2 py-1 font-mono text-[12px] leading-none font-bold text-accent">
+            {manifest?.fullVersion ?? manifest?.version ?? "—"}
+          </span>
+          <div className="flex-1" />
           {local !== undefined && (
             <span
-              className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold ${
                 local?.matchesOfficial
                   ? "bg-[rgba(34,197,94,0.14)] text-green-500"
                   : "bg-[rgba(234,179,8,0.14)] text-yellow-500"
               }`}
             >
+              <span className="text-[8px]">●</span>
               {local === null
                 ? t("client.no_client_here")
                 : local.matchesOfficial
@@ -422,23 +427,29 @@ export function ClientManagerApp() {
             </span>
           )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-dim">
-          <span className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 font-mono text-[11px] font-bold text-[var(--text)]">
-            {manifest?.fullVersion ?? manifest?.version ?? "—"}
-          </span>
-          {manifest?.publishDate && (
-            <span>{t("client.published", { date: manifest.publishDate })}</span>
-          )}
-          {exeDate && <span>{t("client.exe_dated", { date: exeDate })}</span>}
-          {manifest && (
-            <span>
-              {t("client.stats", {
-                count: String(manifest.fileCount),
-                size: formatBytes(manifest.totalBytes),
-              })}
-            </span>
-          )}
-        </div>
+
+        {manifest && (
+          <div className="mt-2.5 flex flex-wrap items-stretch gap-x-6 gap-y-2 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-2">
+            {(
+              [
+                ["client.stat_published", manifest.publishDate || "—"],
+                ["client.stat_exe", exeDate || "—"],
+                ["client.stat_files", String(manifest.fileCount)],
+                ["client.stat_size", formatBytes(manifest.totalBytes)],
+              ] as const
+            ).map(([label, value], i) => (
+              <div
+                key={label}
+                className={`flex flex-col gap-0.5 ${i > 0 ? "border-l border-[var(--tb-border)] pl-6" : ""}`}
+              >
+                <span className="text-[9px] font-semibold tracking-[1.5px] text-text-faint uppercase">
+                  {t(label)}
+                </span>
+                <span className="font-mono text-[12px] text-[var(--text)]">{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tabs. */}

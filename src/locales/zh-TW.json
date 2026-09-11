@@ -522,7 +522,7 @@
   "client.search": "搜尋檔名…",
   "client.nothing_here": "沒有符合的項目。",
   "client.select_all": "全選／全不選",
-  "client.download_tab_hint": "MapleLink 只提供官方連結與種子檔，不會代為下載或安裝。",
+  "client.download_tab_hint": "本頁只提供官方連結與種子檔，不會自行下載；「自動下載安裝」會轉到「檢查與修復」進行。",
   "client.pause": "暫停",
   "client.resume": "繼續",
   "client.paused": "已暫停",
@@ -537,5 +537,9 @@
   "client.auto_install": "自動下載安裝",
   "client.auto_install_hint": "選一個空資料夾，MapleLink 直接從官方 CDN 取得整個客戶端，過程可暫停。",
   "client.manual_install": "手動：儲存種子檔",
-  "client.manual_install_hint": "自己用 BT 工具下載，MapleLink 不參與傳輸。"
+  "client.manual_install_hint": "自己用 BT 工具下載，MapleLink 不參與傳輸。",
+  "client.stat_published": "版本發布",
+  "client.stat_exe": "主程式",
+  "client.stat_files": "檔案數",
+  "client.stat_size": "安裝容量"
 }
