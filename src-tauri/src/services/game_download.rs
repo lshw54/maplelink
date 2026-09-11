@@ -183,6 +183,9 @@ pub struct FullClientInfo {
     /// lives in under the CDN root.
     pub folder_name: String,
     pub exe_name: String,
+    /// Where the manifest itself lives, so a player can open it and check the
+    /// same list the scan compares against.
+    pub manifest_url: String,
 }
 
 #[derive(Deserialize)]
@@ -222,7 +225,7 @@ struct ProductInfo {
 /// Two public GETs: the catalog names the game's manifest URL, the manifest
 /// carries the version, the CDN base and the per-file list. Shared by the
 /// torrent view here and by the client manager, which needs the file list.
-pub async fn fetch_product_info_body() -> Result<String, String> {
+pub async fn fetch_product_info_body() -> Result<(String, String), String> {
     let client = reqwest::Client::builder()
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(20))
@@ -250,14 +253,16 @@ pub async fn fetch_product_info_body() -> Result<String, String> {
     if !resp.status().is_success() {
         return Err(format!("product info returned HTTP {}", resp.status()));
     }
-    crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
+    let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
         .await
-        .ok_or_else(|| "product info body unreadable".to_string())
+        .ok_or_else(|| "product info body unreadable".to_string())?;
+    Ok((info_url, body))
 }
 
 /// Fetch the full-client torrent details for MapleStory TW.
 pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
-    full_client_info(&fetch_product_info_body().await?)
+    let (url, body) = fetch_product_info_body().await?;
+    full_client_info(&body, &url)
 }
 
 /// The MapleStory entry's `infoData` URL out of the catalog body.
@@ -275,7 +280,7 @@ fn product_info_url(catalog_json: &str) -> Result<String, String> {
 /// Build the UI record from a `productInfo.json` body, the way GGM does:
 /// torrent at `{baseUrl}torrent/{productId}_{version}.torrent`, and the
 /// game folder is the first segment of `executionPath`.
-fn full_client_info(product_info_json: &str) -> Result<FullClientInfo, String> {
+fn full_client_info(product_info_json: &str, manifest_url: &str) -> Result<FullClientInfo, String> {
     let info: ProductInfo = serde_json::from_str(product_info_json)
         .map_err(|e| format!("failed to parse product info: {e}"))?;
     if info.version.trim().is_empty() {
@@ -300,12 +305,15 @@ fn full_client_info(product_info_json: &str) -> Result<FullClientInfo, String> {
         file_count: info.files.len(),
         folder_name,
         exe_name,
+        manifest_url: manifest_url.to_string(),
     })
 }
 
 #[cfg(test)]
 mod full_client_tests {
     use super::*;
+
+    const MANIFEST_URL: &str = "http://maplestory-download.beanfun.com/maplestory/productInfo.json";
 
     const CATALOG: &str = r#"{"products":[
         {"seq":2,"productId":"ELS","infoData":"http://elsword-download.beanfun.com/Elsword/productInfo.json"},
@@ -345,7 +353,7 @@ mod full_client_tests {
 
     #[test]
     fn builds_the_torrent_url_the_way_ggm_does() {
-        let got = full_client_info(INFO).unwrap();
+        let got = full_client_info(INFO, MANIFEST_URL).unwrap();
         assert_eq!(
             got,
             FullClientInfo {
@@ -359,6 +367,7 @@ mod full_client_tests {
                         .into(),
                 folder_name: "P2PdPoyK5obH".into(),
                 exe_name: "MapleStory.exe".into(),
+                manifest_url: MANIFEST_URL.into(),
             }
         );
     }
@@ -366,7 +375,7 @@ mod full_client_tests {
     #[test]
     fn a_base_url_without_a_trailing_slash_gets_one() {
         let body = INFO.replace("/maplestory/download/\"", "/maplestory/download\"");
-        let got = full_client_info(&body).unwrap();
+        let got = full_client_info(&body, MANIFEST_URL).unwrap();
         assert!(got
             .torrent_url
             .ends_with("/download/torrent/MS_V282.torrent"));
@@ -374,13 +383,13 @@ mod full_client_tests {
 
     #[test]
     fn missing_version_or_base_url_is_an_error() {
-        assert!(full_client_info(&INFO.replace("\"V282\"", "\"\"")).is_err());
-        assert!(full_client_info(&INFO.replace("https://maplestory-download", "ftp://x")).is_err());
+        assert!(full_client_info(&INFO.replace("\"V282\"", "\"\""), MANIFEST_URL).is_err());
+        assert!(full_client_info(&INFO.replace("https://maplestory-download", "ftp://x"), MANIFEST_URL).is_err());
     }
 
     #[test]
     fn an_empty_execution_path_yields_empty_names_not_a_panic() {
-        let got = full_client_info(&INFO.replace("P2PdPoyK5obH/MapleStory.exe", "")).unwrap();
+        let got = full_client_info(&INFO.replace("P2PdPoyK5obH/MapleStory.exe", ""), MANIFEST_URL).unwrap();
         assert_eq!(got.folder_name, "");
         assert_eq!(got.exe_name, "");
     }

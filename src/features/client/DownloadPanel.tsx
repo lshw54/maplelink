@@ -179,6 +179,22 @@ export function DownloadPanel({ onAutoInstall }: { onAutoInstall: () => void }) 
           </summary>
           <p className="mt-1.5">{t("toolbox.download.full.why_body")}</p>
         </details>
+
+        {/* The manifest is public, so the comparison is checkable rather than
+            something a player has to take our word for. */}
+        {full.data?.manifestUrl && (
+          <div className="flex items-center gap-3">
+            <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-text-dim">
+              {t("client.manifest_hint")}
+            </p>
+            <button
+              onClick={() => openExternal(full.data!.manifestUrl)}
+              className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)] hover:text-accent"
+            >
+              {t("client.manifest_open")}
+            </button>
+          </div>
+        )}
       </section>
 
       {/* beanfun's own installer and patch links. */}

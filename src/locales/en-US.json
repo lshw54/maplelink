@@ -529,6 +529,8 @@
   "client.nothing_here": "Nothing matches.",
   "client.select_all": "Select all / none",
   "client.download_tab_hint": "This tab only hands over official links and a torrent; Download and install switches to Check & repair to do the work.",
+  "client.manifest_hint": "The manifest behind the comparison is public: open it and check each file's path, size and SHA-256 yourself.",
+  "client.manifest_open": "Open the manifest",
   "client.pause": "Pause",
   "client.resume": "Resume",
   "client.paused": "Paused",

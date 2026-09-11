@@ -118,7 +118,7 @@ pub fn exe_patch_url(version: &str) -> Option<String> {
 /// Fetch and parse the official manifest, then ask the patch CDN how big the
 /// runnable executable is for this version.
 pub async fn fetch_manifest() -> Result<ClientManifest, String> {
-    let body = crate::services::game_download::fetch_product_info_body().await?;
+    let (_url, body) = crate::services::game_download::fetch_product_info_body().await?;
     let mut manifest = parse_manifest(&body)?;
     let (size, date) = probe_exe_patch(&manifest.version).await;
     manifest.exe_patch_size = size;

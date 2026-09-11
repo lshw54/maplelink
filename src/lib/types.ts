@@ -116,6 +116,8 @@ export interface FullClientInfoDto {
   torrentUrl: string;
   folderName: string;
   exeName: string;
+  /** The manifest the scan compares against, so a player can open it themselves. */
+  manifestUrl: string;
 }
 
 /** One selectable game account from GamaPass's classic sign-in chooser. */
