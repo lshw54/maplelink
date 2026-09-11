@@ -55,6 +55,39 @@ describe("Property 16: Locale resource files key completeness", () => {
     );
   });
 
+  it("every placeholder is spelled {{name}}, the only form that interpolates", () => {
+    // A single-brace `{name}` is silently rendered as literal text, so the
+    // mistake reaches the screen rather than the tests. This catches it.
+    const single = /(?<!\{)\{(\w+)\}(?!\})/;
+    fc.assert(
+      fc.property(fc.constantFrom(...localeNames), (localeName) => {
+        const locale = locales[localeName] as LocaleMap;
+        for (const [key, value] of Object.entries(locale)) {
+          const found = single.exec(value);
+          expect(
+            found?.[0],
+            `${localeName}["${key}"] has ${found?.[0]}, which never interpolates`,
+          ).toBeUndefined();
+        }
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  it("a placeholder in one locale is present in all of them", () => {
+    const names = (value: string | undefined) =>
+      [...(value ?? "").matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
+    for (const key of Object.keys(locales["en-US"] as LocaleMap)) {
+      const expected = names((locales["en-US"] as LocaleMap)[key]);
+      for (const localeName of localeNames) {
+        expect(
+          names((locales[localeName] as LocaleMap)[key]),
+          `${localeName}["${key}"] does not take the same placeholders as en-US`,
+        ).toEqual(expected);
+      }
+    }
+  });
+
   it("no locale file has empty string values", () => {
     fc.assert(
       fc.property(fc.constantFrom(...localeNames), (localeName) => {
