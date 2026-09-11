@@ -334,6 +334,20 @@ pub fn run() {
             commands::system::check_beanfun_rename,
             commands::system::apply_beanfun_rename,
             commands::system::get_game_download_list,
+            commands::system::get_game_full_client_info,
+            commands::system::save_game_full_client_torrent,
+            commands::client::open_client_manager_window,
+            commands::client::client_load_manifest,
+            commands::client::client_scan,
+            commands::client::client_download,
+            commands::client::client_cancel,
+            commands::client::client_set_paused,
+            commands::client::pref_get,
+            commands::client::pref_set,
+            commands::client::client_free_space,
+            commands::client::client_pick_folder,
+            commands::client::client_default_folder,
+            commands::client::client_local_version,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
             commands::system::onboarding_is_seen,
@@ -496,6 +510,8 @@ pub fn run() {
             };
 
             app.manage(state);
+            // The client manager keeps its own job slot and cached manifest.
+            app.manage(commands::client::ClientJobs::default());
 
             // 4a. Auto-detect game path on first launch (if not set).
             {
@@ -680,6 +696,11 @@ pub fn run() {
                     });
                     if on_screen {
                         let _ = win.set_position(tauri::Position::Physical(pos));
+                        // The check above only asks whether the corner landed on
+                        // a monitor. A window saved hanging off the right edge —
+                        // or one that is taller this launch than it was last —
+                        // still needs sliding back before it is shown.
+                        crate::commands::system::keep_on_screen(&win.as_ref().window());
                     } else {
                         tracing::info!("saved window position {x},{y} is off-screen, centering");
                     }
@@ -838,7 +859,7 @@ pub fn run() {
 /// round the corners on the borderless transparent window. Must be re-applied
 /// whenever Windows might restore the frame (focus gain, resize, move).
 #[cfg(target_os = "windows")]
-fn apply_borderless_dwm(window: &tauri::Window) {
+pub(crate) fn apply_borderless_dwm(window: &tauri::Window) {
     let Ok(hwnd) = window.hwnd() else {
         return;
     };

@@ -1,14 +1,17 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for MapleLink. The Beanfun browser's toolbar is listed by webview label; its sibling bf-browser-view is deliberately absent, since that one loads beanfun's own pages and must reach no command at all.",
+  "description": "Default capabilities for MapleLink. The Beanfun browser's toolbar is listed by webview label; its sibling bf-browser-view is deliberately absent, since that one loads beanfun's own pages and must reach no command at all. The client manager runs our own UI in a second window, so it needs the same permissions as main — without it `listen` and the title-bar buttons are denied silently.",
   "windows": [
     "main",
+    "client_manager",
     "debug-console",
     "gamepass-login",
     "recaptcha_window",
     "bf-browser"
   ],
-  "webviews": ["bf-browser-bar"],
+  "webviews": [
+    "bf-browser-bar"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

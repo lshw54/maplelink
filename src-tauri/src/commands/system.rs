@@ -131,6 +131,57 @@ pub fn reset_webview_data() -> Result<(), ErrorDto> {
     Ok(())
 }
 
+/// Slide a window back inside a monitor's work area, in physical pixels.
+///
+/// Windows keeps a window's top-left corner where it is when the window grows,
+/// so enlarging one that sits near an edge pushes its far side off the screen.
+/// The announcement overlay does exactly that — 350x620 up to 640x780 — and
+/// with a modal covering the title bar there was no way to drag it back.
+///
+/// Returns the corrected top-left, or `None` when nothing needs to move. Only
+/// ever slides; a window larger than the work area is pinned to the top-left
+/// corner so its controls stay reachable.
+pub(crate) fn clamp_into(
+    pos: (i32, i32),
+    size: (u32, u32),
+    area_pos: (i32, i32),
+    area_size: (u32, u32),
+) -> Option<(i32, i32)> {
+    let (x, y) = pos;
+    let right = area_pos.0 + area_size.0 as i32;
+    let bottom = area_pos.1 + area_size.1 as i32;
+    // Push back from the far edge first, then from the near one, so a window
+    // too big for the screen ends up at the top-left rather than off it.
+    let nx = (x.min(right - size.0 as i32)).max(area_pos.0);
+    let ny = (y.min(bottom - size.1 as i32)).max(area_pos.1);
+    if (nx, ny) == (x, y) {
+        None
+    } else {
+        Some((nx, ny))
+    }
+}
+
+/// Keep `window` on screen after a resize.
+pub(crate) fn keep_on_screen(window: &tauri::Window) {
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        return;
+    };
+    let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+        return;
+    };
+    let area = monitor.size();
+    let origin = monitor.position();
+    if let Some((x, y)) = clamp_into(
+        (pos.x, pos.y),
+        (size.width, size.height),
+        (origin.x, origin.y),
+        (area.width, area.height),
+    ) {
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        tracing::debug!("window slid back on screen to {x},{y}");
+    }
+}
+
 /// Resize the application window for a page transition.
 #[tauri::command]
 pub async fn resize_window(
@@ -235,6 +286,7 @@ pub async fn resize_window(
         tracing::debug!("window {width}×{height} page='{page}'");
     }
 
+    keep_on_screen(&window);
     Ok(())
 }
 
@@ -789,6 +841,66 @@ pub async fn get_game_download_list(
         })
 }
 
+/// Full-client torrent details, read from the same public chain the Gamania
+/// Games Manager uses. Links only — MapleLink never downloads client files.
+#[tauri::command]
+pub async fn get_game_full_client_info(
+) -> Result<crate::services::game_download::FullClientInfo, ErrorDto> {
+    crate::services::game_download::fetch_full_client_info()
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_FULL_CLIENT_INFO_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Network,
+            details: None,
+        })
+}
+
+/// Save beanfun's full-client torrent, with its root folder renamed to the CDN
+/// folder so a BitTorrent client's web seed resolves (see `game_download`).
+/// Returns `false` if the user cancelled the save dialog. The only file
+/// written is the `.torrent` the user chose a path for.
+#[tauri::command]
+pub async fn save_game_full_client_torrent(app: tauri::AppHandle) -> Result<bool, ErrorDto> {
+    let (info, bytes) = crate::services::game_download::fetch_full_client_torrent()
+        .await
+        .map_err(|e| ErrorDto {
+            code: "SYS_FULL_CLIENT_TORRENT_FAILED".to_string(),
+            message: e,
+            category: ErrorCategory::Network,
+            details: None,
+        })?;
+
+    let default_name = format!("MapleStory_{}.torrent", info.version);
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    app.dialog()
+        .file()
+        .add_filter("Torrent", &["torrent"])
+        .set_title("Save full-client torrent")
+        .set_file_name(&default_name)
+        .save_file(move |path| {
+            let _ = tx.send(path.map(|p| p.to_string()));
+        });
+    let path = rx.await.map_err(|_| ErrorDto {
+        code: "SYS_DIALOG_FAILED".to_string(),
+        message: "Save dialog was cancelled unexpectedly".to_string(),
+        category: ErrorCategory::Process,
+        details: None,
+    })?;
+    let Some(path) = path else {
+        return Ok(false);
+    };
+
+    tokio::fs::write(&path, bytes).await.map_err(|e| ErrorDto {
+        code: "SYS_FULL_CLIENT_TORRENT_WRITE_FAILED".to_string(),
+        message: format!("failed to write torrent file: {e}"),
+        category: ErrorCategory::FileSystem,
+        details: None,
+    })?;
+    tracing::info!("saved full-client torrent {} to {path}", info.version);
+    Ok(true)
+}
+
 /// Clean up game cache directories, failed update leftovers, crash dumps,
 /// and stale DLL files from the game directory.
 ///
@@ -852,4 +964,66 @@ pub async fn open_data_folder(app: tauri::AppHandle) -> Result<(), ErrorDto> {
         category: ErrorCategory::Process,
         details: None,
     })
+}
+
+#[cfg(test)]
+mod window_placement_tests {
+    use super::clamp_into;
+
+    /// A typical 1920x1080 screen with the taskbar at the bottom.
+    const AREA_POS: (i32, i32) = (0, 0);
+    const AREA: (u32, u32) = (1920, 1040);
+
+    #[test]
+    fn a_window_already_inside_is_left_where_it_is() {
+        assert_eq!(clamp_into((100, 80), (350, 620), AREA_POS, AREA), None);
+        // Flush against the far edge still counts as inside.
+        assert_eq!(clamp_into((1570, 420), (350, 620), AREA_POS, AREA), None);
+    }
+
+    #[test]
+    fn growing_near_an_edge_slides_the_window_back_on() {
+        // Sat at the right edge as a 350-wide login window, then grown to 640
+        // for the announcement: 1570 + 640 overhangs by 290.
+        assert_eq!(
+            clamp_into((1570, 200), (640, 780), AREA_POS, AREA),
+            Some((1280, 200))
+        );
+        // Same story downwards.
+        assert_eq!(
+            clamp_into((100, 900), (640, 780), AREA_POS, AREA),
+            Some((100, 260))
+        );
+    }
+
+    #[test]
+    fn a_window_pushed_off_the_near_edge_comes_back_too() {
+        assert_eq!(
+            clamp_into((-200, -50), (350, 620), AREA_POS, AREA),
+            Some((0, 0))
+        );
+    }
+
+    #[test]
+    fn a_window_larger_than_the_screen_is_pinned_to_the_corner() {
+        // Its controls are at the top-left, so that is the corner to keep.
+        assert_eq!(
+            clamp_into((40, 40), (2400, 1300), AREA_POS, AREA),
+            Some((0, 0))
+        );
+    }
+
+    #[test]
+    fn a_second_monitor_is_clamped_to_its_own_bounds_not_the_origin() {
+        let right_of_primary = (1920, 0);
+        let area = (1920, 1040);
+        assert_eq!(
+            clamp_into((3600, 100), (640, 780), right_of_primary, area),
+            Some((3200, 100))
+        );
+        assert_eq!(
+            clamp_into((2000, 100), (640, 780), right_of_primary, area),
+            None
+        );
+    }
 }

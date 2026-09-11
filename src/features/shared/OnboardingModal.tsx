@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { ONBOARDING_PAGES } from "../../lib/onboarding";
+import { useOverlayLayer } from "../../lib/hooks/use-overlay";
 
 interface OnboardingModalProps {
   /** Finished or skipped — both close it and mark the guide as seen. */
@@ -14,6 +15,7 @@ interface OnboardingModalProps {
  * past without reading. The page copy lives in i18n; this only walks the list.
  */
 export function OnboardingModal({ onClose }: OnboardingModalProps) {
+  useOverlayLayer();
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const total = ONBOARDING_PAGES.length;

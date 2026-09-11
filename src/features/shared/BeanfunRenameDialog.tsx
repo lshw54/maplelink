@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { useOverlayLayer } from "../../lib/hooks/use-overlay";
 
 /**
  * Offered on startup when the IP looks like mainland China and the exe isn't
@@ -20,6 +21,7 @@ export function BeanfunRenameDialog({
   onDismiss: () => void;
   onCancel: () => void;
 }) {
+  useOverlayLayer();
   const { t } = useTranslation();
   const [dontAsk, setDontAsk] = useState(false);
   const [working, setWorking] = useState(false);

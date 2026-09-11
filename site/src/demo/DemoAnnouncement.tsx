@@ -25,10 +25,10 @@ export default function DemoAnnouncement() {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
   }, []);
-  const start = useCallback(() => {
+  // Only the ticking, so the mount effect below sets no state of its own —
+  // the countdown's initial value already comes from useState.
+  const tick = useCallback(() => {
     stop();
-    setLeft(HOLD);
-    setDismissed(false);
     timer.current = setInterval(() => {
       setLeft((v) => {
         const next = v > 0 ? v - 1 : v;
@@ -38,10 +38,17 @@ export default function DemoAnnouncement() {
     }, 1000);
   }, [stop]);
 
+  /** "Try again": put the countdown back and run it, from a click. */
+  const start = useCallback(() => {
+    setLeft(HOLD);
+    setDismissed(false);
+    tick();
+  }, [tick]);
+
   useEffect(() => {
-    start();
+    tick();
     return stop;
-  }, [start, stop]);
+  }, [tick, stop]);
 
   const coach = dismissed
     ? t("關閉後不會再自動彈出。日後可在工具箱的「公告」分頁重看。", "关闭后不会再自动弹出。日后可在工具箱的「公告」标签重看。", "It will not pop up again. You can reread it later under Toolbox → Announcements.")

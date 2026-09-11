@@ -420,9 +420,21 @@ pub async fn get_game_pid(state: State<'_, AppState>) -> Result<u32, ErrorDto> {
     Ok(state.get_any_game_pid().await)
 }
 
-/// Kill all running MapleStory processes across ALL sessions and clear tracked PIDs.
+/// How long to wait for the game to actually be gone before giving up.
+///
+/// `taskkill /F` returns as soon as the kill is asked for, not when the process
+/// has left the table, and MapleStory refuses to start while an older copy is
+/// still shutting down — which is why relaunching used to need a second try.
+/// So the kill is confirmed here instead of behind a guessed delay upstream.
+#[cfg(target_os = "windows")]
+const KILL_ATTEMPTS: u32 = 25;
+#[cfg(target_os = "windows")]
+const KILL_INTERVAL_MS: u64 = 200;
+
+/// Kill all running MapleStory processes across ALL sessions and clear tracked
+/// PIDs. Returns whether the game is confirmed gone.
 #[tauri::command]
-pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
+pub async fn kill_game(state: State<'_, AppState>) -> Result<bool, ErrorDto> {
     // Kill all tracked PIDs across all sessions
     let sessions = state.sessions.read().await;
     for ss in sessions.values() {
@@ -437,16 +449,32 @@ pub async fn kill_game(state: State<'_, AppState>) -> Result<(), ErrorDto> {
     }
     drop(sessions);
 
-    // Also kill any MapleStory.exe not in our tracked list
+    // Also kill any MapleStory.exe not in our tracked list, then wait for the
+    // last one to disappear. Bounded: a process that cannot be killed (another
+    // user, or one that outranks us) must not hang the command for ever.
     #[cfg(target_os = "windows")]
     {
-        while let Some(pid) = game_launch_service::find_process_pid_by_name("MapleStory.exe") {
-            let _ = process_service::terminate_process(pid).await;
-            tracing::info!(pid, "killed MapleStory.exe");
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        for attempt in 0..KILL_ATTEMPTS {
+            let Some(pid) = game_launch_service::find_process_pid_by_name("MapleStory.exe") else {
+                tracing::info!("all game processes killed and tracking cleared");
+                return Ok(true);
+            };
+            if attempt == 0 || attempt % 5 == 0 {
+                let _ = process_service::terminate_process(pid).await;
+                tracing::info!(pid, attempt, "killed MapleStory.exe");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(KILL_INTERVAL_MS)).await;
         }
+        tracing::warn!(
+            "MapleStory.exe still running after {}ms; launching anyway",
+            KILL_ATTEMPTS as u64 * KILL_INTERVAL_MS
+        );
+        Ok(false)
     }
 
-    tracing::info!("all game processes killed and tracking cleared");
-    Ok(())
+    #[cfg(not(target_os = "windows"))]
+    {
+        tracing::info!("all game processes killed and tracking cleared");
+        Ok(true)
+    }
 }

@@ -16,6 +16,11 @@ import type {
   WebLaunchStatus,
   WebLaunchTestCode,
   GameDownloadDto,
+  FullClientInfoDto,
+  ClientManifestDto,
+  ClientScanReportDto,
+  ClientDownloadReportDto,
+  ClientLocalVersionDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
   BrowserBookmark,
@@ -106,7 +111,8 @@ export const commands = {
   launchGameDirect: () => invoke<number>("launch_game_direct"),
   isGameRunning: () => invoke<boolean>("is_game_running"),
   getGamePid: () => invoke<number>("get_game_pid"),
-  killGame: () => invoke("kill_game"),
+  /** Resolves once the game is confirmed gone; false if it outlived the wait. */
+  killGame: () => invoke<boolean>("kill_game"),
 
   // Config (global)
   getConfig: () => invoke<AppConfigDto>("get_config"),
@@ -187,6 +193,27 @@ export const commands = {
 
   // Official client download list (global)
   getGameDownloadList: () => invoke<GameDownloadDto[]>("get_game_download_list"),
+  getGameFullClientInfo: () => invoke<FullClientInfoDto>("get_game_full_client_info"),
+  saveGameFullClientTorrent: () => invoke<boolean>("save_game_full_client_torrent"),
+
+  // Client manager (its own window): compare a local install and fetch back
+  // whatever does not match the official manifest.
+  openClientManagerWindow: () => invoke("open_client_manager_window"),
+  clientLoadManifest: () => invoke<ClientManifestDto>("client_load_manifest"),
+  clientScan: (dir: string, mode: "quick" | "full") =>
+    invoke<ClientScanReportDto>("client_scan", { dir, mode }),
+  clientDownload: (dir: string, paths: string[], direct: boolean) =>
+    invoke<ClientDownloadReportDto>("client_download", { dir, paths, direct }),
+  clientCancel: () => invoke("client_cancel"),
+  clientSetPaused: (paused: boolean) => invoke("client_set_paused", { paused }),
+  prefGet: (key: string) => invoke<string | null>("pref_get", { key }),
+  prefSet: (key: string, value: string) => invoke("pref_set", { key, value }),
+  clientFreeSpace: (dir: string) => invoke<number | null>("client_free_space", { dir }),
+  clientPickFolder: (startIn: string | null) =>
+    invoke<string | null>("client_pick_folder", { startIn }),
+  clientDefaultFolder: () => invoke<string | null>("client_default_folder"),
+  clientLocalVersion: (dir: string) =>
+    invoke<ClientLocalVersionDto | null>("client_local_version", { dir }),
 
   // Announcement "seen" state (global; stored outside config.ini)
   announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),

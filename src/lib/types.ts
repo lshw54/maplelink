@@ -44,6 +44,84 @@ export interface GameDownloadDto {
   size: string;
   url: string;
   kind: "game" | "patch" | "other";
+  /** The Gamania Games Manager installer, which the UI flags rather than recommends. */
+  manager: boolean;
+}
+
+/** The official manifest, as the client manager window shows it. */
+export interface ClientManifestDto {
+  productName: string;
+  version: string;
+  publishDate: string;
+  /** When the current executable build was published. */
+  exePatchDate: string | null;
+  /** Version including the minor part (`"V282.2"`), read off beanfun's own
+   *  download page; `version` only ever carries the major. */
+  fullVersion: string | null;
+  totalBytes: number;
+  fileCount: number;
+  exeName: string;
+  /** When beanfun could not be reached, the time this copy was cached (RFC 3339). */
+  cachedAt: string | null;
+  /** The manifest the scan compares against, so a player can open it themselves. */
+  manifestUrl: string;
+}
+
+/** What the installed client's own Base.wz says about its version. */
+export interface ClientLocalVersionDto {
+  marker: number;
+  matchesOfficial: boolean;
+  candidates: number[];
+}
+
+export type ClientIssueKind = "missing" | "sizeMismatch" | "hashMismatch" | "unreadable";
+
+/** One file the scan looked at. `kind` is null when it matches the manifest. */
+export interface ClientCheckedFileDto {
+  path: string;
+  kind: ClientIssueKind | null;
+  expectedSize: number;
+  localSize: number | null;
+}
+
+export interface ClientScanReportDto {
+  totalFiles: number;
+  okFiles: number;
+  files: ClientCheckedFileDto[];
+  issueCount: number;
+  bytesToFetch: number;
+  extraFiles: string[];
+  cancelled: boolean;
+}
+
+/** Progress for a running scan or download. */
+export interface ClientProgressDto {
+  done: number;
+  total: number;
+  bytesDone: number;
+  bytesTotal: number;
+  current: string;
+}
+
+export interface ClientDownloadReportDto {
+  requested: number;
+  written: number;
+  failures: { path: string; error: string }[];
+  cancelled: boolean;
+}
+
+/** Full-client torrent details, read from the Gamania Games Manager's public download chain. */
+export interface FullClientInfoDto {
+  productName: string;
+  version: string;
+  publishDate: string;
+  sizeBytes: number;
+  fileCount: number;
+  torrentUrl: string;
+  folderName: string;
+  exeName: string;
+  /** The manifest the scan compares against, so a player can open it themselves. */
+  manifestUrl: string;
 }
 
 /** One selectable game account from GamaPass's classic sign-in chooser. */

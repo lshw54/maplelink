@@ -47,18 +47,26 @@ function load(productId: string): Promise<ReleaseState> {
   return p;
 }
 
+const EMPTY: ReleaseState = { release: null, failed: false };
+
 export function useLatestRelease(productId = "maplelink"): ReleaseState {
-  const [state, setState] = useState<ReleaseState>(() => cache.get(productId) ?? { release: null, failed: false });
+  const [state, setState] = useState<ReleaseState>(() => cache.get(productId) ?? EMPTY);
+  // A changed product means the state belongs to the previous one. React's own
+  // answer to that is to adjust during render rather than in an effect, which
+  // also avoids the extra paint an effect would cause.
+  const [shownId, setShownId] = useState(productId);
+  if (shownId !== productId) {
+    setShownId(productId);
+    setState(cache.get(productId) ?? EMPTY);
+  }
+
   useEffect(() => {
-    const cached = cache.get(productId);
-    if (cached) {
-      setState(cached);
-      return;
-    }
+    // Subscribe first, so a fetch that lands between here and the render above
+    // is not missed; a cache hit simply means `load` resolves immediately.
     const set = listeners.get(productId) ?? new Set();
     set.add(setState);
     listeners.set(productId, set);
-    load(productId);
+    if (!cache.has(productId)) load(productId);
     return () => {
       set.delete(setState);
     };

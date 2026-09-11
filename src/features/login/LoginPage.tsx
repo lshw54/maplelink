@@ -257,10 +257,10 @@ export function LoginPage() {
               onClick={async () => {
                 setShowRelaunchConfirm(false);
                 try {
+                  // Resolves once the game is actually gone; no delay to guess.
                   await commands.killGame();
                   useUiStore.getState().setGamePid(null);
                   useUiStore.getState().setGameRunning(false);
-                  await new Promise((r) => setTimeout(r, 500));
                 } catch {
                   /* proceed anyway */
                 }
