@@ -55,6 +55,10 @@ pub struct ClientManifest {
     #[serde(skip)]
     pub folder_name: String,
     pub exe_name: String,
+    /// Size of `ExePatch.dat` for this version, when the patch CDN answers.
+    /// The manifest ships the base executable; the game's own updater replaces
+    /// it with this build, so an install carrying it is current, not damaged.
+    pub exe_patch_size: Option<u64>,
     #[serde(skip)]
     pub files: Vec<ManifestFile>,
 }
@@ -84,10 +88,60 @@ fn flexible_u64<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
     }
 }
 
-/// Fetch and parse the official manifest.
+/// The game's own updater serves the runnable executable here, outside the
+/// manifest. Plain HTTP: the host offers no TLS at all.
+const EXE_PATCH_URL: &str =
+    "http://tw.cdnpatch.maplestory.beanfun.com/maplestory/patch/patchdir/{:05}/ExePatch.dat";
+
+/// `"V282"` -> `282`, so the patch CDN's zero-padded folder can be built.
+fn version_number(version: &str) -> Option<u32> {
+    version.trim().trim_start_matches(['V', 'v']).parse().ok()
+}
+
+pub fn exe_patch_url(version: &str) -> Option<String> {
+    let n = version_number(version)?;
+    Some(EXE_PATCH_URL.replace("{:05}", &format!("{n:05}")))
+}
+
+/// Fetch and parse the official manifest, then ask the patch CDN how big the
+/// runnable executable is for this version.
 pub async fn fetch_manifest() -> Result<ClientManifest, String> {
     let body = crate::services::game_download::fetch_product_info_body().await?;
-    parse_manifest(&body)
+    let mut manifest = parse_manifest(&body)?;
+    manifest.exe_patch_size = probe_exe_patch_size(&manifest.version).await;
+    Ok(manifest)
+}
+
+/// `Content-Length` of this version's `ExePatch.dat`, or `None` when the CDN
+/// does not answer. Best effort: a scan still works without it, it just cannot
+/// tell a self-patched executable from a damaged one.
+async fn probe_exe_patch_size(version: &str) -> Option<u64> {
+    let url = exe_patch_url(version)?;
+    let client = reqwest::Client::builder()
+        .user_agent(crate::services::http_util::USER_AGENT)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .ok()?;
+    let resp = client.head(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        tracing::info!(
+            "client manager: no ExePatch for {version} (HTTP {})",
+            resp.status()
+        );
+        return None;
+    }
+    // `content_length()` reports the body length, which is 0 for a HEAD
+    // response; the header is the only place the real size shows up.
+    let size = resp
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    tracing::info!("client manager: ExePatch for {version} is {size} bytes");
+    Some(size)
 }
 
 fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
@@ -124,6 +178,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         base_url: base,
         folder_name,
         exe_name,
+        exe_patch_size: None,
         files: raw.files,
     })
 }
@@ -257,7 +312,12 @@ fn scan_blocking(
             return Ok(report);
         }
         let target = safe_join(dir, &f.path)?;
-        let issue = inspect_one(&target, f, mode);
+        // The executable legitimately differs from the manifest once the game
+        // has patched itself, so it is measured against that build as well.
+        let self_patched = (f.path == manifest.exe_name)
+            .then_some(manifest.exe_patch_size)
+            .flatten();
+        let issue = inspect_one(&target, f, mode, self_patched);
         match issue {
             Some(kind) => {
                 let local_size = std::fs::metadata(&target).ok().map(|m| m.len());
@@ -272,9 +332,11 @@ fn scan_blocking(
             None => report.ok_files += 1,
         }
         bytes_done += f.size;
-        // One event per file would flood the UI on 1263 files; every 25 is
-        // smooth enough and keeps the last file always reported.
-        if i % 25 == 0 || i + 1 == total {
+        // A quick scan runs through 1263 files in seconds, so it reports in
+        // batches; a full scan hashes every byte and is slow enough that one
+        // event per file is what makes the bar move.
+        let every = if mode == ScanMode::Full { 1 } else { 25 };
+        if i % every == 0 || i + 1 == total {
             on_progress(Progress {
                 done: i + 1,
                 total,
@@ -290,13 +352,23 @@ fn scan_blocking(
 }
 
 /// `None` when the file is good enough for the mode asked for.
-fn inspect_one(target: &Path, f: &ManifestFile, mode: ScanMode) -> Option<IssueKind> {
+fn inspect_one(
+    target: &Path,
+    f: &ManifestFile,
+    mode: ScanMode,
+    self_patched_size: Option<u64>,
+) -> Option<IssueKind> {
     let meta = match std::fs::metadata(target) {
         Ok(m) => m,
         Err(_) => return Some(IssueKind::Missing),
     };
     if !meta.is_file() {
         return Some(IssueKind::Missing);
+    }
+    // Matching the build the game patches itself to is correct, and there is no
+    // published hash for it, so the check ends here.
+    if Some(meta.len()) == self_patched_size {
+        return None;
     }
     if meta.len() != f.size {
         return Some(IssueKind::SizeMismatch);
@@ -848,6 +920,54 @@ mod tests {
         assert_eq!(last.done, 2);
         assert_eq!(last.total, 2);
         assert_eq!(last.bytes_done, last.bytes_total);
+    }
+
+    #[test]
+    fn the_patch_cdn_folder_comes_from_the_manifest_version() {
+        assert_eq!(version_number("V282"), Some(282));
+        assert_eq!(version_number(" v7 "), Some(7));
+        assert_eq!(version_number("L.250508.1_2"), None);
+        assert_eq!(
+            exe_patch_url("V282").unwrap(),
+            "http://tw.cdnpatch.maplestory.beanfun.com/maplestory/patch/patchdir/00282/ExePatch.dat"
+        );
+        assert!(exe_patch_url("nonsense").is_none());
+    }
+
+    /// The manifest ships the base executable; the game replaces it with the
+    /// ExePatch build. An install carrying that build is current, not damaged.
+    #[tokio::test]
+    async fn an_executable_matching_the_self_patched_build_is_not_an_issue() {
+        let dir = sample_dir();
+        // `a.txt` stands in for the executable: right file, unexpected size.
+        std::fs::write(dir.path().join("a.txt"), b"patched build").unwrap();
+        let mut m = manifest();
+        m.exe_name = "a.txt".to_string();
+
+        // Without the ExePatch size it reads as damage.
+        let plain = scan(
+            dir.path().to_path_buf(),
+            Arc::new(m.clone()),
+            ScanMode::Full,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(plain.issues.iter().any(|i| i.path == "a.txt"));
+
+        // With it, the same folder is clean.
+        m.exe_patch_size = Some(b"patched build".len() as u64);
+        let aware = scan(
+            dir.path().to_path_buf(),
+            Arc::new(m),
+            ScanMode::Full,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(!aware.issues.iter().any(|i| i.path == "a.txt"));
     }
 
     #[tokio::test]

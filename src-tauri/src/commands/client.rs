@@ -104,9 +104,10 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
     .inner_size(980.0, 680.0)
     .min_inner_size(720.0, 520.0)
     .resizable(true)
-    // Native decorations: this window can run a long job, and the player must
-    // always be able to close it even if our own chrome fails to render.
-    .decorations(true)
+    // Borderless like the main window; the UI draws its own title bar, and the
+    // global window-event handler rounds the corners through DWM.
+    .decorations(false)
+    .transparent(false)
     .center()
     .build()
     .map_err(|e| {
@@ -160,16 +161,19 @@ pub async fn client_scan(
         mode,
         guard.cancel.clone(),
         move |p| {
-            let _ = handle.emit(SCAN_PROGRESS_EVENT, p);
+            if let Err(e) = handle.emit(SCAN_PROGRESS_EVENT, p) {
+                tracing::warn!("client scan: progress emit failed: {e}");
+            }
         },
     )
     .await
     .map_err(|e| err("CLIENT_SCAN_FAILED", e, ErrorCategory::FileSystem))?;
     tracing::info!(
-        "client scan of {dir}: {} ok, {} to fetch, {} extra",
+        "client scan of {dir}: {} ok, {} to fetch, {} extra, cancelled={}",
         report.ok_files,
         report.issues.len(),
-        report.extra_files.len()
+        report.extra_files.len(),
+        report.cancelled
     );
     Ok(report)
 }
