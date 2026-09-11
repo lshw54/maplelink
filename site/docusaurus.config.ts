@@ -53,10 +53,12 @@ const config: Config = {
   i18n: {
     defaultLocale: "zh-TW",
     locales: ["zh-TW", "zh-CN", "en"],
+    // Short labels: the locale dropdown prints the current locale's label in
+    // the navbar, and "繁體中文" next to the search box left no room to breathe.
     localeConfigs: {
-      "zh-TW": { label: "繁體中文", htmlLang: "zh-TW" },
-      "zh-CN": { label: "简体中文", htmlLang: "zh-CN" },
-      en: { label: "English", htmlLang: "en-US" },
+      "zh-TW": { label: "繁中", htmlLang: "zh-TW" },
+      "zh-CN": { label: "简中", htmlLang: "zh-CN" },
+      en: { label: "EN", htmlLang: "en-US" },
     },
   },
 
