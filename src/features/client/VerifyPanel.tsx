@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import type { ClientCheckedFileDto, ClientIssueKind, ClientScanReportDto } from "../../lib/types";
+import { allDirPaths, buildTree, type DirNode } from "./file-tree";
 
 export type Filter = "all" | "issues" | "ok" | "extra";
 
@@ -43,6 +44,99 @@ const KIND_DETAIL: Record<ClientIssueKind, string> = {
   unreadable: "client.issue_why_unreadable",
 };
 
+function FolderRow({
+  node,
+  depth,
+  open,
+  onToggle,
+}: {
+  node: DirNode;
+  depth: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <button
+      onClick={onToggle}
+      style={{ paddingLeft: 12 + depth * 14 }}
+      className="flex h-[30px] w-full items-center gap-2 border-b border-[var(--tb-border)] pr-3 text-left last:border-b-0 hover:bg-[var(--surface-hover)]"
+    >
+      <span className="w-3 shrink-0 text-center text-[9px] text-text-dim">{open ? "▾" : "▸"}</span>
+      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[var(--text)]">
+        {node.name}
+      </span>
+      {node.issues > 0 && (
+        <span className="shrink-0 text-[10px] font-bold text-yellow-500">
+          {t("client.folder_issues", { count: String(node.issues) })}
+        </span>
+      )}
+      <span className="w-16 shrink-0 text-right font-mono text-[10px] text-text-faint">
+        {t("client.folder_files", { count: String(node.total) })}
+      </span>
+    </button>
+  );
+}
+
+function TreeLevel({
+  node,
+  depth,
+  expanded,
+  toggle,
+  selected,
+  setSelected,
+  outdated,
+}: {
+  node: DirNode;
+  depth: number;
+  expanded: Set<string>;
+  toggle: (path: string) => void;
+  selected: Set<string>;
+  setSelected: (next: Set<string>) => void;
+  outdated: boolean;
+}) {
+  return (
+    <>
+      {[...node.dirs.values()].map((child) => {
+        const open = expanded.has(child.path);
+        return (
+          <div key={child.path}>
+            <FolderRow node={child} depth={depth} open={open} onToggle={() => toggle(child.path)} />
+            {open && (
+              <TreeLevel
+                node={child}
+                depth={depth + 1}
+                expanded={expanded}
+                toggle={toggle}
+                selected={selected}
+                setSelected={setSelected}
+                outdated={outdated}
+              />
+            )}
+          </div>
+        );
+      })}
+      {node.files.map((f) => (
+        <FileRow
+          key={f.path}
+          file={f}
+          // Nested rows show the file name; the full path is in the tooltip.
+          label={f.path.split("/").pop() ?? f.path}
+          indent={12 + depth * 14}
+          checked={selected.has(f.path)}
+          outdated={outdated}
+          onToggle={() => {
+            const next = new Set(selected);
+            if (next.has(f.path)) next.delete(f.path);
+            else next.add(f.path);
+            setSelected(next);
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 function Chip({
   active,
   onClick,
@@ -78,11 +172,17 @@ function FileRow({
   checked,
   outdated,
   onToggle,
+  label,
+  indent = 12,
 }: {
   file: ClientCheckedFileDto;
   checked: boolean;
   outdated: boolean;
   onToggle: () => void;
+  /** What to show in the path column; defaults to the full manifest path. */
+  label?: string;
+  /** Left padding in pixels, so a nested row lines up under its folder. */
+  indent?: number;
 }) {
   const { t } = useTranslation();
   const issue = file.kind !== null;
@@ -99,8 +199,8 @@ function FileRow({
   return (
     <div
       // 1263 rows: let the engine skip what is scrolled out of view.
-      style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px" }}
-      className="flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] px-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
+      style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px", paddingLeft: indent }}
+      className="flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
       {issue ? (
         <input
@@ -118,7 +218,7 @@ function FileRow({
           issue ? "text-[var(--text)]" : "text-text-dim"
         }`}
       >
-        {file.path}
+        {label ?? file.path}
       </span>
       <span
         title={why}
@@ -151,6 +251,10 @@ export function VerifyPanel({
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  // The flat list is the default: it is what the scan produces, and it reads
+  // straight down. The tree is for answering "is this folder alright".
+  const [view, setView] = useState<"list" | "folder">("list");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const issues = useMemo(() => report?.files.filter((f) => f.kind !== null) ?? [], [report]);
 
@@ -165,6 +269,25 @@ export function VerifyPanel({
     const needle = query.trim().toLowerCase();
     return needle ? base.filter((f) => f.path.toLowerCase().includes(needle)) : base;
   }, [report, issues, filter, query]);
+
+  const tree = useMemo(() => buildTree(rows), [rows]);
+
+  // A search or an issues-only filter narrows things to a handful, and leaving
+  // those collapsed would hide the very rows the player asked for.
+  const narrowed = query.trim() !== "" || filter === "issues";
+  const openDirs = useMemo(
+    () => (narrowed ? allDirPaths(tree) : expanded),
+    [narrowed, tree, expanded],
+  );
+
+  const toggleDir = useCallback((path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const extras = useMemo(() => {
     if (!report) return [];
@@ -213,12 +336,29 @@ export function VerifyPanel({
           label={t("client.filter_extra")}
           count={report.extraFiles.length}
         />
+        {/* List or folders. Two segments rather than a dropdown: there are
+            only ever two, and the current one has to be readable at a glance. */}
+        <div className="ml-auto flex shrink-0 overflow-hidden rounded-lg border border-[var(--tb-border)]">
+          {(["list", "folder"] as const).map((id) => (
+            <button
+              key={id}
+              onClick={() => setView(id)}
+              className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                view === id
+                  ? "bg-[var(--surface-hover)] text-[var(--text)]"
+                  : "text-text-dim hover:bg-[var(--surface-hover)]"
+              }`}
+            >
+              {t(`client.view_${id}`)}
+            </button>
+          ))}
+        </div>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("client.search")}
           spellCheck={false}
-          className="ml-auto w-48 rounded-lg border border-[var(--tb-border)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] text-[var(--text)] outline-none focus:border-accent"
+          className="w-44 rounded-lg border border-[var(--tb-border)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] text-[var(--text)] outline-none focus:border-accent"
         />
         {filter === "issues" && issues.length > 0 && (
           <button
@@ -254,20 +394,32 @@ export function VerifyPanel({
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)]">
-          {rows.map((f) => (
-            <FileRow
-              key={f.path}
-              file={f}
-              checked={selected.has(f.path)}
+          {view === "folder" ? (
+            <TreeLevel
+              node={tree}
+              depth={0}
+              expanded={openDirs}
+              toggle={toggleDir}
+              selected={selected}
+              setSelected={setSelected}
               outdated={outdated}
-              onToggle={() => {
-                const next = new Set(selected);
-                if (next.has(f.path)) next.delete(f.path);
-                else next.add(f.path);
-                setSelected(next);
-              }}
             />
-          ))}
+          ) : (
+            rows.map((f) => (
+              <FileRow
+                key={f.path}
+                file={f}
+                checked={selected.has(f.path)}
+                outdated={outdated}
+                onToggle={() => {
+                  const next = new Set(selected);
+                  if (next.has(f.path)) next.delete(f.path);
+                  else next.add(f.path);
+                  setSelected(next);
+                }}
+              />
+            ))
+          )}
           {rows.length === 0 && (
             <p className="p-3 text-[11px] text-text-faint">{t("client.nothing_here")}</p>
           )}
