@@ -13,6 +13,7 @@ import DemoSessions from "../demo/DemoSessions";
 import DemoWebLaunch from "../demo/DemoWebLaunch";
 import DemoLoginError from "../demo/DemoLoginError";
 import DemoNodeErrors from "../demo/DemoNodeErrors";
+import DemoClientManager from "../demo/DemoClientManager";
 
 /** Components the MDX pages can use without importing them. */
 export default {
@@ -31,4 +32,5 @@ export default {
   DemoWebLaunch,
   DemoLoginError,
   DemoNodeErrors,
+  DemoClientManager,
 };

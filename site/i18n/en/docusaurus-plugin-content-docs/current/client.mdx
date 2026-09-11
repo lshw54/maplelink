@@ -11,11 +11,17 @@ The full MapleStory TW client is about 67 GB, and there is no single installer f
 
 :::tip The files and their integrity stay with the official side
 Both the manifest and the files come from beanfun. Every download is checked against the published SHA-256 before it is written; anything that fails that check never replaces what you already have.
+
+The manifest is public, so you can check it yourself: [productInfo.json](https://maplestory-download.beanfun.com/maplestory/productInfo.json). The path, size and SHA-256 on each line are exactly what the window compares against.
 :::
 
 ## Where to find it
 
-The 🎮 at the top right of the title bar, or Toolbox → Game client manager. The window has two tabs: **Check & repair** and **Download & install**.
+The download icon at the top right of the title bar, or Toolbox → Game client manager. The window has two tabs: **Check & repair** and **Download & install**.
+
+Here it is to play with — press the buttons and walk through it:
+
+<DemoClientManager />
 
 ## Which case are you in
 
@@ -53,9 +59,11 @@ Close the game first, and back up anything you modified yourself. MapleLink neve
 The game path on this tab is used by this window alone; the one in Settings is untouched.
 
 <details>
-<summary>Does "wrong size" or "wrong content" mean it's broken?</summary>
+<summary>Does "damaged" or "out of date" mean it's broken?</summary>
 
-Not necessarily. The manifest is that version's **base** client, and the game's own updater modifies some files after install — `MapleStory.exe` above all. MapleLink knows about this: it asks the official patch server what the current executable is, and treats a match as fine.
+The status column says why each file would be replaced: **missing** is not on disk, **out of date** means the client is behind the official version, **damaged** means the version matches but the contents do not, and **unreadable** usually means the file is in use. Hover the status for the detail.
+
+A mismatch does not necessarily mean damage. The manifest is that version's **base** client, and the game's own updater modifies some files after install — `MapleStory.exe` above all. MapleLink knows about this: it asks the official patch server what the current executable is, and treats a match as fine.
 
 If the game runs correctly today, you can leave these unticked. Repairing restores them to the base version, which the game usually re-applies on its next launch.
 
