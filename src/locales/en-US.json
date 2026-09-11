@@ -285,6 +285,8 @@
   "toolbox.about.backend": "Backend",
   "toolbox.about.platform": "Platform",
   "toolbox.about.license_label": "License",
+  "toolbox.about.website": "Official Website",
+  "toolbox.about.guide": "Getting Started / FAQ",
   "toolbox.about.github_project": "GitHub Project",
   "toolbox.about.issues": "Report Issues / Feature Requests",
   "toolbox.about.disclaimer": "This is NOT an official Gamania product. Use at your own risk. Make sure you trust where you got this from.",

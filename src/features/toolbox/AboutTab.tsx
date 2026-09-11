@@ -125,6 +125,16 @@ export function AboutTab() {
       {/* Links */}
       <div className="overflow-hidden rounded-[10px] border border-[var(--tb-border)]">
         <LinkRow
+          icon="🌐"
+          label={t("toolbox.about.website")}
+          onClick={() => openExternal("https://lshw54.github.io/maplelink/")}
+        />
+        <LinkRow
+          icon="📖"
+          label={t("toolbox.about.guide")}
+          onClick={() => openExternal("https://lshw54.github.io/maplelink/guide")}
+        />
+        <LinkRow
           icon="🔗"
           label={t("toolbox.about.github_project")}
           onClick={() => openExternal("https://github.com/lshw54/maplelink")}

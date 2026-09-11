@@ -12,15 +12,18 @@
   <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+  <a href="https://lshw54.github.io/maplelink/"><img src="https://img.shields.io/badge/website-maplelink-e11d48" alt="Website" /></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#development">Dev Guide</a> · <a href="README.md">繁體中文</a>
+  <a href="https://lshw54.github.io/maplelink/">Website</a> · <a href="https://lshw54.github.io/maplelink/download">Download</a> · <a href="https://lshw54.github.io/maplelink/guide">Getting Started</a> · <a href="https://lshw54.github.io/maplelink/faq">FAQ</a> · <a href="#features">Features</a> · <a href="#development">Dev Guide</a> · <a href="README.md">繁體中文</a>
 </p>
 
 ---
 
 ⚠️ **This is NOT an official Gamania product.** Use at your own risk. Make sure you trust where you got this from.
+
+📖 Downloads, the getting-started guide and the FAQ all live on the **[official website](https://lshw54.github.io/maplelink/)**.
 
 > **📢 Parallel Development Notice (Project Status)**
 >
@@ -72,8 +75,10 @@ The original [Beanfun launcher](https://github.com/pungin/Beanfun) served well b
 
 **Requirements:** Windows 10+, [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (built into Win11)
 
-1. Grab the latest build from [Releases](../../releases/latest)
+1. Grab the latest build from the [download page](https://lshw54.github.io/maplelink/download), or straight from [GitHub Releases](../../releases/latest)
 2. Unzip and run — nothing to install
+
+First time here? Walk through the [getting-started guide](https://lshw54.github.io/maplelink/guide); if something goes wrong, check the [FAQ](https://lshw54.github.io/maplelink/faq) first.
 
 > The `EBWebView` folder in `%APPDATA%` is WebView2's cache — this is normal. Enable "GamaPass Incognito Mode" in settings if you don't want it saving login sessions.
 

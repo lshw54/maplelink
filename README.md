@@ -12,15 +12,18 @@
   <a href="https://github.com/lshw54/maplelink/releases/latest"><img src="https://img.shields.io/github/v/release/lshw54/maplelink?include_prereleases&label=version" alt="Version" /></a>
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+  <a href="https://lshw54.github.io/maplelink/"><img src="https://img.shields.io/badge/website-maplelink-e11d48" alt="Website" /></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/latest">下載</a> · <a href="#功能特色">功能</a> · <a href="#開發指南">開發</a> · <a href="README.en.md">English</a>
+  <a href="https://lshw54.github.io/maplelink/">官方網站</a> · <a href="https://lshw54.github.io/maplelink/download">下載</a> · <a href="https://lshw54.github.io/maplelink/guide">新手教學</a> · <a href="https://lshw54.github.io/maplelink/faq">常見問題</a> · <a href="#功能特色">功能</a> · <a href="#開發指南">開發</a> · <a href="README.en.md">English</a>
 </p>
 
 ---
 
 ⚠️ **本程式並非遊戲橘子官方產品。** 使用前請自行評估風險，並確認下載來源是否安全。
+
+📖 下載、新手教學與常見問題都在 **[官方網站](https://lshw54.github.io/maplelink/)**。
 
 > **📢 雙線並行開發公告 (Project Status)**
 >
@@ -72,8 +75,10 @@
 
 **系統需求：** Windows 10 以上、[WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win11 已內建）
 
-1. 前往 [Releases](../../releases/latest) 下載最新版本
+1. 前往[下載頁](https://lshw54.github.io/maplelink/download)取得最新版本，或直接到 [GitHub Releases](../../releases/latest)
 2. 解壓後直接執行，無需安裝
+
+第一次使用建議跟著[新手教學](https://lshw54.github.io/maplelink/guide)走一遍，遇到問題先看[常見問題](https://lshw54.github.io/maplelink/faq)。
 
 > `%APPDATA%` 中的 `EBWebView` 資料夾是 WebView2 的快取，屬於正常現象。若不想保留 GamaPass 的登入狀態，可在設定中開啟「GamaPass 無痕模式」。
 
