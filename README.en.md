@@ -13,6 +13,7 @@
   <a href="https://github.com/lshw54/maplelink/releases"><img src="https://img.shields.io/github/downloads/lshw54/maplelink/total" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
   <a href="https://lshw54.github.io/maplelink/"><img src="https://img.shields.io/badge/website-maplelink-e11d48" alt="Website" /></a>
+  <a href="https://discord.gg/uUn9aAm9ww"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -233,6 +234,7 @@ npm run format                                     # Prettier format
 ## Contact
 
 - Bug reports and feature requests: [GitHub Issues](../../issues)
+- Discord: [https://discord.gg/uUn9aAm9ww](https://discord.gg/uUn9aAm9ww)
 - QQ: `2157875454`
 
 ## Contributing

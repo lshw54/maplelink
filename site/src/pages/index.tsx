@@ -9,6 +9,7 @@ const BEANFUN = "https://github.com/pungin/Beanfun";
 const REPO = "https://github.com/lshw54/maplelink";
 const LICENSE = `${REPO}/blob/main/LICENSE`;
 const QQ = "2157875454";
+const DISCORD = "https://discord.gg/uUn9aAm9ww";
 
 /** Per-locale copy. Paths are locale-relative; Link adds the base, Docusaurus adds the locale. */
 const COPY: Record<Locale, Copy> = {
@@ -21,7 +22,7 @@ const COPY: Record<Locale, Copy> = {
     fine2: ["也玩其他橘子遊戲？我們同時維護原版 ", "Beanfun", " 啟動器。"],
     help: [
       { h: "開始使用", items: [[["/guide", "新手教學"], "：下載、解壓、登入、取 OTP，約五分鐘"], ["需要 Windows 10 / 11（64 位元）及 WebView2"], ["不需要安裝，整個資料夾放哪裏都可以"]] },
-      { h: "遇到問題", items: [[["/faq#webview2", "打不開、白屏、閃退"], "：安裝 WebView2"], [["/faq", "SmartScreen 警告、防毒誤判、加速器認不到"]], ["其他問題到 ", [`${REPO}/issues`, "GitHub Issues"], " 回報，或用 QQ 聯絡我們：" + QQ]] },
+      { h: "遇到問題", items: [[["/faq#webview2", "打不開、白屏、閃退"], "：安裝 WebView2"], [["/faq", "SmartScreen 警告、防毒誤判、加速器認不到"]], ["其他問題到 ", [`${REPO}/issues`, "GitHub Issues"], " 回報，或者來 ", [DISCORD, "Discord"], "，QQ：" + QQ]] },
       { h: "下載與更新", items: [["只從本站或 ", [`${REPO}/releases`, "GitHub Releases"], " 下載"], ["執行前", ["/download#verify", "核對 SHA256"], "，不一致就刪除"], ["已在使用的話，程式會自動更新"]] },
     ],
     legal1: ["MapleLink 與 ", "Beanfun", " 均為第三方開放原始碼軟體，由同一批人並行維護，與遊戲橘子（Gamania）、beanfun! 及 Nexon 沒有任何關聯，也不是它們的官方產品。使用第三方啟動器可能違反遊戲服務條款，請自行評估風險；因使用本軟體造成的任何帳號或財物損失，開發團隊不承擔責任。"],
@@ -36,7 +37,7 @@ const COPY: Record<Locale, Copy> = {
     fine2: ["也玩其他橘子游戏？我们同时维护原版 ", "Beanfun", " 启动器。"],
     help: [
       { h: "开始使用", items: [[["/guide", "新手教学"], "：下载、解压、登录、取 OTP，约五分钟"], ["需要 Windows 10 / 11（64 位）及 WebView2"], ["不需要安装，整个文件夹放哪里都可以"]] },
-      { h: "遇到问题", items: [[["/faq#webview2", "打不开、白屏、闪退"], "：安装 WebView2"], [["/faq", "SmartScreen 警告、杀毒误判、加速器认不到"]], ["其他问题到 ", [`${REPO}/issues`, "GitHub Issues"], " 反馈，或用 QQ 联系我们：" + QQ]] },
+      { h: "遇到问题", items: [[["/faq#webview2", "打不开、白屏、闪退"], "：安装 WebView2"], [["/faq", "SmartScreen 警告、杀毒误判、加速器认不到"]], ["其他问题到 ", [`${REPO}/issues`, "GitHub Issues"], " 反馈，或者来 ", [DISCORD, "Discord"], "，QQ：" + QQ]] },
       { h: "下载与更新", items: [["只从本站或 ", [`${REPO}/releases`, "GitHub Releases"], " 下载"], ["运行前", ["/download#verify", "核对 SHA256"], "，不一致就删除"], ["已在使用的话，程序会自动更新"]] },
     ],
     legal1: ["MapleLink 与 ", "Beanfun", " 均为第三方开放源代码软件，由同一批人并行维护，与游戏橘子（Gamania）、beanfun! 及 Nexon 没有任何关联，也不是它们的官方产品。使用第三方启动器可能违反游戏服务条款，请自行评估风险；因使用本软件造成的任何账号或财物损失，开发团队不承担责任。"],
@@ -51,7 +52,7 @@ const COPY: Record<Locale, Copy> = {
     fine2: ["Play other Gamania games too? We also maintain the original ", "Beanfun", " launcher."],
     help: [
       { h: "Getting started", items: [[["/guide", "Beginner guide"], ": download, unpack, sign in, get an OTP. About five minutes"], ["Needs Windows 10 / 11 (64-bit) and WebView2"], ["Nothing to install. Keep the folder anywhere"]] },
-      { h: "Something wrong?", items: [[["/faq#webview2", "Won't open, blank window, closes at once"], ": install WebView2"], [["/faq", "SmartScreen warning, antivirus flag, accelerator can't see it"]], ["Anything else: open an issue on ", [`${REPO}/issues`, "GitHub"], ", or reach us on QQ: " + QQ]] },
+      { h: "Something wrong?", items: [[["/faq#webview2", "Won't open, blank window, closes at once"], ": install WebView2"], [["/faq", "SmartScreen warning, antivirus flag, accelerator can't see it"]], ["Anything else: open an issue on ", [`${REPO}/issues`, "GitHub"], ", join our ", [DISCORD, "Discord"], ", or reach us on QQ: " + QQ]] },
       { h: "Downloads and updates", items: [["Download only from this site or ", [`${REPO}/releases`, "GitHub Releases"]], [["/download#verify", "Check the SHA256"], " before running; delete it if it differs"], ["Once installed, the app updates itself"]] },
     ],
     legal1: ["MapleLink and ", "Beanfun", " are third-party open-source software maintained side by side by the same people. They are not affiliated with Gamania, beanfun! or Nexon and are not their official products. Using a third-party launcher may breach a game's terms of service; assess the risk yourself. The developers accept no liability for any account or financial loss arising from use of this software."],

@@ -7,8 +7,9 @@ import { useUpdateStore } from "../../lib/stores/update-store";
 import { UpdateDialog } from "../shared/UpdateDialog";
 import type { UpdateInfoDto } from "../../lib/types";
 
-/** Contact for players who cannot or will not use GitHub. Also listed on the site. */
+/** Community contacts for players who cannot or will not use GitHub. Also on the site. */
 const QQ_CONTACT = "2157875454";
+const DISCORD_INVITE = "https://discord.gg/uUn9aAm9ww";
 
 export function AboutTab() {
   const { t } = useTranslation();
@@ -147,7 +148,12 @@ export function AboutTab() {
           label={t("toolbox.about.issues")}
           onClick={() => openExternal("https://github.com/lshw54/maplelink/issues")}
         />
-        <CopyRow icon="💬" label={t("toolbox.about.qq")} value={QQ_CONTACT} last />
+        <LinkRow
+          icon="💬"
+          label={t("toolbox.about.discord")}
+          onClick={() => openExternal(DISCORD_INVITE)}
+        />
+        <CopyRow icon="🐧" label={t("toolbox.about.qq")} value={QQ_CONTACT} last />
       </div>
 
       {/* Copyright */}
