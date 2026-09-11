@@ -31,9 +31,14 @@
     --surface: rgba(255, 255, 255, 0.04);
     --surface-hover: rgba(255, 255, 255, 0.07);
     --border: rgba(255, 255, 255, 0.08);
+    /* The secondary tones are set by contrast, not by eye. Against the
+       lightest surface they sit on (--tb-card, #141619) these give 14.1,
+       7.5 and 5.0 to one; WCAG AA wants 4.5 for body text, and the old
+       values were 4.5 and 1.9 — the faint one was decorative rather than
+       readable, which is exactly what players reported. */
     --text: rgba(255, 255, 255, 0.88);
-    --text-dim: rgba(255, 255, 255, 0.45);
-    --text-faint: rgba(255, 255, 255, 0.22);
+    --text-dim: rgba(255, 255, 255, 0.62);
+    --text-faint: rgba(255, 255, 255, 0.48);
     --glow-bg: rgba(var(--accent-rgb), 0.06);
     --input-focus-ring: rgba(var(--accent-rgb), 0.08);
     --tb-bg: var(--bg-user, #090b0f);
@@ -51,9 +56,14 @@
     --surface: rgba(0, 0, 0, 0.04);
     --surface-hover: rgba(0, 0, 0, 0.08);
     --border: rgba(0, 0, 0, 0.12);
+    /* Same rule against this theme's darkest surface, the page itself, and
+       checked against every accent hue the page can be tinted with (the
+       worst of those is what these numbers are): 12.3, 5.4 and 4.7 to one.
+       The old pair managed 2.9 and 1.7, so light mode was the worse of the
+       two to read. */
     --text: #1d1d1f;
-    --text-dim: #86868b;
-    --text-faint: #b0b0b5;
+    --text-dim: #55555a;
+    --text-faint: #5e5e63;
     --glow-bg: rgba(var(--accent-rgb), 0.04);
     --input-focus-ring: rgba(var(--accent-rgb), 0.12);
     --tb-bg: var(--bg-user-light, #e6e6ea);

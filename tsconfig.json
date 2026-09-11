@@ -11,6 +11,10 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+    // Explicit, because a test reads globals.css off disk to check its
+    // contrast ratios. Naming them also stops transitive @types packages
+    // from leaking globals into app code.
+    "types": ["node", "vite/client"],
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,

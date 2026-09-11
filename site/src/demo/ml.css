@@ -12,8 +12,10 @@
   --ml-surface-hover: rgba(255, 255, 255, 0.07);
   --ml-border: rgba(255, 255, 255, 0.08);
   --ml-text: rgba(255, 255, 255, 0.88);
-  --ml-dim: rgba(255, 255, 255, 0.45);
-  --ml-faint: rgba(255, 255, 255, 0.22);
+  /* Matches the app's own tokens, which are set by contrast rather than by
+     eye — see globals.css and the text-contrast test. */
+  --ml-dim: rgba(255, 255, 255, 0.62);
+  --ml-faint: rgba(255, 255, 255, 0.48);
   --ml-green: #4ade80;
   --ml-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Microsoft JhengHei UI", "Microsoft JhengHei", "Segoe UI", "PingFang TC", system-ui, -apple-system, sans-serif;
