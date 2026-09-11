@@ -1,4 +1,5 @@
 import { useEffect, useCallback, type ReactNode } from "react";
+import { useOverlayLayer } from "../lib/hooks/use-overlay";
 
 interface ModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, size = "md", children }: ModalProps) {
+  useOverlayLayer(isOpen);
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();

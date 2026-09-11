@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
+import { useOverlayLayer } from "../../lib/hooks/use-overlay";
 
 /**
  * Asked when the user closes the window and the close behaviour is still "ask".
@@ -13,6 +14,7 @@ export function CloseDialog({
   onCancel: () => void;
   onChoose: (action: "quit" | "tray", remember: boolean) => void;
 }) {
+  useOverlayLayer();
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
 

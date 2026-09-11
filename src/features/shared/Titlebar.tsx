@@ -6,6 +6,7 @@ import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
+import { useOverlayOpen } from "../../lib/hooks/use-overlay";
 
 export function Titlebar() {
   const { t } = useTranslation();
@@ -15,6 +16,9 @@ export function Titlebar() {
   const classicMode = useUiStore((s) => s.classicMode);
   const config = useConfigStore((s) => s.config);
   const setConfig = useSetConfig();
+  // While a modal covers the window this bar still works, but only for what
+  // belongs to the window itself — never as a way to click past the modal.
+  const overlayOpen = useOverlayOpen();
 
   const region = config?.region ?? "HK";
   // Off the login page the indicator describes the session in use, not the
@@ -57,7 +61,9 @@ export function Titlebar() {
     <div
       onMouseDown={handleDragStart}
       className="flex h-[34px] shrink-0 items-center"
-      style={{ zIndex: 10, position: "relative" }}
+      // Above every overlay (the highest is z-120), so a window with a modal
+      // open can still be dragged, minimised and closed.
+      style={{ zIndex: 200, position: "relative" }}
     >
       {/*
         App name. It has to be able to give up its space: a flex item defaults
@@ -83,7 +89,7 @@ export function Titlebar() {
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {/* Classic (懷舊服) toggle + region toggle — same style, side by side */}
-        {currentPage === "login" ? (
+        {overlayOpen ? null : currentPage === "login" ? (
           <>
             <button
               onClick={toggleClassic}
@@ -117,24 +123,28 @@ export function Titlebar() {
         )}
 
         {/* Client manager — reachable from every page, not just the toolbox */}
-        <button
-          onClick={() => {
-            commands.openClientManagerWindow().catch(() => {});
-          }}
-          title={t("shared.titlebar.client_manager")}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
-        >
-          <ClientIcon className="h-[15px] w-[15px]" />
-        </button>
+        {!overlayOpen && (
+          <button
+            onClick={() => {
+              commands.openClientManagerWindow().catch(() => {});
+            }}
+            title={t("shared.titlebar.client_manager")}
+            className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          >
+            <ClientIcon className="h-[15px] w-[15px]" />
+          </button>
+        )}
 
         {/* Toolbox */}
-        <button
-          onClick={handleToolbox}
-          title={t("shared.titlebar.toolbox")}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
-        >
-          🛠
-        </button>
+        {!overlayOpen && (
+          <button
+            onClick={handleToolbox}
+            title={t("shared.titlebar.toolbox")}
+            className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          >
+            🛠
+          </button>
+        )}
 
         {/* Minimize */}
         <button

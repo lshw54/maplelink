@@ -7,6 +7,7 @@ import {
   announcementKey,
 } from "../../lib/announcement";
 import { AnnouncementBody } from "./AnnouncementBody";
+import { useOverlayLayer } from "../../lib/hooks/use-overlay";
 
 /**
  * Announcement overlay. Mounted fresh each open (parent renders it
@@ -27,6 +28,7 @@ export function AnnouncementModal({
   onClose: () => void;
   onMarkSeen: () => void;
 }) {
+  useOverlayLayer();
   const { t } = useTranslation();
   const counts = forced && ANNOUNCEMENT_LEVEL !== "info";
   const [secondsLeft, setSecondsLeft] = useState(counts ? ANNOUNCEMENT_FORCED_SECONDS : 0);
