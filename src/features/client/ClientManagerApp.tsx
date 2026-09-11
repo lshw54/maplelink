@@ -397,58 +397,50 @@ export function ClientManagerApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
 
-      {/* Which game, which version, how it stands. */}
-      <div className="shrink-0 px-6 pb-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className="text-[22px] leading-none font-bold tracking-tight">
-            {manifest?.productName ?? "…"}
-          </h1>
-          <span className="rounded-md bg-[var(--surface-hover)] px-2 py-1 font-mono text-[12px] leading-none font-bold text-accent">
-            {manifest?.fullVersion ?? manifest?.version ?? "—"}
-          </span>
-          <div className="flex-1" />
-          {local !== undefined && (
-            <span
-              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold ${
-                local?.matchesOfficial
-                  ? "bg-[rgba(34,197,94,0.14)] text-green-500"
-                  : "bg-[rgba(234,179,8,0.14)] text-yellow-500"
-              }`}
-            >
-              <span className="text-[8px]">●</span>
-              {local === null
-                ? t("client.no_client_here")
-                : local.matchesOfficial
-                  ? t("client.up_to_date")
-                  : t("client.version_ambiguous", {
-                      marker: String(local.marker),
-                      candidates: local.candidates.join(" / ") || "?",
-                    })}
+      {/* Which game, which version, how it stands. Two lines, no boxes: the
+          numbers are context, not the point of the window. */}
+      <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-[20px] leading-none font-bold tracking-tight">
+              {manifest?.productName ?? "…"}
+            </h1>
+            <span className="text-[13px] leading-none font-semibold text-text-dim">
+              {manifest?.fullVersion ?? manifest?.version ?? ""}
             </span>
+          </div>
+          {manifest && (
+            <p className="mt-1.5 text-[11px] leading-none text-text-faint">
+              {[
+                manifest.publishDate && t("client.published", { date: manifest.publishDate }),
+                exeDate && t("client.exe_dated", { date: exeDate }),
+                t("client.stats", {
+                  count: String(manifest.fileCount),
+                  size: formatBytes(manifest.totalBytes),
+                }),
+              ]
+                .filter(Boolean)
+                .join("  ·  ")}
+            </p>
           )}
         </div>
 
-        {manifest && (
-          <div className="mt-2.5 flex flex-wrap items-stretch gap-x-6 gap-y-2 rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] px-4 py-2">
-            {(
-              [
-                ["client.stat_published", manifest.publishDate || "—"],
-                ["client.stat_exe", exeDate || "—"],
-                ["client.stat_files", String(manifest.fileCount)],
-                ["client.stat_size", formatBytes(manifest.totalBytes)],
-              ] as const
-            ).map(([label, value], i) => (
-              <div
-                key={label}
-                className={`flex flex-col gap-0.5 ${i > 0 ? "border-l border-[var(--tb-border)] pl-6" : ""}`}
-              >
-                <span className="text-[9px] font-semibold tracking-[1.5px] text-text-faint uppercase">
-                  {t(label)}
-                </span>
-                <span className="font-mono text-[12px] text-[var(--text)]">{value}</span>
-              </div>
-            ))}
-          </div>
+        {local !== undefined && (
+          <span
+            className={`flex shrink-0 items-center gap-1.5 text-[11px] font-semibold ${
+              local?.matchesOfficial ? "text-green-500" : "text-yellow-500"
+            }`}
+          >
+            <span className="text-[8px]">●</span>
+            {local === null
+              ? t("client.no_client_here")
+              : local.matchesOfficial
+                ? t("client.up_to_date")
+                : t("client.version_ambiguous", {
+                    marker: String(local.marker),
+                    candidates: local.candidates.join(" / ") || "?",
+                  })}
+          </span>
         )}
       </div>
 
