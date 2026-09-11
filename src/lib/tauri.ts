@@ -111,7 +111,8 @@ export const commands = {
   launchGameDirect: () => invoke<number>("launch_game_direct"),
   isGameRunning: () => invoke<boolean>("is_game_running"),
   getGamePid: () => invoke<number>("get_game_pid"),
-  killGame: () => invoke("kill_game"),
+  /** Resolves once the game is confirmed gone; false if it outlived the wait. */
+  killGame: () => invoke<boolean>("kill_game"),
 
   // Config (global)
   getConfig: () => invoke<AppConfigDto>("get_config"),

@@ -303,10 +303,12 @@ export function MainPage() {
     setShowRelaunchConfirm(false);
     // Kill the running game first, then relaunch
     try {
+      // Resolves once the game is actually gone, so there is no delay to guess
+      // at here: starting while the old copy is still closing is what made this
+      // need a second press.
       await commands.killGame();
       setGamePid(null);
       setGameRunning(false);
-      await new Promise((r) => setTimeout(r, 500));
     } catch {
       /* proceed with launch anyway */
     }
