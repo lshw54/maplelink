@@ -546,10 +546,11 @@
   "client.auto_check_body": "开启后，这个窗口一打开就会用「快速」比对一次客户端，数秒完成，发现问题才需要你动手。随时可以在下方的「自动检查」关掉。",
   "client.auto_check_yes": "好，自动检查",
   "client.auto_check_no": "不用，我自己点",
-  "client.auto_check_never": "不再显示",
   "client.auto_check_toggle": "自动检查",
   "client.auto_check_toggle_hint": "打开这个窗口时自动跑一次快速检查。",
   "launcher.patcher_open_manager": "打开客户端管理",
   "toolbox.tools.client_manager_short": "客户端",
-  "shared.titlebar.client_manager": "游戏客户端管理"
+  "shared.titlebar.client_manager": "游戏客户端管理",
+  "client.group_mode": "检查方式",
+  "client.group_options": "选项"
 }

@@ -320,12 +320,14 @@ export function ClientManagerApp() {
     );
   }, [dir, scanInto, downloadInto]);
 
+  // Either answer is the answer: it is remembered, and the question is not
+  // asked again. The toggle below the list is how it gets changed later.
   const answerAutoCheck = useCallback(
-    (on: boolean, remember: boolean) => {
+    (on: boolean) => {
       setAutoCheck(on);
       setAskAutoCheck(false);
       void commands.prefSet(AUTO_CHECK_KEY, on ? "on" : "off").catch(() => {});
-      if (remember) void commands.prefSet(AUTO_CHECK_ASKED_KEY, "1").catch(() => {});
+      void commands.prefSet(AUTO_CHECK_ASKED_KEY, "1").catch(() => {});
       if (on && dir && phase === "idle") void scanInto(dir, "quick");
     },
     [dir, phase, scanInto],
@@ -449,19 +451,13 @@ export function ClientManagerApp() {
             </p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
-                onClick={() => answerAutoCheck(false, true)}
-                className="rounded-lg px-3 py-1.5 text-[11px] text-text-faint transition-colors hover:bg-[var(--surface-hover)]"
-              >
-                {t("client.auto_check_never")}
-              </button>
-              <button
-                onClick={() => answerAutoCheck(false, false)}
+                onClick={() => answerAutoCheck(false)}
                 className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
               >
                 {t("client.auto_check_no")}
               </button>
               <button
-                onClick={() => answerAutoCheck(true, true)}
+                onClick={() => answerAutoCheck(true)}
                 className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90"
               >
                 {t("client.auto_check_yes")}
@@ -591,42 +587,69 @@ export function ClientManagerApp() {
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {tab === "verify" ? (
             <>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={autoCheck}
-                    onChange={(e) => answerAutoCheck(e.target.checked, true)}
-                    disabled={busy}
-                    className="accent-[var(--accent)]"
-                  />
-                  <span className="font-semibold">{t("client.auto_check_toggle")}</span>
-                  <span className="text-text-faint">{t("client.auto_check_toggle_hint")}</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={direct}
-                    onChange={(e) => setDirect(e.target.checked)}
-                    disabled={busy}
-                    className="accent-[var(--accent)]"
-                  />
-                  <span className="font-semibold">{t("client.direct")}</span>
-                  <span className="text-text-faint">{t("client.direct_hint")}</span>
-                </label>
-                {(["quick", "full"] as const).map((m) => (
-                  <label key={m} className="flex cursor-pointer items-center gap-1.5 text-[11px]">
-                    <input
-                      type="radio"
-                      checked={mode === m}
-                      onChange={() => setMode(m)}
-                      disabled={busy}
-                      className="accent-[var(--accent)]"
-                    />
-                    <span className="font-semibold">{t(`client.mode_${m}`)}</span>
-                    <span className="text-text-faint">{t(`client.mode_${m}_hint`)}</span>
-                  </label>
-                ))}
+              {/* Two groups, captioned and divided: how to check, and how to
+                  behave while doing it. The long explanations move to tooltips
+                  so the bar stays one line. */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] font-semibold tracking-[1px] text-text-faint">
+                    {t("client.group_mode")}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    {(["quick", "full"] as const).map((m) => (
+                      <label
+                        key={m}
+                        title={t(`client.mode_${m}_hint`)}
+                        className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                      >
+                        <input
+                          type="radio"
+                          checked={mode === m}
+                          onChange={() => setMode(m)}
+                          disabled={busy}
+                          className="accent-[var(--accent)]"
+                        />
+                        <span className="font-semibold">{t(`client.mode_${m}`)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <span className="h-4 w-px bg-[var(--tb-border)]" />
+
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] font-semibold tracking-[1px] text-text-faint">
+                    {t("client.group_options")}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <label
+                      title={t("client.auto_check_toggle_hint")}
+                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={autoCheck}
+                        onChange={(e) => answerAutoCheck(e.target.checked)}
+                        disabled={busy}
+                        className="accent-[var(--accent)]"
+                      />
+                      <span className="font-semibold">{t("client.auto_check_toggle")}</span>
+                    </label>
+                    <label
+                      title={t("client.direct_hint")}
+                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={direct}
+                        onChange={(e) => setDirect(e.target.checked)}
+                        disabled={busy}
+                        className="accent-[var(--accent)]"
+                      />
+                      <span className="font-semibold">{t("client.direct")}</span>
+                    </label>
+                  </div>
+                </div>
               </div>
               {hasWork && (
                 <span

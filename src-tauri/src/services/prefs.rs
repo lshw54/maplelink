@@ -8,8 +8,15 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 const FILE: &str = "prefs.json";
+
+/// Writes are read-modify-write, so two of them at once would each start from
+/// the same old file and the later one would drop the other's key. The UI does
+/// exactly that — it answers a prompt by setting two keys — so the sequence is
+/// serialised here rather than left to the caller.
+static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 fn path(dir: &Path) -> std::path::PathBuf {
     dir.join(FILE)
@@ -27,11 +34,16 @@ pub fn get(dir: &Path, key: &str) -> Option<String> {
 }
 
 pub fn set(dir: &Path, key: &str, value: &str) -> Result<(), String> {
+    let _guard = WRITE_LOCK.lock().map_err(|_| "prefs lock poisoned")?;
     let mut all = read(dir);
     all.insert(key.to_string(), value.to_string());
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
-    std::fs::write(path(dir), json).map_err(|e| e.to_string())
+    // Write beside the file and rename, so a reader never sees a half-written
+    // one — that is how the file ended up as invalid JSON during testing.
+    let tmp = path(dir).with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path(dir)).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -66,6 +78,26 @@ mod tests {
         set(&dir, "client.asked", "1").unwrap();
         assert_eq!(get(&dir, "client.auto_check").as_deref(), Some("off"));
         assert_eq!(get(&dir, "client.asked").as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn concurrent_writes_keep_every_key() {
+        let dir = temp_dir("concurrent");
+        std::thread::scope(|scope| {
+            for i in 0..8 {
+                let dir = dir.clone();
+                scope.spawn(move || {
+                    set(&dir, &format!("key{i}"), &i.to_string()).unwrap();
+                });
+            }
+        });
+        for i in 0..8 {
+            assert_eq!(
+                get(&dir, &format!("key{i}")).as_deref(),
+                Some(i.to_string().as_str()),
+                "key{i} was lost"
+            );
+        }
     }
 
     #[test]

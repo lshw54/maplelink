@@ -1,5 +1,6 @@
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { ClientIcon } from "../../components/icons/ClientIcon";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
@@ -108,9 +109,9 @@ export function Titlebar() {
             commands.openClientManagerWindow().catch(() => {});
           }}
           title={t("shared.titlebar.client_manager")}
-          className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          className="flex h-[34px] w-[34px] items-center justify-center text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
         >
-          🎮
+          <ClientIcon className="h-[15px] w-[15px]" />
         </button>
 
         {/* Toolbox */}

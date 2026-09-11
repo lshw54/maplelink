@@ -546,10 +546,11 @@
   "client.auto_check_body": "With this on, the window runs a quick comparison as soon as it opens — a few seconds — and only asks for you when something is off. You can switch it off any time under Auto check below.",
   "client.auto_check_yes": "Yes, check automatically",
   "client.auto_check_no": "No, I'll press it",
-  "client.auto_check_never": "Don't ask again",
   "client.auto_check_toggle": "Auto check",
   "client.auto_check_toggle_hint": "Run a quick check whenever this window opens.",
   "launcher.patcher_open_manager": "Open the client manager",
   "toolbox.tools.client_manager_short": "Client",
-  "shared.titlebar.client_manager": "Game client manager"
+  "shared.titlebar.client_manager": "Game client manager",
+  "client.group_mode": "CHECK",
+  "client.group_options": "OPTIONS"
 }

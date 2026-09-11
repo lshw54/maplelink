@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
+import { ClientIcon } from "../../components/icons/ClientIcon";
 import { Modal } from "../../components/Modal";
 import { Section } from "./ToolboxUi";
 
@@ -17,7 +18,7 @@ function getMaintenanceInfo(t: (key: string) => string) {
 }
 
 interface ToolCard {
-  icon: string;
+  icon: React.ReactNode;
   iconBg: string;
   name: string;
   desc: string;
@@ -118,7 +119,7 @@ export function ToolsTab() {
       <Section title={t("toolbox.tools.section_client")}>
         <ToolRow
           card={{
-            icon: "🎮",
+            icon: <ClientIcon className="h-[17px] w-[17px] text-green-500" />,
             iconBg: "bg-[rgba(34,197,94,0.1)]",
             name: t("toolbox.tools.client_manager"),
             desc: t("toolbox.tools.client_manager_desc"),
