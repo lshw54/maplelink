@@ -150,6 +150,7 @@ export function ClientManagerApp() {
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [direct, setDirect] = useState(true);
   const [autoCheck, setAutoCheck] = useState(false);
   // `undefined` until the stored answer is read, so the prompt cannot flash.
@@ -258,6 +259,40 @@ export function ClientManagerApp() {
   }, []);
 
   const runScan = useCallback(() => scanInto(dir, mode), [scanInto, dir, mode]);
+
+  /**
+   * Ask beanfun for the list again.
+   *
+   * Loading already prefers the network and only falls back to the cached
+   * copy, so this is the manual retry for when that fallback happened: the
+   * connection is back, or the player wants to be sure the list is today's
+   * before trusting a comparison. It is also the way out of a start-up that
+   * failed with no cache to fall back on.
+   */
+  const loadedVersion = manifest?.version ?? null;
+  const reloadManifest = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const m = await commands.clientLoadManifest();
+      setManifest(m);
+      // A result on screen describes the list it was compared against, so a
+      // different version makes it wrong rather than merely old.
+      if (loadedVersion !== null && loadedVersion !== m.version) {
+        setReport(null);
+        setSelected(new Set());
+        setOutcome(null);
+      }
+      if (m.cachedAt) {
+        // Still the stored copy: beanfun did not answer this time either.
+        setError(t("client.manifest_still_offline"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [t, loadedVersion]);
 
   useEffect(() => {
     let live = true;
@@ -592,14 +627,34 @@ export function ClientManagerApp() {
                 </p>
               )}
             {manifest?.cachedAt && (
-              <p className="mt-2 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2 text-[11px] leading-relaxed text-yellow-500">
-                {t("client.offline_manifest", { date: formatCachedAt(manifest.cachedAt) })}
-              </p>
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2">
+                <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-yellow-500">
+                  {t("client.offline_manifest", { date: formatCachedAt(manifest.cachedAt) })}
+                </p>
+                <button
+                  onClick={() => void reloadManifest()}
+                  disabled={refreshing || busy}
+                  className="shrink-0 rounded-lg border border-[rgba(234,179,8,0.4)] px-2.5 py-1 text-[11px] font-semibold text-yellow-500 transition-colors hover:bg-[rgba(234,179,8,0.12)] disabled:opacity-50"
+                >
+                  {refreshing ? t("client.manifest_refreshing") : t("client.manifest_refresh")}
+                </button>
+              </div>
             )}
             {error && (
-              <p className="mt-2 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.06)] px-3 py-2 text-[11px] text-red-400">
-                {error}
-              </p>
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.06)] px-3 py-2">
+                <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-red-400">{error}</p>
+                {/* No manifest means nothing can be compared, so the retry has
+                    to be here rather than only on the offline notice. */}
+                {!manifest && (
+                  <button
+                    onClick={() => void reloadManifest()}
+                    disabled={refreshing}
+                    className="shrink-0 rounded-lg border border-[rgba(239,68,68,0.4)] px-2.5 py-1 text-[11px] font-semibold text-red-400 transition-colors hover:bg-[rgba(239,68,68,0.12)] disabled:opacity-50"
+                  >
+                    {refreshing ? t("client.manifest_refreshing") : t("client.manifest_refresh")}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
