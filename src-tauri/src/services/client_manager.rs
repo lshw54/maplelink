@@ -172,23 +172,22 @@ fn write_cache(dir: &Path, url: &str, body: &str) {
 /// reached, that copy is used instead: a scan can still say which files are
 /// wrong, even though repairing them needs the server.
 pub async fn fetch_manifest(cache_dir: &Path) -> Result<ClientManifest, String> {
-    let (body, cached_at, url) = match crate::services::game_download::fetch_product_info_body().await
-    {
-        Ok((url, body)) => {
-            write_cache(cache_dir, &url, &body);
-            (body, None, url)
-        }
-        Err(e) => {
-            let cached = read_cache(cache_dir).ok_or_else(|| {
-                format!("{e} (and no cached manifest to fall back on)")
-            })?;
-            tracing::info!(
-                "client manager: beanfun unreachable ({e}); using the copy cached at {}",
-                cached.fetched_at
-            );
-            (cached.body, Some(cached.fetched_at), cached.url)
-        }
-    };
+    let (body, cached_at, url) =
+        match crate::services::game_download::fetch_product_info_body().await {
+            Ok((url, body)) => {
+                write_cache(cache_dir, &url, &body);
+                (body, None, url)
+            }
+            Err(e) => {
+                let cached = read_cache(cache_dir)
+                    .ok_or_else(|| format!("{e} (and no cached manifest to fall back on)"))?;
+                tracing::info!(
+                    "client manager: beanfun unreachable ({e}); using the copy cached at {}",
+                    cached.fetched_at
+                );
+                (cached.body, Some(cached.fetched_at), cached.url)
+            }
+        };
     let mut manifest = parse_manifest(&body)?;
     manifest.cached_at = cached_at;
     manifest.manifest_url = url;

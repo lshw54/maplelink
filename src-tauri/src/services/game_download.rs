@@ -384,12 +384,20 @@ mod full_client_tests {
     #[test]
     fn missing_version_or_base_url_is_an_error() {
         assert!(full_client_info(&INFO.replace("\"V282\"", "\"\""), MANIFEST_URL).is_err());
-        assert!(full_client_info(&INFO.replace("https://maplestory-download", "ftp://x"), MANIFEST_URL).is_err());
+        assert!(full_client_info(
+            &INFO.replace("https://maplestory-download", "ftp://x"),
+            MANIFEST_URL
+        )
+        .is_err());
     }
 
     #[test]
     fn an_empty_execution_path_yields_empty_names_not_a_panic() {
-        let got = full_client_info(&INFO.replace("P2PdPoyK5obH/MapleStory.exe", ""), MANIFEST_URL).unwrap();
+        let got = full_client_info(
+            &INFO.replace("P2PdPoyK5obH/MapleStory.exe", ""),
+            MANIFEST_URL,
+        )
+        .unwrap();
         assert_eq!(got.folder_name, "");
         assert_eq!(got.exe_name, "");
     }
