@@ -29,7 +29,26 @@ const config: Config = {
     mdx1Compat: { headingIds: true, admonitions: true },
   },
 
-  future: { v4: true, faster: true },
+  future: {
+    v4: true,
+    // Everything `faster: true` turns on, except the one flag that breaks the
+    // dev server: rspack's persistent cache panics the process when it cannot
+    // replace its own cache directory ("should have bucket pack metas"), which
+    // on Windows happens whenever another process is holding a file in
+    // node_modules/.cache. The build then dies and only a manual cache wipe
+    // brings it back — not a trade worth a few seconds of startup.
+    faster: {
+      swcJsLoader: true,
+      swcJsMinimizer: true,
+      swcHtmlMinimizer: true,
+      lightningCssMinimizer: true,
+      mdxCrossCompilerCache: true,
+      rspackBundler: true,
+      rspackPersistentCache: false,
+      ssgWorkerThreads: true,
+      gitEagerVcs: true,
+    },
+  },
 
   i18n: {
     defaultLocale: "zh-TW",
@@ -92,7 +111,11 @@ const config: Config = {
     },
     // The landing page carries its own footer; the theme footer would repeat it.
     footer: undefined,
-    prism: { theme: prismThemes.github, darkTheme: prismThemes.dracula, additionalLanguages: ["powershell"] },
+    prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+      additionalLanguages: ["powershell"],
+    },
   } satisfies Preset.ThemeConfig,
 };
 
