@@ -44,13 +44,13 @@ const KIND_DETAIL: Record<ClientIssueKind, string> = {
   unreadable: "client.issue_why_unreadable",
 };
 
-function FolderRow({
+function FolderRow<T>({
   node,
   depth,
   open,
   onToggle,
 }: {
-  node: DirNode;
+  node: DirNode<T>;
   depth: number;
   open: boolean;
   onToggle: () => void;
@@ -59,11 +59,14 @@ function FolderRow({
   return (
     <button
       onClick={onToggle}
-      style={{ paddingLeft: 12 + depth * 14 }}
-      className="flex h-[30px] w-full items-center gap-2 border-b border-[var(--tb-border)] pr-3 text-left last:border-b-0 hover:bg-[var(--surface-hover)]"
+      style={{ paddingLeft: 10 + depth * 16 }}
+      // Tinted and bold, so a folder reads as a heading over the rows it owns
+      // rather than as one more line in the list.
+      className="flex h-[30px] w-full items-center gap-2 border-b border-[var(--tb-border)] bg-[rgba(255,255,255,0.025)] pr-3 text-left last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
       <span className="w-3 shrink-0 text-center text-[9px] text-text-dim">{open ? "▾" : "▸"}</span>
-      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[var(--text)]">
+      <span className="shrink-0 text-[11px] text-text-dim">{open ? "📂" : "📁"}</span>
+      <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-[var(--text)]">
         {node.name}
       </span>
       {node.issues > 0 && (
@@ -78,22 +81,23 @@ function FolderRow({
   );
 }
 
-function TreeLevel({
+/**
+ * One level of the tree: its folders (each recursing when open), then its own
+ * files. The leaf is drawn by the caller, so the same walk serves the manifest
+ * rows and the bare paths of the extra-files list.
+ */
+function TreeLevel<T>({
   node,
   depth,
   expanded,
   toggle,
-  selected,
-  setSelected,
-  outdated,
+  renderFile,
 }: {
-  node: DirNode;
+  node: DirNode<T>;
   depth: number;
   expanded: Set<string>;
   toggle: (path: string) => void;
-  selected: Set<string>;
-  setSelected: (next: Set<string>) => void;
-  outdated: boolean;
+  renderFile: (item: T, depth: number) => React.ReactNode;
 }) {
   return (
     <>
@@ -108,32 +112,28 @@ function TreeLevel({
                 depth={depth + 1}
                 expanded={expanded}
                 toggle={toggle}
-                selected={selected}
-                setSelected={setSelected}
-                outdated={outdated}
+                renderFile={renderFile}
               />
             )}
           </div>
         );
       })}
-      {node.files.map((f) => (
-        <FileRow
-          key={f.path}
-          file={f}
-          // Nested rows show the file name; the full path is in the tooltip.
-          label={f.path.split("/").pop() ?? f.path}
-          indent={12 + depth * 14}
-          checked={selected.has(f.path)}
-          outdated={outdated}
-          onToggle={() => {
-            const next = new Set(selected);
-            if (next.has(f.path)) next.delete(f.path);
-            else next.add(f.path);
-            setSelected(next);
-          }}
-        />
-      ))}
+      {node.files.map((item) => renderFile(item, depth))}
     </>
+  );
+}
+
+/** A file the manifest does not mention: path only, nothing to compare. */
+function ExtraRow({ path, label, indent = 12 }: { path: string; label?: string; indent?: number }) {
+  return (
+    <div
+      style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px", paddingLeft: indent }}
+      className="flex h-[30px] items-center border-b border-[var(--tb-border)] pr-3 font-mono text-[11px] text-text-dim last:border-b-0"
+    >
+      <span title={path} className="truncate">
+        {label ?? path}
+      </span>
+    </div>
   );
 }
 
@@ -270,14 +270,38 @@ export function VerifyPanel({
     return needle ? base.filter((f) => f.path.toLowerCase().includes(needle)) : base;
   }, [report, issues, filter, query]);
 
-  const tree = useMemo(() => buildTree(rows), [rows]);
+  const extras = useMemo(() => {
+    if (!report) return [];
+    const needle = query.trim().toLowerCase();
+    return needle
+      ? report.extraFiles.filter((p) => p.toLowerCase().includes(needle))
+      : report.extraFiles;
+  }, [report, query]);
+
+  const tree = useMemo(
+    () =>
+      buildTree(
+        rows,
+        (f) => f.path,
+        (f) => f.kind !== null,
+      ),
+    [rows],
+  );
+  // The extra files are a flat list of paths too, and a folder that is entirely
+  // leftovers is exactly what someone wants to see grouped.
+  const extraTree = useMemo(() => buildTree(extras, (p) => p), [extras]);
+  const shownTree = filter === "extra" ? extraTree : tree;
 
   // A search or an issues-only filter narrows things to a handful, and leaving
   // those collapsed would hide the very rows the player asked for.
   const narrowed = query.trim() !== "" || filter === "issues";
   const openDirs = useMemo(
-    () => (narrowed ? allDirPaths(tree) : expanded),
-    [narrowed, tree, expanded],
+    () => (narrowed ? allDirPaths(shownTree) : expanded),
+    [narrowed, shownTree, expanded],
+  );
+  const allOpen = useMemo(
+    () => allDirPaths(shownTree).size > 0 && allDirPaths(shownTree).size === openDirs.size,
+    [shownTree, openDirs],
   );
 
   const toggleDir = useCallback((path: string) => {
@@ -288,14 +312,6 @@ export function VerifyPanel({
       return next;
     });
   }, []);
-
-  const extras = useMemo(() => {
-    if (!report) return [];
-    const needle = query.trim().toLowerCase();
-    return needle
-      ? report.extraFiles.filter((p) => p.toLowerCase().includes(needle))
-      : report.extraFiles;
-  }, [report, query]);
 
   if (!report) {
     return (
@@ -360,6 +376,14 @@ export function VerifyPanel({
           spellCheck={false}
           className="w-44 rounded-lg border border-[var(--tb-border)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] text-[var(--text)] outline-none focus:border-accent"
         />
+        {view === "folder" && !narrowed && (
+          <button
+            onClick={() => setExpanded(allOpen ? new Set() : allDirPaths(shownTree))}
+            className="rounded-lg border border-[var(--tb-border)] px-2.5 py-1 text-[11px] font-semibold text-text-dim hover:bg-[var(--surface-hover)]"
+          >
+            {t(allOpen ? "client.collapse_all" : "client.expand_all")}
+          </button>
+        )}
         {filter === "issues" && issues.length > 0 && (
           <button
             onClick={() =>
@@ -378,15 +402,24 @@ export function VerifyPanel({
         <>
           <p className="shrink-0 text-[11px] text-text-dim">{t("client.extra_hint")}</p>
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)]">
-            {extras.map((p) => (
-              <div
-                key={p}
-                style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px" }}
-                className="flex h-[30px] items-center border-b border-[var(--tb-border)] px-3 font-mono text-[11px] text-text-dim last:border-b-0"
-              >
-                <span className="truncate">{p}</span>
-              </div>
-            ))}
+            {view === "folder" ? (
+              <TreeLevel
+                node={extraTree}
+                depth={0}
+                expanded={openDirs}
+                toggle={toggleDir}
+                renderFile={(path, depth) => (
+                  <ExtraRow
+                    key={path}
+                    path={path}
+                    label={path.split("/").pop() ?? path}
+                    indent={10 + (depth + 1) * 16}
+                  />
+                )}
+              />
+            ) : (
+              extras.map((p) => <ExtraRow key={p} path={p} />)
+            )}
             {extras.length === 0 && (
               <p className="p-3 text-[11px] text-text-faint">{t("client.nothing_here")}</p>
             )}
@@ -400,9 +433,23 @@ export function VerifyPanel({
               depth={0}
               expanded={openDirs}
               toggle={toggleDir}
-              selected={selected}
-              setSelected={setSelected}
-              outdated={outdated}
+              renderFile={(f, depth) => (
+                <FileRow
+                  key={f.path}
+                  file={f}
+                  // Nested rows show the file name; the full path is in the tooltip.
+                  label={f.path.split("/").pop() ?? f.path}
+                  indent={10 + (depth + 1) * 16}
+                  checked={selected.has(f.path)}
+                  outdated={outdated}
+                  onToggle={() => {
+                    const next = new Set(selected);
+                    if (next.has(f.path)) next.delete(f.path);
+                    else next.add(f.path);
+                    setSelected(next);
+                  }}
+                />
+              )}
             />
           ) : (
             rows.map((f) => (
