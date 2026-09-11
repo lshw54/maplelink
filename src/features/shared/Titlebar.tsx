@@ -59,14 +59,27 @@ export function Titlebar() {
       className="flex h-[34px] shrink-0 items-center"
       style={{ zIndex: 10, position: "relative" }}
     >
-      {/* App name */}
-      <div className="pointer-events-none flex flex-1 items-center pl-4 text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
-        MAPLELINK
+      {/*
+        App name. It has to be able to give up its space: a flex item defaults
+        to min-width:auto, so without `min-w-0` the wordmark pushes the window
+        controls off the right edge as soon as anything makes text bigger —
+        Windows' accessibility text size, most of all.
+
+        On the login page it is dropped entirely. That window is 350px wide and
+        already shows the logo and the wordmark in its middle, so the copy up
+        here buys nothing and costs the row 146 of those 350 pixels.
+      */}
+      <div className="pointer-events-none flex min-w-0 flex-1 items-center pl-4">
+        {currentPage !== "login" && (
+          <span className="truncate text-[11px] font-bold tracking-[3px] text-text-dim uppercase">
+            MAPLELINK
+          </span>
+        )}
       </div>
 
       {/* Actions — no-drag */}
       <div
-        className="flex items-center"
+        className="flex shrink-0 items-center"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {/* Classic (懷舊服) toggle + region toggle — same style, side by side */}
@@ -75,7 +88,7 @@ export function Titlebar() {
             <button
               onClick={toggleClassic}
               title={t("login.mode_classic")}
-              className={`relative flex h-[34px] w-[34px] items-center justify-center text-[13px] transition-all hover:bg-[var(--surface-hover)] active:scale-[0.92] ${
+              className={`relative flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[13px] transition-all hover:bg-[var(--surface-hover)] active:scale-[0.92] ${
                 classicMode ? "text-accent" : "text-text-dim hover:text-accent"
               }`}
             >
@@ -87,7 +100,7 @@ export function Titlebar() {
             <button
               onClick={handleRegionToggle}
               title={t("shared.titlebar.region_toggle")}
-              className={`relative flex h-[34px] w-[34px] items-center justify-center text-[12px] transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92] ${
+              className={`relative flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[12px] transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92] ${
                 classicMode ? "text-text-faint" : "text-text-dim"
               }`}
             >
@@ -98,7 +111,7 @@ export function Titlebar() {
             </button>
           </>
         ) : (
-          <span className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-faint">
+          <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[12px] text-text-faint">
             {shownRegion}
           </span>
         )}
@@ -109,7 +122,7 @@ export function Titlebar() {
             commands.openClientManagerWindow().catch(() => {});
           }}
           title={t("shared.titlebar.client_manager")}
-          className="flex h-[34px] w-[34px] items-center justify-center text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
         >
           <ClientIcon className="h-[15px] w-[15px]" />
         </button>
@@ -118,7 +131,7 @@ export function Titlebar() {
         <button
           onClick={handleToolbox}
           title={t("shared.titlebar.toolbox")}
-          className="flex h-[34px] w-[34px] items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[12px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-accent active:scale-[0.92]"
         >
           🛠
         </button>
@@ -127,7 +140,7 @@ export function Titlebar() {
         <button
           onClick={() => appWindow.minimize()}
           aria-label={t("shared.titlebar.minimize")}
-          className="flex h-[34px] w-[34px] items-center justify-center text-[14px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[14px] text-text-dim transition-all hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
         >
           −
         </button>
@@ -136,7 +149,7 @@ export function Titlebar() {
         <button
           onClick={() => appWindow.close()}
           aria-label={t("shared.titlebar.close")}
-          className="flex h-[34px] w-[34px] items-center justify-center rounded-tr-[var(--radius)] text-[16px] text-text-dim transition-all hover:bg-[var(--danger)] hover:text-white"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-tr-[var(--radius)] text-[16px] text-text-dim transition-all hover:bg-[var(--danger)] hover:text-white"
         >
           ×
         </button>
