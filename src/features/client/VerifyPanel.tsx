@@ -16,11 +16,31 @@ function formatBytes(n: number): string {
   return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-const KIND_LABEL: Record<ClientIssueKind, string> = {
-  missing: "client.issue_missing",
-  sizeMismatch: "client.issue_size",
-  hashMismatch: "client.issue_hash",
-  unreadable: "client.issue_unreadable",
+/**
+ * What to call the problem, in the words a player would use.
+ *
+ * A content mismatch has two very different causes and the file alone cannot
+ * tell them apart: the client is a version behind, or the file is damaged. The
+ * version marker already answers that for the whole folder, so it decides the
+ * wording here — "out of date" when the client is behind, "damaged" when it
+ * claims to be the official version and still does not match.
+ */
+function issueLabel(kind: ClientIssueKind, outdated: boolean): string {
+  switch (kind) {
+    case "missing":
+      return "client.issue_missing";
+    case "unreadable":
+      return "client.issue_unreadable";
+    default:
+      return outdated ? "client.issue_outdated" : "client.issue_damaged";
+  }
+}
+
+const KIND_DETAIL: Record<ClientIssueKind, string> = {
+  missing: "client.issue_why_missing",
+  sizeMismatch: "client.issue_why_size",
+  hashMismatch: "client.issue_why_hash",
+  unreadable: "client.issue_why_unreadable",
 };
 
 function Chip({
@@ -56,14 +76,25 @@ function Chip({
 function FileRow({
   file,
   checked,
+  outdated,
   onToggle,
 }: {
   file: ClientCheckedFileDto;
   checked: boolean;
+  outdated: boolean;
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
   const issue = file.kind !== null;
+  const kind = file.kind as ClientIssueKind;
+  // The row is one line, so the full reason and what will happen to the file
+  // live in the tooltip rather than being cut off in the status column.
+  const why = issue
+    ? `${t(KIND_DETAIL[kind], {
+        expected: formatBytes(file.expectedSize),
+        local: file.localSize === null ? "—" : formatBytes(file.localSize),
+      })} ${t("client.issue_will_replace")}`
+    : t("client.issue_why_ok");
 
   return (
     <div
@@ -90,11 +121,12 @@ function FileRow({
         {file.path}
       </span>
       <span
-        className={`w-20 shrink-0 text-right text-[10px] font-semibold ${
+        title={why}
+        className={`w-24 shrink-0 cursor-help text-right text-[10px] font-semibold ${
           issue ? "text-yellow-500" : "text-text-faint"
         }`}
       >
-        {issue ? t(KIND_LABEL[file.kind as ClientIssueKind]) : t("client.status_ok")}
+        {issue ? t(issueLabel(kind, outdated)) : t("client.status_ok")}
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-[10px] text-text-faint">
         {formatBytes(file.expectedSize)}
@@ -108,10 +140,13 @@ export function VerifyPanel({
   report,
   selected,
   setSelected,
+  outdated = false,
 }: {
   report: ClientScanReportDto | null;
   selected: Set<string>;
   setSelected: (next: Set<string>) => void;
+  /** The installed client is behind the official version, per the version marker. */
+  outdated?: boolean;
 }) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("all");
@@ -224,6 +259,7 @@ export function VerifyPanel({
               key={f.path}
               file={f}
               checked={selected.has(f.path)}
+              outdated={outdated}
               onToggle={() => {
                 const next = new Set(selected);
                 if (next.has(f.path)) next.delete(f.path);

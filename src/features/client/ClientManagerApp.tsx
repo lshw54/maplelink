@@ -576,7 +576,12 @@ export function ClientManagerApp() {
           </div>
 
           <div className="h-3 shrink-0" />
-          <VerifyPanel report={report} selected={selected} setSelected={setSelected} />
+          <VerifyPanel
+            report={report}
+            selected={selected}
+            setSelected={setSelected}
+            outdated={local != null && !local.matchesOfficial}
+          />
         </>
       ) : (
         <DownloadPanel onAutoInstall={startAutoInstall} />
