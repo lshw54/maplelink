@@ -47,6 +47,14 @@ function formatBytes(n: number): string {
   return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+/** RFC 3339 → `2026/09/11 16:40`, for "this copy is from ...". */
+function formatCachedAt(raw: string): string {
+  const at = new Date(raw);
+  if (Number.isNaN(at.getTime())) return raw;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}/${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
 /** `Thu, 10 Sep 2026 08:22:56 GMT` → `2026/09/10`. */
 function formatHttpDate(raw: string | null): string {
   if (!raw) return "";
@@ -568,6 +576,11 @@ export function ClientManagerApp() {
                   {t("client.mismatch_note")}
                 </p>
               )}
+            {manifest?.cachedAt && (
+              <p className="mt-2 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2 text-[11px] leading-relaxed text-yellow-500">
+                {t("client.offline_manifest", { date: formatCachedAt(manifest.cachedAt) })}
+              </p>
+            )}
             {error && (
               <p className="mt-2 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.06)] px-3 py-2 text-[11px] text-red-400">
                 {error}

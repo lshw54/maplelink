@@ -69,6 +69,9 @@ pub struct ClientManifest {
     /// only ever carries the major (`"V282"`); the minor shows up in the names
     /// on beanfun's own download page and nowhere else public.
     pub full_version: Option<String>,
+    /// RFC 3339 time the cached copy was fetched, when this manifest came from
+    /// the cache instead of the network. `None` means it is fresh.
+    pub cached_at: Option<String>,
     #[serde(skip)]
     pub files: Vec<ManifestFile>,
 }
@@ -115,11 +118,77 @@ pub fn exe_patch_url(version: &str) -> Option<String> {
     Some(EXE_PATCH_URL.replace("{:05}", &format!("{n:05}")))
 }
 
+/// The cached manifest body, so a scan still works with no network.
+const CACHE_FILE: &str = "client_manifest.json";
+
+#[derive(Serialize, Deserialize)]
+struct CachedManifest {
+    /// RFC 3339, so the UI can say how old the copy is.
+    fetched_at: String,
+    /// Where the body came from. Resolving it needs the catalog, which is the
+    /// first thing to go when beanfun is unreachable, so it is kept here too.
+    #[serde(default)]
+    url: String,
+    /// The raw `productInfo.json` body, parsed the same way a fresh one is.
+    body: String,
+}
+
+fn cache_path(dir: &Path) -> PathBuf {
+    dir.join(CACHE_FILE)
+}
+
+fn read_cache(dir: &Path) -> Option<CachedManifest> {
+    let text = std::fs::read_to_string(cache_path(dir)).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn write_cache(dir: &Path, url: &str, body: &str) {
+    let entry = CachedManifest {
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        url: url.to_string(),
+        body: body.to_string(),
+    };
+    let Ok(json) = serde_json::to_string(&entry) else {
+        return;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    // Same temp-then-rename as prefs: a half-written cache must never be the
+    // thing a later offline scan reads.
+    let tmp = cache_path(dir).with_extension("json.tmp");
+    if std::fs::write(&tmp, json).is_ok() {
+        let _ = std::fs::rename(&tmp, cache_path(dir));
+    }
+}
+
 /// Fetch and parse the official manifest, then ask the patch CDN how big the
 /// runnable executable is for this version.
-pub async fn fetch_manifest() -> Result<ClientManifest, String> {
-    let (_url, body) = crate::services::game_download::fetch_product_info_body().await?;
+///
+/// `cache_dir` is where the last good copy is kept. When beanfun cannot be
+/// reached, that copy is used instead: a scan can still say which files are
+/// wrong, even though repairing them needs the server.
+pub async fn fetch_manifest(cache_dir: &Path) -> Result<ClientManifest, String> {
+    let (body, cached_at, url) = match crate::services::game_download::fetch_product_info_body().await
+    {
+        Ok((url, body)) => {
+            write_cache(cache_dir, &url, &body);
+            (body, None, url)
+        }
+        Err(e) => {
+            let cached = read_cache(cache_dir).ok_or_else(|| {
+                format!("{e} (and no cached manifest to fall back on)")
+            })?;
+            tracing::info!(
+                "client manager: beanfun unreachable ({e}); using the copy cached at {}",
+                cached.fetched_at
+            );
+            (cached.body, Some(cached.fetched_at), cached.url)
+        }
+    };
     let mut manifest = parse_manifest(&body)?;
+    manifest.cached_at = cached_at;
+    let _ = url;
     let (size, date) = probe_exe_patch(&manifest.version).await;
     manifest.exe_patch_size = size;
     manifest.exe_patch_date = date;
@@ -220,6 +289,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         exe_patch_size: None,
         exe_patch_date: None,
         full_version: None,
+        cached_at: None,
         files: raw.files,
     })
 }
@@ -1449,6 +1519,48 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("does not list"));
     }
+
+    const SAMPLE_URL: &str = "http://maplestory-download.beanfun.com/maplestory/productInfo.json";
+
+    const SAMPLE_INFO: &str = r#"{
+        "productName": "新楓之谷",
+        "version": "V282",
+        "publishDate": "2026/09/04",
+        "baseUrl": "https://maplestory-download.beanfun.com/maplestory/download/",
+        "executionPath": "P2PdPoyK5obH/MapleStory.exe",
+        "files": [{"path": "a.wz", "sizeInBytes": 4, "sha256": "ab"}]
+    }"#;
+
+    #[test]
+    fn a_cached_manifest_round_trips_and_keeps_when_it_was_taken() {
+        let dir = TempDir::new("manifest_cache");
+        assert!(read_cache(dir.path()).is_none());
+
+        write_cache(dir.path(), SAMPLE_URL, SAMPLE_INFO);
+        let cached = read_cache(dir.path()).expect("a copy should have been written");
+        assert_eq!(cached.body, SAMPLE_INFO);
+        assert_eq!(cached.url, SAMPLE_URL);
+        assert!(
+            cached.fetched_at.starts_with("20"),
+            "not a timestamp: {}",
+            cached.fetched_at
+        );
+
+        // The cached body is the same text a fresh fetch would have parsed.
+        let manifest = parse_manifest(&cached.body).unwrap();
+        assert_eq!(manifest.version, "V282");
+        assert_eq!(manifest.files.len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_cache_reads_as_absent_rather_than_failing() {
+        let dir = TempDir::new("manifest_cache_bad");
+        std::fs::write(cache_path(dir.path()), b"{ not json").unwrap();
+        assert!(read_cache(dir.path()).is_none());
+        // And the next good fetch repairs it.
+        write_cache(dir.path(), SAMPLE_URL, SAMPLE_INFO);
+        assert!(read_cache(dir.path()).is_some());
+    }
 }
 
 /// Live checks against beanfun. Ignored by default (network + real files);
@@ -1461,7 +1573,8 @@ mod live_tests {
     #[tokio::test]
     #[ignore]
     async fn live_client_fetches_and_verifies_two_small_files() {
-        let manifest = Arc::new(fetch_manifest().await.unwrap());
+        let cache = TempDir::new("live_manifest_cache");
+        let manifest = Arc::new(fetch_manifest(cache.path()).await.unwrap());
         eprintln!(
             "manifest: {} {} — {} files, {} bytes",
             manifest.product_name, manifest.version, manifest.file_count, manifest.total_bytes
@@ -1527,7 +1640,8 @@ mod live_tests {
     #[tokio::test]
     #[ignore]
     async fn live_client_leaves_a_good_file_alone_when_a_download_fails() {
-        let mut manifest = fetch_manifest().await.unwrap();
+        let cache = TempDir::new("live_manifest_cache2");
+        let mut manifest = fetch_manifest(cache.path()).await.unwrap();
         let mut small: Vec<ManifestFile> = manifest.files.clone();
         small.sort_by_key(|f| f.size);
         let victim = small[0].clone();

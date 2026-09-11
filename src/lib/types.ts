@@ -61,6 +61,8 @@ export interface ClientManifestDto {
   totalBytes: number;
   fileCount: number;
   exeName: string;
+  /** When beanfun could not be reached, the time this copy was cached (RFC 3339). */
+  cachedAt: string | null;
 }
 
 /** What the installed client's own Base.wz says about its version. */

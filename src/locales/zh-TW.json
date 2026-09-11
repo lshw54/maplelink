@@ -531,6 +531,7 @@
   "client.download_tab_hint": "本頁只提供官方連結與種子檔，不會自行下載；「自動下載安裝」會轉到「檢查與修復」進行。",
   "client.manifest_hint": "比對用的官方清單是公開的，可以自己開來核對每個檔案的路徑、大小與 SHA-256。",
   "client.manifest_open": "開啟清單",
+  "client.offline_manifest": "連不上 beanfun，正在使用 {date} 快取的清單。可以照常檢查，但要補回檔案仍然需要連線。",
   "client.pause": "暫停",
   "client.resume": "繼續",
   "client.paused": "已暫停",

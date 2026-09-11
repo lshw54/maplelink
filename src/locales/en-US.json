@@ -531,6 +531,7 @@
   "client.download_tab_hint": "This tab only hands over official links and a torrent; Download and install switches to Check & repair to do the work.",
   "client.manifest_hint": "The manifest behind the comparison is public: open it and check each file's path, size and SHA-256 yourself.",
   "client.manifest_open": "Open the manifest",
+  "client.offline_manifest": "beanfun is unreachable, so this is the manifest cached at {date}. Checking still works; fetching files back still needs a connection.",
   "client.pause": "Pause",
   "client.resume": "Resume",
   "client.paused": "Paused",

@@ -137,8 +137,9 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
 #[tauri::command]
 pub async fn client_load_manifest(
     jobs: tauri::State<'_, ClientJobs>,
+    app: tauri::AppHandle,
 ) -> Result<ClientManifest, ErrorDto> {
-    let manifest = client_manager::fetch_manifest()
+    let manifest = client_manager::fetch_manifest(&app_data_dir(&app)?)
         .await
         .map_err(net("CLIENT_MANIFEST_FAILED"))?;
     let shared = Arc::new(manifest.clone());
@@ -327,31 +328,28 @@ pub async fn client_local_version(
     ))
 }
 
-/// Read a small UI preference (see [`crate::services::prefs`]).
-#[tauri::command]
-pub async fn pref_get(key: String, app: tauri::AppHandle) -> Result<Option<String>, ErrorDto> {
+/// Where MapleLink keeps its own small files: UI preferences, and the cached
+/// copy of the manifest a scan falls back on when beanfun cannot be reached.
+fn app_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, ErrorDto> {
     use tauri::Manager;
-    let dir = app.path().app_data_dir().map_err(|e| {
+    app.path().app_data_dir().map_err(|e| {
         err(
             "SYS_PATH_ERROR",
             format!("failed to get app data dir: {e}"),
             ErrorCategory::Process,
         )
-    })?;
-    Ok(crate::services::prefs::get(&dir, &key))
+    })
+}
+
+/// Read a small UI preference (see [`crate::services::prefs`]).
+#[tauri::command]
+pub async fn pref_get(key: String, app: tauri::AppHandle) -> Result<Option<String>, ErrorDto> {
+    Ok(crate::services::prefs::get(&app_data_dir(&app)?, &key))
 }
 
 /// Write a small UI preference.
 #[tauri::command]
 pub async fn pref_set(key: String, value: String, app: tauri::AppHandle) -> Result<(), ErrorDto> {
-    use tauri::Manager;
-    let dir = app.path().app_data_dir().map_err(|e| {
-        err(
-            "SYS_PATH_ERROR",
-            format!("failed to get app data dir: {e}"),
-            ErrorCategory::Process,
-        )
-    })?;
-    crate::services::prefs::set(&dir, &key, &value)
+    crate::services::prefs::set(&app_data_dir(&app)?, &key, &value)
         .map_err(|e| err("SYS_PREF_SAVE_FAILED", e, ErrorCategory::FileSystem))
 }
