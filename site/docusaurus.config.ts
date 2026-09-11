@@ -83,6 +83,7 @@ const config: Config = {
       items: [
         { to: "/download", label: "下載", position: "right" },
         { to: "/guide", label: "新手教學", position: "right" },
+        { to: "/client", label: "遊戲客戶端", position: "right" },
         { to: "/faq", label: "常見問題", position: "right" },
         { to: "/announcements", label: "公告", position: "right" },
         { type: "localeDropdown", position: "right" },

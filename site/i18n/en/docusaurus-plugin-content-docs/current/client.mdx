@@ -1,0 +1,94 @@
+---
+title: Game Client
+slug: /client
+pagination_next: null
+pagination_prev: null
+---
+
+# Game Client
+
+The full MapleStory TW client is about 67 GB, and there is no single installer for it. The beanfun Gamania Games Manager works from an official manifest and pulls the whole game folder from the official CDN. MapleLink turns that same source into a torrent file you can hand to your own download client, with nothing repackaged by anyone in between.
+
+:::tip MapleLink never downloads or rewrites a game file
+It reads the official manifest and produces a torrent for you to save. The download itself runs from your client straight to the official servers, and every byte is checked against the hashes beanfun published.
+:::
+
+## Which case are you in
+
+| Situation | What to use |
+|---|---|
+| Fresh install, or moving to another PC | The [full-client torrent](#torrent) below |
+| Broken client, failed update, "file corrupted" on launch | [Repair an existing client](#repair) — only the mismatched parts come back |
+| You just want the official installer or patch | The same window lists beanfun's official links further down |
+
+## Get the torrent {#torrent}
+
+This needs a recent version of MapleLink. If you can't find it in the toolbox, update to the latest version first.
+
+1. Open MapleLink and click the toolbox icon in the top right.
+2. Choose "Download / repair client".
+3. The "Full Client (torrent)" section at the top shows the current version, size and publish date.
+4. Click "Save torrent file" and pick a place to keep it.
+
+The version and folder name are read from beanfun every time, so this always matches whatever is current — we never have to update anything for a new game version.
+
+## Download the client
+
+1. Install a BitTorrent client, for example [qBittorrent](https://www.qbittorrent.org/).
+2. Open the torrent you just saved.
+3. Pick where to save it. You may rename the root folder to whatever you like, `MapleStory` for instance; it does not affect the download.
+4. Start it. When it finishes you have a complete client folder.
+5. Back in MapleLink, point Settings → Game path at `MapleStory.exe` inside that folder.
+
+The torrent carries a web seed pointing at beanfun's CDN, so it downloads straight from the official server even with no other peers. If you use a game accelerator, this traffic goes through beanfun's domain and is usually accelerated too.
+
+## Repair an existing client {#repair}
+
+When files are damaged you don't need to pull all 67 GB again. The same torrent can check your existing folder piece by piece and fetch back only what doesn't match.
+
+1. Close the game and make sure nothing else is using the folder.
+2. Open the torrent in your download client.
+3. Set the save location to the folder **above** your client. If the client is at `D:\Games\MapleStory`, choose `D:\Games`.
+4. Rename the torrent's root folder to match your existing folder — `MapleStory` in that example.
+5. Once added, run "force recheck" on the task (right-click menu in qBittorrent).
+6. When the check finishes, only the mismatched parts are downloaded again.
+
+:::warning Repair overwrites anything that doesn't match
+If you have modified files inside the client yourself, this restores them to the official version. Back them up first if you need them.
+:::
+
+Checking works in blocks of about 4 MB, so slightly more comes back than the damaged file itself — still far less than the whole client.
+
+## Why MapleLink generates the torrent {#why}
+
+beanfun's own torrent is built for the game manager, and downloads nothing if you use it directly:
+
+- It records `Bin64` as the root folder, but the official CDN keeps the files under a different one. A BitTorrent client follows the spec and asks the web seed for `Bin64/…`, and every single file comes back missing.
+- The game manager never seeds, so no other peer can fill the gap either.
+
+MapleLink only renames that root folder to the real CDN path and leaves everything else untouched, including every piece hash and the web seed address. Your client still verifies every byte against the hashes beanfun published, which leaves us no room to slip anything in.
+
+<details>
+<summary>Can I have a magnet link instead?</summary>
+
+No. A magnet link is only a pointer: it holds no file list and no hashes, so the client has to get those from another peer. Nobody seeds this torrent, so a magnet link just sits at "downloading metadata" forever.
+
+The file list inside the torrent is 430 KB (paths and hashes for 1263 files), which could never fit in a link anyway.
+
+</details>
+
+<details>
+<summary>Can I just have a direct download link?</summary>
+
+The client is 1263 separate files and the official side never packs them into one, so there is no single link that gets everything. The torrent is what hands those 1263 files to your download client.
+
+If you only need a file or two back, [repair](#repair) is the more direct route.
+
+</details>
+
+<details>
+<summary>Can I move or rename the folder afterwards?</summary>
+
+Yes. The folder is yours — name it and place it however you like. Afterwards, point Settings → Game path at `MapleStory.exe` again.
+
+</details>
