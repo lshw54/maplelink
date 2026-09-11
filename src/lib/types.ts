@@ -50,9 +50,17 @@ export interface GameDownloadDto {
 export interface ClientManifestDto {
   productName: string;
   version: string;
+  publishDate: string;
   totalBytes: number;
   fileCount: number;
   exeName: string;
+}
+
+/** What the installed client's own Base.wz says about its version. */
+export interface ClientLocalVersionDto {
+  marker: number;
+  matchesOfficial: boolean;
+  candidates: number[];
 }
 
 export type ClientIssueKind = "missing" | "sizeMismatch" | "hashMismatch" | "unreadable";

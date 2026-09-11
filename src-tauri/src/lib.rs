@@ -344,6 +344,7 @@ pub fn run() {
             commands::client::client_free_space,
             commands::client::client_pick_folder,
             commands::client::client_default_folder,
+            commands::client::client_local_version,
             commands::system::announcement_is_seen,
             commands::system::announcement_mark_seen,
             commands::system::onboarding_is_seen,
@@ -850,7 +851,7 @@ pub fn run() {
 /// round the corners on the borderless transparent window. Must be re-applied
 /// whenever Windows might restore the frame (focus gain, resize, move).
 #[cfg(target_os = "windows")]
-fn apply_borderless_dwm(window: &tauri::Window) {
+pub(crate) fn apply_borderless_dwm(window: &tauri::Window) {
     let Ok(hwnd) = window.hwnd() else {
         return;
     };

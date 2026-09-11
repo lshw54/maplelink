@@ -496,5 +496,22 @@
   "client.download_done": "完成，已写入 {{count}} 个文件。",
   "client.download_failed_some": "已写入 {{written}} 个，{{failed}} 个失败。失败的文件保持原样，未被改动。",
   "client.rescan_hint": "可以再检查一次确认结果。中断后重新检查即可继续，已完成的文件不会重复下载。",
-  "client.cancelled": "已取消"
+  "client.cancelled": "已取消",
+  "client.official_version": "官方版本",
+  "client.local_version": "本机版本",
+  "client.published": "发布于 {{date}}",
+  "client.up_to_date": "已是最新版本",
+  "client.update_available": "与官方版本不符",
+  "client.version_unknown": "未知",
+  "client.version_ambiguous": "版本标记 {{marker}}，可能为 {{candidates}}",
+  "client.no_client_here": "这个文件夹没有可识别的客户端",
+  "client.scan_cancelled_title": "已取消，结果不完整",
+  "client.scan_cancelled_body": "只检查了 {{done}} / {{total}} 个文件，未检查的部分情况不明。请重新检查以获得完整结果。",
+  "client.group_missing": "缺失的文件",
+  "client.group_size": "大小不符",
+  "client.group_hash": "内容不符",
+  "client.group_unreadable": "无法读取",
+  "client.group_count": "{{count}} 个 · {{size}}",
+  "client.scan_done": "检查完成",
+  "client.what_changed": "需要下载 {{count}} 个文件，共 {{size}}。完成后这个文件夹就会与官方 {{version}} 一致。"
 }

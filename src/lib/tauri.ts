@@ -20,6 +20,7 @@ import type {
   ClientManifestDto,
   ClientScanReportDto,
   ClientDownloadReportDto,
+  ClientLocalVersionDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
   BrowserBookmark,
@@ -207,6 +208,8 @@ export const commands = {
   clientPickFolder: (startIn: string | null) =>
     invoke<string | null>("client_pick_folder", { startIn }),
   clientDefaultFolder: () => invoke<string | null>("client_default_folder"),
+  clientLocalVersion: (dir: string) =>
+    invoke<ClientLocalVersionDto | null>("client_local_version", { dir }),
 
   // Announcement "seen" state (global; stored outside config.ini)
   announcementIsSeen: (id: string) => invoke<boolean>("announcement_is_seen", { id }),

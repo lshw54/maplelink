@@ -9,6 +9,8 @@ import { applyAccent } from "../../lib/accent";
 import type {
   ClientDownloadReportDto,
   ClientFileIssueDto,
+  ClientIssueKind,
+  ClientLocalVersionDto,
   ClientManifestDto,
   ClientProgressDto,
   ClientScanReportDto,
@@ -165,6 +167,7 @@ export function ClientManagerApp() {
   const [outcome, setOutcome] = useState<ClientDownloadReportDto | null>(null);
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [showExtra, setShowExtra] = useState(false);
+  const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
 
   useEffect(() => {
     document.title = t("client.title");
@@ -212,6 +215,19 @@ export function ClientManagerApp() {
       .then(setFreeSpace)
       .catch(() => setFreeSpace(null));
   }, [dir, report]);
+
+  // What the install says about itself, refreshed after a repair.
+  useEffect(() => {
+    if (!dir || !manifest) return;
+    let live = true;
+    commands
+      .clientLocalVersion(dir)
+      .then((v) => live && setLocal(v))
+      .catch(() => live && setLocal(null));
+    return () => {
+      live = false;
+    };
+  }, [dir, manifest, outcome]);
 
   const browse = useCallback(async () => {
     const picked = await commands.clientPickFolder(dir || null).catch(() => null);
@@ -270,16 +286,83 @@ export function ClientManagerApp() {
     : "";
 
   const subtitle = manifest
-    ? `${manifest.productName} · ${manifest.version} · ${t("client.stats", {
+    ? `${manifest.productName} · ${t("client.stats", {
         count: String(manifest.fileCount),
         size: formatBytes(manifest.totalBytes),
       })}`
     : "";
 
+  const groups: { kind: ClientIssueKind; label: string; items: ClientFileIssueDto[] }[] = report
+    ? (
+        [
+          ["missing", "client.group_missing"],
+          ["sizeMismatch", "client.group_size"],
+          ["hashMismatch", "client.group_hash"],
+          ["unreadable", "client.group_unreadable"],
+        ] as const
+      )
+        .map(([kind, label]) => ({
+          kind: kind as ClientIssueKind,
+          label: t(label),
+          items: report.issues.filter((i) => i.kind === kind),
+        }))
+        .filter((g) => g.items.length > 0)
+    : [];
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <ClientTitlebar subtitle={subtitle} />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+        {manifest && (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] px-3.5 py-2.5">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold tracking-[1.5px] text-text-faint uppercase">
+                {t("client.official_version")}
+              </span>
+              <span className="text-[13px] font-bold text-[var(--text)]">{manifest.version}</span>
+              {manifest.publishDate && (
+                <span className="text-[10px] text-text-dim">
+                  {t("client.published", { date: manifest.publishDate })}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold tracking-[1.5px] text-text-faint uppercase">
+                {t("client.local_version")}
+              </span>
+              <span className="text-[13px] font-bold text-[var(--text)]">
+                {local === undefined
+                  ? "…"
+                  : local === null
+                    ? t("client.version_unknown")
+                    : local.matchesOfficial
+                      ? manifest.version
+                      : t("client.version_unknown")}
+              </span>
+              <span className="text-[10px] text-text-dim">
+                {local === null
+                  ? t("client.no_client_here")
+                  : local && !local.matchesOfficial
+                    ? t("client.version_ambiguous", {
+                        marker: String(local.marker),
+                        candidates: local.candidates.join(", ") || "?",
+                      })
+                    : ""}
+              </span>
+            </div>
+            {local && (
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  local.matchesOfficial
+                    ? "bg-[rgba(34,197,94,0.12)] text-green-500"
+                    : "bg-[rgba(234,179,8,0.12)] text-yellow-500"
+                }`}
+              >
+                {local.matchesOfficial ? t("client.up_to_date") : t("client.update_available")}
+              </span>
+            )}
+          </div>
+        )}
         <p className="shrink-0 rounded-[10px] border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2 text-[11px] leading-relaxed text-yellow-500">
           {t("client.warn_overwrite")}
         </p>
@@ -346,10 +429,16 @@ export function ClientManagerApp() {
             )}
           </div>
 
-          {busy && (
+          {progress && (
             <ProgressBar
               value={fraction}
-              label={`${t(phase === "scanning" ? "client.scanning" : "client.downloading")} · ${progressLabel}`}
+              label={`${t(
+                busy
+                  ? phase === "scanning"
+                    ? "client.scanning"
+                    : "client.downloading"
+                  : "client.scan_done",
+              )} · ${progressLabel}`}
             />
           )}
         </div>
@@ -377,8 +466,21 @@ export function ClientManagerApp() {
                   {t("client.summary_extra", { count: String(report.extraFiles.length) })}
                 </button>
               )}
-              {report.cancelled && <span className="text-text-dim">{t("client.cancelled")}</span>}
             </div>
+
+            {report.cancelled && (
+              <div className="shrink-0 rounded-[10px] border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.06)] px-3 py-2">
+                <p className="text-[12px] font-semibold text-yellow-500">
+                  {t("client.scan_cancelled_title")}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-text-dim">
+                  {t("client.scan_cancelled_body", {
+                    done: String(report.okFiles + report.issues.length),
+                    total: String(report.totalFiles),
+                  })}
+                </p>
+              </div>
+            )}
 
             {showExtra && report.extraFiles.length > 0 && (
               <div className="shrink-0 rounded-[10px] border border-[var(--tb-border)] bg-[var(--tb-card)] p-2.5">
@@ -399,7 +501,34 @@ export function ClientManagerApp() {
               </p>
             )}
 
-            {report.issues.length === 0 ? (
+            {groups.length > 0 && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {groups.map((g) => (
+                  <span
+                    key={g.kind}
+                    className="rounded-lg border border-[var(--tb-border)] px-2.5 py-1 text-[11px] text-text-dim"
+                  >
+                    <span className="font-semibold text-[var(--text)]">{g.label}</span>{" "}
+                    {t("client.group_count", {
+                      count: String(g.items.length),
+                      size: formatBytes(g.items.reduce((n, i) => n + i.expectedSize, 0)),
+                    })}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {report.issues.length > 0 && (
+              <p className="shrink-0 text-[11px] leading-relaxed text-text-dim">
+                {t("client.what_changed", {
+                  count: String(report.issues.length),
+                  size: formatBytes(report.bytesToFetch),
+                  version: manifest?.version ?? "",
+                })}
+              </p>
+            )}
+
+            {report.issues.length === 0 && !report.cancelled ? (
               <p className="rounded-[10px] border border-[rgba(34,197,94,0.3)] bg-[rgba(34,197,94,0.06)] px-3 py-2 text-[12px] text-green-500">
                 {t("client.all_good")}
               </p>

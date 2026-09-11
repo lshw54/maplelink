@@ -47,6 +47,8 @@ pub struct ManifestFile {
 pub struct ClientManifest {
     pub product_name: String,
     pub version: String,
+    /// "YYYY/MM/DD" as beanfun published it; empty when absent.
+    pub publish_date: String,
     pub total_bytes: u64,
     pub file_count: usize,
     /// Where a file lives: `{base_url}{folder_name}/{path}`.
@@ -68,6 +70,8 @@ struct RawInfo {
     #[serde(rename = "productName", default)]
     product_name: String,
     version: String,
+    #[serde(rename = "publishDate", default)]
+    publish_date: String,
     #[serde(rename = "baseUrl")]
     base_url: String,
     #[serde(rename = "executionPath", default)]
@@ -173,6 +177,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
     Ok(ClientManifest {
         product_name: raw.product_name,
         version: raw.version,
+        publish_date: raw.publish_date,
         total_bytes: raw.files.iter().map(|f| f.size).sum(),
         file_count: raw.files.len(),
         base_url: base,
@@ -659,6 +664,62 @@ async fn fetch_one(
     }
 }
 
+/// What the installed client's own data says about its version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalVersion {
+    /// The 8-bit marker stored in `Data/Base/Base.wz`.
+    pub marker: u16,
+    /// Whether that marker is the one the published version would produce.
+    pub matches_official: bool,
+    /// Versions that would produce this marker. It is only a checksum, so a
+    /// few distant versions collide; the list is shown rather than guessed at.
+    pub candidates: Vec<u32>,
+}
+
+/// MapleStory's version marker: a checksum over the decimal digits of the
+/// version, stored in the WZ header. Several versions share one value, so it
+/// confirms a version rather than naming one.
+fn version_marker(version: u32) -> u16 {
+    let mut hash: u32 = 0;
+    for ch in version.to_string().bytes() {
+        hash = hash.wrapping_mul(32).wrapping_add(ch as u32 + 1);
+    }
+    let [a, b, c, d] = hash.to_be_bytes();
+    (0xFF ^ a ^ b ^ c ^ d) as u16
+}
+
+/// Read the marker out of `Data/Base/Base.wz`.
+fn read_wz_marker(dir: &Path) -> Option<u16> {
+    use std::io::Read;
+
+    let path = dir.join("Data").join("Base").join("Base.wz");
+    let mut head = [0u8; 4096];
+    let read = std::fs::File::open(path).ok()?.read(&mut head).ok()?;
+    if read < 16 || &head[0..4] != b"PKG1" {
+        return None;
+    }
+    let data_start = u32::from_le_bytes([head[12], head[13], head[14], head[15]]) as usize;
+    if data_start + 2 > read {
+        return None;
+    }
+    Some(u16::from_le_bytes([head[data_start], head[data_start + 1]]))
+}
+
+/// Identify the installed client's version against the published one.
+pub fn local_version(dir: &Path, official: &str) -> Option<LocalVersion> {
+    let marker = read_wz_marker(dir)?;
+    let official_number = version_number(official);
+    Some(LocalVersion {
+        marker,
+        matches_official: official_number.is_some_and(|v| version_marker(v) == marker),
+        // Far enough to cover any version this client will plausibly be on.
+        candidates: (1..=2000)
+            .filter(|v| version_marker(*v) == marker)
+            .collect(),
+    })
+}
+
 /// Free bytes on the volume holding `dir`, for the "do you have room" check.
 #[cfg(target_os = "windows")]
 pub fn free_space(dir: &Path) -> Option<u64> {
@@ -920,6 +981,50 @@ mod tests {
         assert_eq!(last.done, 2);
         assert_eq!(last.total, 2);
         assert_eq!(last.bytes_done, last.bytes_total);
+    }
+
+    #[test]
+    fn the_version_marker_matches_the_one_a_real_client_carries() {
+        // A live V282 install stores 127 in Data/Base/Base.wz.
+        assert_eq!(version_marker(282), 127);
+        // It is only a checksum, so distant versions collide — which is why
+        // the UI reports candidates instead of naming one.
+        let sharing: Vec<u32> = (1..=500).filter(|v| version_marker(*v) == 127).collect();
+        assert!(sharing.contains(&282));
+        assert!(sharing.len() > 1);
+        assert_ne!(version_marker(281), version_marker(282));
+    }
+
+    #[test]
+    fn the_local_version_is_read_from_base_wz() {
+        let dir = TempDir::new("mlwz");
+        assert!(local_version(dir.path(), "V282").is_none());
+
+        // PKG1 header: data_start at offset 12, marker at data_start.
+        let base = dir.path().join("Data").join("Base");
+        std::fs::create_dir_all(&base).unwrap();
+        let mut wz = vec![0u8; 64];
+        wz[0..4].copy_from_slice(b"PKG1");
+        wz[12..16].copy_from_slice(&60u32.to_le_bytes());
+        wz[60..62].copy_from_slice(&127u16.to_le_bytes());
+        std::fs::write(base.join("Base.wz"), &wz).unwrap();
+
+        let got = local_version(dir.path(), "V282").unwrap();
+        assert_eq!(got.marker, 127);
+        assert!(got.matches_official);
+        assert!(got.candidates.contains(&282));
+
+        // The same install against a different published version does not match.
+        assert!(!local_version(dir.path(), "V281").unwrap().matches_official);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_wz_container_is_refused() {
+        let dir = TempDir::new("mlwzbad");
+        let base = dir.path().join("Data").join("Base");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("Base.wz"), b"not a wz file at all").unwrap();
+        assert!(local_version(dir.path(), "V282").is_none());
     }
 
     #[test]

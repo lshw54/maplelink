@@ -496,5 +496,22 @@
   "client.download_done": "完成，已寫入 {{count}} 個檔案。",
   "client.download_failed_some": "已寫入 {{written}} 個，{{failed}} 個失敗。失敗的檔案維持原狀，未被改動。",
   "client.rescan_hint": "可以再檢查一次確認結果。中斷後重新檢查即可接續，已完成的檔案不會重複下載。",
-  "client.cancelled": "已取消"
+  "client.cancelled": "已取消",
+  "client.official_version": "官方版本",
+  "client.local_version": "本機版本",
+  "client.published": "發布於 {{date}}",
+  "client.up_to_date": "已是最新版本",
+  "client.update_available": "與官方版本不符",
+  "client.version_unknown": "未知",
+  "client.version_ambiguous": "版本標記 {{marker}}，可能為 {{candidates}}",
+  "client.no_client_here": "這個資料夾沒有可辨識的客戶端",
+  "client.scan_cancelled_title": "已取消，結果不完整",
+  "client.scan_cancelled_body": "只檢查了 {{done}} / {{total}} 個檔案，未檢查的部分狀況不明。請重新檢查以取得完整結果。",
+  "client.group_missing": "缺失的檔案",
+  "client.group_size": "大小不符",
+  "client.group_hash": "內容不符",
+  "client.group_unreadable": "無法讀取",
+  "client.group_count": "{{count}} 個 · {{size}}",
+  "client.scan_done": "檢查完成",
+  "client.what_changed": "需要下載 {{count}} 個檔案，共 {{size}}。完成後這個資料夾就會與官方 {{version}} 一致。"
 }

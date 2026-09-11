@@ -11,7 +11,8 @@ use tauri::{Emitter, Manager};
 
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::client_manager::{
-    self, Cancel, ClientManifest, DownloadProgress, DownloadReport, ScanMode, ScanReport,
+    self, Cancel, ClientManifest, DownloadProgress, DownloadReport, LocalVersion, ScanMode,
+    ScanReport,
 };
 
 /// The window the client manager runs in. `main.tsx` reads this label to decide
@@ -93,7 +94,7 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
         .and_then(|w| w.additional_browser_args.clone())
         .unwrap_or_default();
 
-    tauri::WebviewWindowBuilder::new(
+    let window = tauri::WebviewWindowBuilder::new(
         &app,
         CLIENT_WINDOW_LABEL,
         tauri::WebviewUrl::App("index.html".into()),
@@ -108,6 +109,10 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
     // global window-event handler rounds the corners through DWM.
     .decorations(false)
     .transparent(false)
+    // The window shadow needs WS_THICKFRAME, and that frame's top edge is the
+    // 1px accent hairline on Windows 11 that DWMWA_BORDER_COLOR cannot remove.
+    // The main window drops the shadow for the same reason (tauri.conf.json5).
+    .shadow(false)
     .center()
     .build()
     .map_err(|e| {
@@ -117,6 +122,13 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
             ErrorCategory::Process,
         )
     })?;
+
+    // Strip the Windows 11 accent hairline and round the corners now, rather
+    // than waiting for the first focus event — otherwise the line is visible
+    // for as long as it takes the window to be focused.
+    #[cfg(target_os = "windows")]
+    crate::apply_borderless_dwm(&window.as_ref().window());
+
     Ok(())
 }
 
@@ -287,4 +299,18 @@ pub async fn client_default_folder(
     Ok(std::path::Path::new(&game_path)
         .parent()
         .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// What version the install in `dir` reports for itself, compared against the
+/// published one. `None` when the folder holds no readable `Base.wz`.
+#[tauri::command]
+pub async fn client_local_version(
+    dir: String,
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<Option<LocalVersion>, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    Ok(client_manager::local_version(
+        std::path::Path::new(&dir),
+        &manifest.version,
+    ))
 }
