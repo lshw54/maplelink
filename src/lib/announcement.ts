@@ -74,6 +74,27 @@ export interface ArchivedAnnouncement {
   id: string;
   /** Shown next to the title in the list. */
   date: string;
+  /** Defaults to `notice`; see {@link AnnouncementKind}. */
+  kind?: AnnouncementKind;
+}
+
+/**
+ * What sort of announcement this is.
+ *
+ * - `notice` — the ones that are about the project itself and are worth
+ *   interrupting someone for: where the app is published, how it relates to
+ *   beanfun, anything about safety. This is the default, the kind the list
+ *   opens on, and the only kind the website's ticker carries.
+ * - `update` — what changed in a release. Worth keeping and worth reading, but
+ *   one arrives with every version, so mixing them in would bury the notices.
+ */
+export type AnnouncementKind = "notice" | "update";
+
+export const ANNOUNCEMENT_KINDS: AnnouncementKind[] = ["notice", "update"];
+
+/** The kind of `entry`, with the default applied. */
+export function announcementKind(entry: ArchivedAnnouncement): AnnouncementKind {
+  return entry.kind ?? "notice";
 }
 
 export const ANNOUNCEMENT_ARCHIVE: ArchivedAnnouncement[] = [

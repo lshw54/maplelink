@@ -2,20 +2,23 @@ import React, { type CSSProperties } from "react";
 import Link from "@docusaurus/Link";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import { useLocale } from "./i18n";
-import { NOTICES } from "./notices";
+import { NOTICES, noticeKind } from "./notices";
 import styles from "./NoticeBar.module.css";
 
 /**
  * A one-line ticker above the nav. Headlines scroll past slowly; hovering
  * pauses them, and each one links to its section on the announcements page.
  * With reduced motion the newest headline is shown still.
+ *
+ * Notices only: release notes land here every version, and a ticker that long
+ * stops being read at all.
  */
 export default function NoticeBar() {
   const locale = useLocale();
   // useBaseUrl already includes the current locale's path segment.
   const announcements = useBaseUrl("/announcements");
 
-  const items = NOTICES.map((n) => ({
+  const items = NOTICES.filter((n) => noticeKind(n) === "notice").map((n) => ({
     id: n.id,
     date: n.date,
     title: n.title[locale],
