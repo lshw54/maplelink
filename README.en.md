@@ -230,6 +230,11 @@ npm run format                                     # Prettier format
 # feat: / fix: / refactor: / chore: ...
 ```
 
+## Contact
+
+- Bug reports and feature requests: [GitHub Issues](../../issues)
+- QQ: `2157875454`
+
 ## Contributing
 
 Fork → branch → test → PR.

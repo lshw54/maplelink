@@ -230,6 +230,11 @@ npm run format                                     # Prettier 格式化
 # feat: / fix: / refactor: / chore: ...
 ```
 
+## 交流與回報
+
+- 問題回報、功能建議：[GitHub Issues](../../issues)
+- QQ：`2157875454`
+
 ## 貢獻方式
 
 Fork → 建立分支 → 測試 → 發送 PR。

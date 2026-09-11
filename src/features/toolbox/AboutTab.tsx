@@ -7,6 +7,9 @@ import { useUpdateStore } from "../../lib/stores/update-store";
 import { UpdateDialog } from "../shared/UpdateDialog";
 import type { UpdateInfoDto } from "../../lib/types";
 
+/** Contact for players who cannot or will not use GitHub. Also listed on the site. */
+const QQ_CONTACT = "2157875454";
+
 export function AboutTab() {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState("...");
@@ -143,8 +146,8 @@ export function AboutTab() {
           icon="🐛"
           label={t("toolbox.about.issues")}
           onClick={() => openExternal("https://github.com/lshw54/maplelink/issues")}
-          last
         />
+        <CopyRow icon="💬" label={t("toolbox.about.qq")} value={QQ_CONTACT} last />
       </div>
 
       {/* Copyright */}
@@ -169,6 +172,49 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
       <span className="text-[11px] font-medium text-text-dim">{label}</span>
       <span className="text-[11px] font-semibold text-[var(--text)]">{value}</span>
     </div>
+  );
+}
+
+/** A row whose value is copied to the clipboard instead of opened. */
+function CopyRow({
+  icon,
+  label,
+  value,
+  last,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  return (
+    <button
+      onClick={() => {
+        commands
+          .copyToClipboard(value)
+          .then(() => setCopied(true))
+          .catch(() => {});
+      }}
+      className={`flex w-full items-center gap-2.5 bg-[var(--tb-card)] px-4 py-2 text-left transition-colors hover:bg-[var(--surface-hover)] ${
+        last ? "" : "border-b border-[var(--tb-border)]"
+      }`}
+    >
+      <span className="w-4 text-center text-xs">{icon}</span>
+      <span className="flex-1 text-[11px] font-medium text-[var(--text)]">{label}</span>
+      <span className="font-mono text-[11px] text-text-dim">{value}</span>
+      <span className="w-12 text-right text-[10px] text-text-faint">
+        {copied ? t("common.copied") : t("common.copy")}
+      </span>
+    </button>
   );
 }
 
