@@ -24,6 +24,7 @@ pub mod local_proxy;
 pub mod log_service;
 pub mod lr_service;
 pub mod network_service;
+pub mod prefs;
 pub mod process_service;
 pub mod recaptcha_window;
 pub mod tls_info;

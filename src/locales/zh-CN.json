@@ -226,7 +226,7 @@
   "toolbox.download.full.steps_title": "使用方法",
   "toolbox.download.full.step_1": "安装一个 BT 下载工具（例如 qBittorrent）。",
   "toolbox.download.full.step_2": "用该工具打开刚保存的种子文件，并选择保存位置。种子内含指向 beanfun CDN 的 web seed，即使没有其他分享者也可直接从官方服务器下载；若使用游戏加速器，流量经过 beanfun 域名，通常也会被加速。",
-  "toolbox.download.full.step_3": "下载完成后会得到名为“{{folder}}”的文件夹，即完整的 {{version}} 客户端。可将它移动或重命名到你想安装游戏的位置。",
+  "toolbox.download.full.step_3": "下载完成后会得到一个完整的 {{version}} 客户端文件夹，可将它移动或重命名到你想安装游戏的位置。",
   "toolbox.download.full.step_4": "最后在 MapleLink 的“设置 → 游戏路径”指向该文件夹内的 {{exe}}。",
   "toolbox.download.full.loading": "获取完整客户端信息中…",
   "toolbox.download.full.error": "无法获取完整客户端信息，请稍后再试",
@@ -541,5 +541,15 @@
   "client.stat_published": "版本发布",
   "client.stat_exe": "主程序",
   "client.stat_files": "文件数",
-  "client.stat_size": "安装容量"
+  "client.stat_size": "安装容量",
+  "client.auto_check_title": "每次打开时自动检查？",
+  "client.auto_check_body": "开启后，这个窗口一打开就会用「快速」比对一次客户端，数秒完成，发现问题才需要你动手。随时可以在下方的「自动检查」关掉。",
+  "client.auto_check_yes": "好，自动检查",
+  "client.auto_check_no": "不用，我自己点",
+  "client.auto_check_never": "不再显示",
+  "client.auto_check_toggle": "自动检查",
+  "client.auto_check_toggle_hint": "打开这个窗口时自动跑一次快速检查。",
+  "launcher.patcher_open_manager": "打开客户端管理",
+  "toolbox.tools.client_manager_short": "客户端",
+  "shared.titlebar.client_manager": "游戏客户端管理"
 }

@@ -457,12 +457,14 @@ export function App() {
               </button>
               <button
                 onClick={() => {
-                  commands.openExternal("https://maplestory.beanfun.com/download").catch(() => {});
+                  // The update was blocked on purpose, so send the player to the
+                  // tool that can apply it instead of to beanfun's web page.
+                  commands.openClientManagerWindow().catch(() => {});
                   setPatcherInfo(null);
                 }}
                 className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
               >
-                {t("launcher.patcher_download")}
+                {t("launcher.patcher_open_manager")}
               </button>
             </div>
           </div>

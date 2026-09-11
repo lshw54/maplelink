@@ -326,3 +326,32 @@ pub async fn client_local_version(
         &manifest.version,
     ))
 }
+
+/// Read a small UI preference (see [`crate::services::prefs`]).
+#[tauri::command]
+pub async fn pref_get(key: String, app: tauri::AppHandle) -> Result<Option<String>, ErrorDto> {
+    use tauri::Manager;
+    let dir = app.path().app_data_dir().map_err(|e| {
+        err(
+            "SYS_PATH_ERROR",
+            format!("failed to get app data dir: {e}"),
+            ErrorCategory::Process,
+        )
+    })?;
+    Ok(crate::services::prefs::get(&dir, &key))
+}
+
+/// Write a small UI preference.
+#[tauri::command]
+pub async fn pref_set(key: String, value: String, app: tauri::AppHandle) -> Result<(), ErrorDto> {
+    use tauri::Manager;
+    let dir = app.path().app_data_dir().map_err(|e| {
+        err(
+            "SYS_PATH_ERROR",
+            format!("failed to get app data dir: {e}"),
+            ErrorCategory::Process,
+        )
+    })?;
+    crate::services::prefs::set(&dir, &key, &value)
+        .map_err(|e| err("SYS_PREF_SAVE_FAILED", e, ErrorCategory::FileSystem))
+}

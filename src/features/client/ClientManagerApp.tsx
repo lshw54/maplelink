@@ -17,6 +17,10 @@ import type {
 } from "../../lib/types";
 
 type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done";
+
+/** Answers to the one-time "check automatically?" prompt. */
+const AUTO_CHECK_KEY = "client.auto_check";
+const AUTO_CHECK_ASKED_KEY = "client.auto_check_asked";
 type Tone = "busy" | "ok" | "warn";
 type Tab = "verify" | "download";
 
@@ -139,6 +143,11 @@ export function ClientManagerApp() {
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
   const [direct, setDirect] = useState(true);
+  const [autoCheck, setAutoCheck] = useState(false);
+  // `undefined` until the stored answer is read, so the prompt cannot flash.
+  const [askAutoCheck, setAskAutoCheck] = useState<boolean | undefined>(undefined);
+  // Set once the stored answer says the check should run without being asked.
+  const autoOnOpen = useRef(false);
   // Bytes per second, measured between progress events rather than assumed.
   const [rate, setRate] = useState(0);
   const rateSample = useRef<{ at: number; bytes: number } | null>(null);
@@ -150,20 +159,14 @@ export function ClientManagerApp() {
   useEffect(() => {
     let live = true;
     (async () => {
-      try {
-        const [m, folder] = await Promise.all([
-          commands.clientLoadManifest(),
-          commands.clientDefaultFolder().catch(() => null),
-        ]);
-        if (!live) return;
-        setManifest(m);
-        if (folder) setDir(folder);
-        setPhase("idle");
-      } catch (e) {
-        if (!live) return;
-        setError(String(e));
-        setPhase("idle");
-      }
+      const [on, asked] = await Promise.all([
+        commands.prefGet(AUTO_CHECK_KEY).catch(() => null),
+        commands.prefGet(AUTO_CHECK_ASKED_KEY).catch(() => null),
+      ]);
+      if (!live) return;
+      setAutoCheck(on === "on");
+      setAskAutoCheck(asked !== "1");
+      autoOnOpen.current = on === "on" && asked === "1";
     })();
     return () => {
       live = false;
@@ -248,6 +251,35 @@ export function ClientManagerApp() {
 
   const runScan = useCallback(() => scanInto(dir, mode), [scanInto, dir, mode]);
 
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const [m, folder] = await Promise.all([
+          commands.clientLoadManifest(),
+          commands.clientDefaultFolder().catch(() => null),
+        ]);
+        if (!live) return;
+        setManifest(m);
+        if (folder) setDir(folder);
+        setPhase("idle");
+        // Already answered, and the answer was yes: get on with it.
+        if (folder && autoOnOpen.current) {
+          autoOnOpen.current = false;
+          await scanInto(folder, "quick");
+        }
+      } catch (e) {
+        if (!live) return;
+        setError(String(e));
+        setPhase("idle");
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // `scanInto` has no dependencies of its own, so this still runs once.
+  }, [scanInto]);
+
   const downloadInto = useCallback(
     async (target: string, paths: string[]) => {
       setError(null);
@@ -287,6 +319,17 @@ export function ClientManagerApp() {
       r.files.filter((f) => f.kind !== null).map((f) => f.path),
     );
   }, [dir, scanInto, downloadInto]);
+
+  const answerAutoCheck = useCallback(
+    (on: boolean, remember: boolean) => {
+      setAutoCheck(on);
+      setAskAutoCheck(false);
+      void commands.prefSet(AUTO_CHECK_KEY, on ? "on" : "off").catch(() => {});
+      if (remember) void commands.prefSet(AUTO_CHECK_ASKED_KEY, "1").catch(() => {});
+      if (on && dir && phase === "idle") void scanInto(dir, "quick");
+    },
+    [dir, phase, scanInto],
+  );
 
   const busy = phase === "scanning" || phase === "downloading";
   const selectedBytes = useMemo(
@@ -396,6 +439,37 @@ export function ClientManagerApp() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
+
+      {askAutoCheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px]">
+          <div className="w-[420px] rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <h2 className="text-[14px] font-bold">{t("client.auto_check_title")}</h2>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-dim">
+              {t("client.auto_check_body")}
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => answerAutoCheck(false, true)}
+                className="rounded-lg px-3 py-1.5 text-[11px] text-text-faint transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("client.auto_check_never")}
+              </button>
+              <button
+                onClick={() => answerAutoCheck(false, false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("client.auto_check_no")}
+              </button>
+              <button
+                onClick={() => answerAutoCheck(true, true)}
+                className="rounded-lg bg-gradient-to-br from-accent to-[var(--accent-dark)] px-4 py-1.5 text-[11px] font-bold text-[var(--on-accent)] transition-opacity hover:opacity-90"
+              >
+                {t("client.auto_check_yes")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Which game, which version, how it stands. Two lines, no boxes: the
           numbers are context, not the point of the window. */}
@@ -518,6 +592,17 @@ export function ClientManagerApp() {
           {tab === "verify" ? (
             <>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={autoCheck}
+                    onChange={(e) => answerAutoCheck(e.target.checked, true)}
+                    disabled={busy}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span className="font-semibold">{t("client.auto_check_toggle")}</span>
+                  <span className="text-text-faint">{t("client.auto_check_toggle_hint")}</span>
+                </label>
                 <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
                   <input
                     type="checkbox"

@@ -226,7 +226,7 @@
   "toolbox.download.full.steps_title": "使用方式",
   "toolbox.download.full.step_1": "安裝一個 BT 下載工具（例如 qBittorrent）。",
   "toolbox.download.full.step_2": "以該工具開啟剛儲存的種子檔，並選擇儲存位置。種子內含指向 beanfun CDN 的 web seed，即使沒有其他分享者也可直接由官方伺服器下載；若使用遊戲加速器，流量經由 beanfun 網域，通常也會被加速。",
-  "toolbox.download.full.step_3": "下載完成後會得到名為「{{folder}}」的資料夾，即完整的 {{version}} 客戶端。可將它移動或重新命名到你想安裝遊戲的位置。",
+  "toolbox.download.full.step_3": "下載完成後會得到一個完整的 {{version}} 客戶端資料夾，可將它移動或重新命名到你想安裝遊戲的位置。",
   "toolbox.download.full.step_4": "最後在 MapleLink 的「設定 → 遊戲路徑」指向該資料夾內的 {{exe}}。",
   "toolbox.download.full.loading": "取得完整客戶端資訊中…",
   "toolbox.download.full.error": "無法取得完整客戶端資訊，請稍後再試",
@@ -541,5 +541,15 @@
   "client.stat_published": "版本發布",
   "client.stat_exe": "主程式",
   "client.stat_files": "檔案數",
-  "client.stat_size": "安裝容量"
+  "client.stat_size": "安裝容量",
+  "client.auto_check_title": "每次開啟時自動檢查？",
+  "client.auto_check_body": "開啟後，這個視窗一打開就會用「快速」比對一次客戶端，數秒完成，發現問題才需要你動手。隨時可以在下方的「自動檢查」關掉。",
+  "client.auto_check_yes": "好，自動檢查",
+  "client.auto_check_no": "不用，我自己按",
+  "client.auto_check_never": "不再顯示",
+  "client.auto_check_toggle": "自動檢查",
+  "client.auto_check_toggle_hint": "開啟這個視窗時自動跑一次快速檢查。",
+  "launcher.patcher_open_manager": "開啟客戶端管理",
+  "toolbox.tools.client_manager_short": "客戶端",
+  "shared.titlebar.client_manager": "遊戲客戶端管理"
 }

@@ -205,6 +205,8 @@ export const commands = {
     invoke<ClientDownloadReportDto>("client_download", { dir, paths, direct }),
   clientCancel: () => invoke("client_cancel"),
   clientSetPaused: (paused: boolean) => invoke("client_set_paused", { paused }),
+  prefGet: (key: string) => invoke<string | null>("pref_get", { key }),
+  prefSet: (key: string, value: string) => invoke("pref_set", { key, value }),
   clientFreeSpace: (dir: string) => invoke<number | null>("client_free_space", { dir }),
   clientPickFolder: (startIn: string | null) =>
     invoke<string | null>("client_pick_folder", { startIn }),

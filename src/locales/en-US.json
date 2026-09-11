@@ -226,7 +226,7 @@
   "toolbox.download.full.steps_title": "How to use it",
   "toolbox.download.full.step_1": "Install a BitTorrent client (qBittorrent, for example).",
   "toolbox.download.full.step_2": "Open the saved torrent in that client and pick where to save. It carries a web seed pointing at beanfun's CDN, so it downloads straight from the official server even with no other peers; with a game accelerator the traffic goes through beanfun's domain and is usually accelerated too.",
-  "toolbox.download.full.step_3": "When it finishes you get a folder named \"{{folder}}\" — the complete {{version}} client. Move or rename it to wherever you want the game installed.",
+  "toolbox.download.full.step_3": "When it finishes you have a complete {{version}} client folder — move or rename it to wherever you want the game installed.",
   "toolbox.download.full.step_4": "Finally, point MapleLink's Settings → Game path at {{exe}} inside that folder.",
   "toolbox.download.full.loading": "Fetching full-client details…",
   "toolbox.download.full.error": "Couldn't fetch the full-client details — please try again later",
@@ -541,5 +541,15 @@
   "client.stat_published": "Published",
   "client.stat_exe": "Executable",
   "client.stat_files": "Files",
-  "client.stat_size": "Install size"
+  "client.stat_size": "Install size",
+  "client.auto_check_title": "Check automatically on open?",
+  "client.auto_check_body": "With this on, the window runs a quick comparison as soon as it opens — a few seconds — and only asks for you when something is off. You can switch it off any time under Auto check below.",
+  "client.auto_check_yes": "Yes, check automatically",
+  "client.auto_check_no": "No, I'll press it",
+  "client.auto_check_never": "Don't ask again",
+  "client.auto_check_toggle": "Auto check",
+  "client.auto_check_toggle_hint": "Run a quick check whenever this window opens.",
+  "launcher.patcher_open_manager": "Open the client manager",
+  "toolbox.tools.client_manager_short": "Client",
+  "shared.titlebar.client_manager": "Game client manager"
 }
