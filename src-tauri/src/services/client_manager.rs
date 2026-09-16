@@ -244,7 +244,8 @@ async fn probe_exe_patch(version: &str) -> (Option<u64>, Option<String>) {
 
 async fn probe_exe_patch_inner(version: &str) -> Option<(u64, Option<String>)> {
     let url = exe_patch_url(version)?;
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(crate::services::http_util::USER_AGENT)
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -918,9 +919,9 @@ pub struct FileEvent {
 /// SHA-256 matches what beanfun published, so a failure anywhere leaves the
 /// existing file exactly as it was.
 ///
-/// The transfer takes the same route as every other request this app makes:
-/// whatever proxy the machine is set to, which is how an accelerator gets to
-/// carry it. It used to be able to opt out of that with `no_proxy`, which is
+/// The transfer goes the way Windows' proxy setting says, like a browser or a
+/// WebView2 window would (see [`crate::services::system_proxy`]). It used to be
+/// able to opt out even of the environment proxy with `no_proxy`, which is
 /// exactly the thing a player behind an accelerator must not do.
 ///
 /// `on_file` is told about each file as it starts and as it lands, so the
@@ -959,7 +960,8 @@ pub async fn download(
     progress
         .bytes_total
         .store(files.iter().map(|f| f.size).sum(), Ordering::Relaxed);
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(crate::services::http_util::USER_AGENT)
         // No overall timeout: a 186 MB file on a slow line is not a failure.
         .connect_timeout(std::time::Duration::from_secs(20))
@@ -1239,6 +1241,87 @@ async fn fetch_one(
             let _ = tokio::fs::remove_file(&part).await;
             Err(e)
         }
+    }
+}
+
+/// How this machine reaches beanfun's CDN, as the downloads would.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkStatus {
+    /// Country code the route appears to come out in. Never the address.
+    pub country: Option<String>,
+    /// The Windows proxy the downloads go through, if one is set.
+    pub proxy: Option<String>,
+    /// Windows points at a PAC script, which is not followed.
+    pub pac: bool,
+    /// One request's round trip to the CDN on a connection already open.
+    pub latency_ms: Option<u64>,
+    /// Why the CDN could not be reached, when it could not.
+    pub error: Option<String>,
+}
+
+/// Rounds of the latency check. The first opens the connection and pays for
+/// DNS, TCP and TLS; the rest reuse it, so they measure what a player means by
+/// latency rather than what a handshake costs.
+const LATENCY_ROUNDS: usize = 3;
+
+/// Measure the route to the CDN: which proxy, which country it comes out in,
+/// and how quickly the CDN answers along it.
+pub async fn network_status(manifest: &ClientManifest) -> NetworkStatus {
+    let proxy = crate::services::system_proxy::SystemProxy::read();
+    let (described, pac) = (proxy.describe().map(str::to_string), proxy.pac);
+    let client = match proxy
+        .apply(reqwest::Client::builder())
+        .user_agent(http_util::USER_AGENT)
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return NetworkStatus {
+                country: None,
+                proxy: described,
+                pac,
+                latency_ms: None,
+                error: Some(format!("failed to build HTTP client: {e}")),
+            }
+        }
+    };
+
+    // A file the manifest says exists; HEAD, so nothing is downloaded.
+    let url = format!(
+        "{}{}/{}",
+        manifest.base_url, manifest.folder_name, manifest.exe_name
+    );
+    let latency = async {
+        let mut rounds = Vec::with_capacity(LATENCY_ROUNDS);
+        let mut error = None;
+        for _ in 0..LATENCY_ROUNDS {
+            let started = std::time::Instant::now();
+            // Any answer is a round trip; the status code does not matter here.
+            match client.head(&url).send().await {
+                Ok(_) => rounds.push(started.elapsed().as_millis() as u64),
+                Err(e) => error = Some(http_util::with_causes(&e)),
+            }
+        }
+        let warm = match rounds.len() {
+            0 => None,
+            1 => rounds.first().copied(),
+            _ => rounds[1..].iter().min().copied(),
+        };
+        (warm, if warm.is_some() { None } else { error })
+    };
+    let ((latency_ms, error), country) = tokio::join!(
+        latency,
+        crate::services::network_service::country_via(&client)
+    );
+
+    NetworkStatus {
+        country,
+        proxy: described,
+        pac,
+        latency_ms,
+        error,
     }
 }
 
@@ -1914,6 +1997,17 @@ mod tests {
 mod live_tests {
     use super::tests::TempDir;
     use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_client_network_status_reaches_the_cdn() {
+        let cache = TempDir::new("live_network_cache");
+        let manifest = fetch_manifest(cache.path()).await.unwrap();
+        let status = network_status(&manifest).await;
+        eprintln!("network: {status:?}");
+        assert!(status.error.is_none(), "{:?}", status.error);
+        assert!(status.latency_ms.is_some());
+    }
 
     #[tokio::test]
     #[ignore]

@@ -105,6 +105,18 @@ export interface ClientProgressDto {
   active: ClientActiveFileDto[];
 }
 
+/** How the downloads reach the CDN from this machine. */
+export interface ClientNetworkStatusDto {
+  /** Country code the route comes out in; the address itself is never sent. */
+  country: string | null;
+  /** The Windows system proxy the downloads go through, if any. */
+  proxy: string | null;
+  /** Windows has a PAC script set, which is not followed. */
+  pac: boolean;
+  latencyMs: number | null;
+  error: string | null;
+}
+
 export interface ClientActiveFileDto {
   path: string;
   done: number;

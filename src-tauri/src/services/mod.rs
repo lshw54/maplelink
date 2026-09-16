@@ -27,6 +27,7 @@ pub mod network_service;
 pub mod prefs;
 pub mod process_service;
 pub mod recaptcha_window;
+pub mod system_proxy;
 pub mod tls_info;
 pub mod update_service;
 pub mod update_signature;

@@ -15,6 +15,7 @@ import type {
   ClientFileState,
   ClientLocalVersionDto,
   ClientManifestDto,
+  ClientNetworkStatusDto,
   ClientProgressDto,
   ClientScanReportDto,
 } from "../../lib/types";
@@ -164,8 +165,58 @@ function Progress({
   );
 }
 
+/** `HK` -> 香港, in the language the window is showing. */
+function regionName(code: string, language: string): string | undefined {
+  try {
+    return new Intl.DisplayNames([language], { type: "region" }).of(code);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Latency that reads as good, fine, or worth a look. */
+function latencyTone(ms: number): string {
+  if (ms < 60) return "text-green-500";
+  if (ms < 150) return "text-[var(--text)]";
+  return "text-yellow-500";
+}
+
+/**
+ * One fact about the install or the connection: a caption, the value, and a
+ * line under it. Four of these replace a header that was a name, one line of
+ * dates and a lot of nothing.
+ */
+function StatTile({
+  caption,
+  value,
+  valueClass = "text-[var(--text)]",
+  sub,
+  title,
+}: {
+  caption: string;
+  value: React.ReactNode;
+  valueClass?: string;
+  sub?: React.ReactNode;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] px-3.5 py-2.5"
+    >
+      <span className="truncate text-[10px] font-semibold tracking-[1px] text-text-faint">
+        {caption}
+      </span>
+      <span className={`truncate text-[13px] leading-tight font-bold ${valueClass}`}>{value}</span>
+      <span className="flex h-4 min-w-0 items-center truncate text-[10px] text-text-dim">
+        {sub}
+      </span>
+    </div>
+  );
+}
+
 export function ClientManagerApp() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   useInitialConfigSync();
   useThemeEffect();
 
@@ -185,6 +236,10 @@ export function ClientManagerApp() {
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [autoCheck, setAutoCheck] = useState(false);
+  // `undefined` while the first measurement runs, so the tile says so rather
+  // than showing a blank that reads as "no network".
+  const [net, setNet] = useState<ClientNetworkStatusDto | undefined>(undefined);
+  const [netTesting, setNetTesting] = useState(false);
   const [concurrency, setConcurrency] = useState(CONCURRENCY_DEFAULT);
   // `undefined` until the stored answer is read, so the prompt cannot flash.
   const [askAutoCheck, setAskAutoCheck] = useState<boolean | undefined>(undefined);
@@ -283,6 +338,28 @@ export function ClientManagerApp() {
       .then(setFreeSpace)
       .catch(() => setFreeSpace(null));
   }, [dir, report]);
+
+  // How this machine reaches the CDN. It needs the manifest for the address,
+  // and after that it is measured again only when asked: it costs requests.
+  const manifestVersion = manifest?.version;
+  useEffect(() => {
+    if (!manifestVersion) return;
+    let live = true;
+    (async () => {
+      const status = await commands.clientNetworkStatus().catch(() => null);
+      if (live && status) setNet(status);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [manifestVersion]);
+
+  const retestNetwork = useCallback(async () => {
+    setNetTesting(true);
+    const status = await commands.clientNetworkStatus().catch(() => null);
+    if (status) setNet(status);
+    setNetTesting(false);
+  }, []);
 
   // What the install says about itself, refreshed after a repair.
   useEffect(() => {
@@ -612,9 +689,9 @@ export function ClientManagerApp() {
         </div>
       )}
 
-      {/* Which game, which version, how it stands. Two lines, no boxes: the
-          numbers are context, not the point of the window. */}
-      <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4">
+      {/* Which game and which version, then the four things a player checks
+          before and during a repair: the install, the disk, the route, the CDN. */}
+      <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
             <h1 className="text-[20px] leading-none font-bold tracking-tight">
@@ -639,24 +716,107 @@ export function ClientManagerApp() {
             </p>
           )}
         </div>
+      </div>
 
-        {local !== undefined && (
-          <span
-            className={`flex shrink-0 items-center gap-1.5 text-[11px] font-semibold ${
-              local?.matchesOfficial ? "text-green-500" : "text-yellow-500"
-            }`}
-          >
-            <span className="text-[8px]">●</span>
-            {local === null
-              ? t("client.no_client_here")
+      <div className="grid shrink-0 grid-cols-2 gap-2.5 px-6 pb-4 min-[860px]:grid-cols-4">
+        <StatTile
+          caption={t("client.stat_local")}
+          value={
+            local === undefined
+              ? "—"
+              : local === null
+                ? t("client.local_none")
+                : local.matchesOfficial
+                  ? (manifest?.fullVersion ?? manifest?.version ?? "")
+                  : t("client.update_available")
+          }
+          valueClass={
+            local == null
+              ? "text-text-faint"
+              : local.matchesOfficial
+                ? "text-green-500"
+                : "text-yellow-500"
+          }
+          sub={
+            local == null
+              ? ""
               : local.matchesOfficial
                 ? t("client.up_to_date")
-                : t("client.version_ambiguous", {
-                    marker: String(local.marker),
-                    candidates: local.candidates.join(" / ") || "?",
-                  })}
-          </span>
-        )}
+                : t("client.local_candidates", {
+                    candidates:
+                      local.candidates.map((v) => `V${v}`).join(" / ") || String(local.marker),
+                  })
+          }
+        />
+        <StatTile
+          caption={
+            /^[A-Za-z]:/.test(dir)
+              ? `${t("client.stat_disk")} · ${dir.slice(0, 2).toUpperCase()}`
+              : t("client.stat_disk")
+          }
+          value={freeSpace === null ? "—" : t("client.disk_free", { size: formatBytes(freeSpace) })}
+          valueClass={notEnoughSpace ? "text-red-400" : "text-[var(--text)]"}
+          sub={
+            report && report.issueCount > 0
+              ? t("client.disk_need_repair", { size: formatBytes(selectedBytes) })
+              : manifest
+                ? t("client.disk_need_full", { size: formatBytes(manifest.totalBytes) })
+                : ""
+          }
+        />
+        <StatTile
+          caption={t("client.stat_network")}
+          title={t("client.net_hint")}
+          value={
+            net === undefined
+              ? t("client.net_testing")
+              : net.country
+                ? (regionName(net.country, language) ?? net.country)
+                : t("client.net_region_unknown")
+          }
+          valueClass={net === undefined ? "text-text-faint" : "text-[var(--text)]"}
+          sub={
+            net === undefined
+              ? ""
+              : net.proxy
+                ? t("client.net_via_proxy", { proxy: net.proxy })
+                : net.pac
+                  ? t("client.net_pac")
+                  : t("client.net_no_proxy")
+          }
+        />
+        <StatTile
+          caption={t("client.stat_latency")}
+          title={net?.error ?? t("client.latency_hint")}
+          value={
+            net === undefined || netTesting
+              ? t("client.net_testing")
+              : net.latencyMs !== null
+                ? `${net.latencyMs} ms`
+                : t("client.net_unreachable")
+          }
+          valueClass={
+            net === undefined || netTesting
+              ? "text-text-faint"
+              : net.latencyMs !== null
+                ? latencyTone(net.latencyMs)
+                : "text-red-400"
+          }
+          sub={
+            // While files are moving, the speed is the number that matters.
+            phase === "downloading" && rate > 0 ? (
+              t("client.rate", { rate: formatBytes(rate) })
+            ) : (
+              <button
+                onClick={() => void retestNetwork()}
+                disabled={net === undefined || netTesting}
+                className="font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
+              >
+                {t("client.net_retest")}
+              </button>
+            )
+          }
+        />
       </div>
 
       {/* Tabs. */}

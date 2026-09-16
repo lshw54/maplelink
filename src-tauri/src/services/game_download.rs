@@ -51,7 +51,8 @@ struct ApiItem {
 
 /// Fetch the official download list. Returns items grouped by `kind`.
 pub async fn fetch_download_list() -> Result<Vec<GameDownloadItem>, String> {
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .cookie_store(true)
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(20))
@@ -226,7 +227,8 @@ struct ProductInfo {
 /// carries the version, the CDN base and the per-file list. Shared by the
 /// torrent view here and by the client manager, which needs the file list.
 pub async fn fetch_product_info_body() -> Result<(String, String), String> {
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(20))
         .build()
@@ -428,7 +430,8 @@ pub async fn fetch_full_client_torrent() -> Result<(FullClientInfo, Vec<u8>), St
     if info.folder_name.is_empty() {
         return Err("product info names no game folder".to_string());
     }
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(60))
         .build()

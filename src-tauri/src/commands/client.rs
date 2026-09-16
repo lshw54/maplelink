@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::client_manager::{
     self, Cancel, ClientManifest, Control, DownloadProgress, DownloadReport, LocalVersion,
-    ScanMode, ScanReport,
+    NetworkStatus, ScanMode, ScanReport,
 };
 
 /// The window the client manager runs in. `main.tsx` reads this label to decide
@@ -232,6 +232,12 @@ pub async fn client_download(
     };
 
     let at_once = concurrency.unwrap_or(0);
+    // Worth having in a log someone sends in: most "cannot download" reports
+    // come down to the route.
+    tracing::info!(
+        "client download route: proxy={:?}",
+        crate::services::system_proxy::SystemProxy::read().describe()
+    );
     let report = client_manager::download(
         PathBuf::from(&dir),
         manifest,
@@ -264,6 +270,16 @@ pub async fn client_download(
         report.cancelled
     );
     Ok(report)
+}
+
+/// How the downloads would reach the CDN from here: proxy, exit country and
+/// latency. A few seconds at most, and safe to call while a job runs.
+#[tauri::command]
+pub async fn client_network_status(
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<NetworkStatus, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    Ok(client_manager::network_status(&manifest).await)
 }
 
 /// Ask the running scan or download to stop. Safe to call when nothing runs.

@@ -22,6 +22,7 @@ import type {
   ClientScanReportDto,
   ClientDownloadReportDto,
   ClientLocalVersionDto,
+  ClientNetworkStatusDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
   BrowserBookmark,
@@ -210,6 +211,7 @@ export const commands = {
   prefGet: (key: string) => invoke<string | null>("pref_get", { key }),
   prefSet: (key: string, value: string) => invoke("pref_set", { key, value }),
   clientFreeSpace: (dir: string) => invoke<number | null>("client_free_space", { dir }),
+  clientNetworkStatus: () => invoke<ClientNetworkStatusDto>("client_network_status"),
   clientPickFolder: (startIn: string | null) =>
     invoke<string | null>("client_pick_folder", { startIn }),
   clientDefaultFolder: () => invoke<string | null>("client_default_folder"),
