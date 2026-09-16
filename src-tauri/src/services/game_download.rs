@@ -322,6 +322,19 @@ impl ManifestSource {
 /// fails. A machine that has never loaded the list starts with beanfun.
 const FIRST_CHOICE_KEY: &str = "client.manifest_source";
 
+/// The player's own pick, when they have made one: `"beanfun"` or `"catalog"`
+/// asks only that source; anything else, or nothing, is automatic. Written by
+/// the client manager window through the prefs commands.
+///
+/// Automatic is right for almost everyone. The override is for the player who
+/// knows better than the last result — a route that answers one source slowly
+/// but does answer, or a source that works for the list but not for them.
+const PINNED_KEY: &str = "client.manifest_mode";
+
+fn pinned(data_dir: &Path) -> Option<ManifestSource> {
+    crate::services::prefs::get(data_dir, PINNED_KEY).and_then(|k| ManifestSource::from_key(&k))
+}
+
 fn first_choice(data_dir: &Path) -> ManifestSource {
     crate::services::prefs::get(data_dir, FIRST_CHOICE_KEY)
         .and_then(|k| ManifestSource::from_key(&k))
@@ -366,7 +379,8 @@ struct Fetched {
 }
 
 /// Fetch the manifest from whichever source worked last, falling back to the
-/// other, and remember which one answered. `data_dir` is where that is kept.
+/// other, and remember which one answered — or, when the player has pinned a
+/// source, from that one alone. `data_dir` is where both are kept.
 pub async fn fetch_product_info_learning(
     data_dir: &Path,
     on_attempt: impl Fn(ManifestAttempt) + Send + Sync,
@@ -382,26 +396,34 @@ pub async fn fetch_product_info_learning(
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
-    let first = first_choice(data_dir);
+    let pin = pinned(data_dir);
+    let first = pin.unwrap_or_else(|| first_choice(data_dir));
     let fetched = fetch_product_info_from(
         &client,
         PRODUCT_INFO_URL,
         PRODUCT_LIST_URL,
         first,
+        // A pinned source is the player saying "this one". Quietly answering
+        // from the other would hide exactly what they are trying to find out.
+        pin.is_none(),
         &on_attempt,
     )
     .await?;
-    remember(data_dir, first, fetched.source);
+    // Still worth learning from: if the pin is lifted, automatic starts from
+    // what is known to work.
+    remember(data_dir, first_choice(data_dir), fetched.source);
     Ok((fetched.url, fetched.body))
 }
 
-/// Ask `first`, then the other source if it fails. Against given addresses, so
-/// the order and the retries can be exercised without beanfun.
+/// Ask `first`, then — when `fall_back` — the other source if it fails.
+/// Against given addresses, so the order and the retries can be exercised
+/// without beanfun.
 async fn fetch_product_info_from(
     client: &reqwest::Client,
     manifest_url: &str,
     catalog_url: &str,
     first: ManifestSource,
+    fall_back: bool,
     on_attempt: &(dyn Fn(ManifestAttempt) + Send + Sync),
 ) -> Result<Fetched, String> {
     let ask = |source: ManifestSource| async move {
@@ -430,6 +452,9 @@ async fn fetch_product_info_from(
         }
         Err(e) => e,
     };
+    if !fall_back {
+        return Err(format!("{}: {first_error}", first.key()));
+    }
     let second = first.other();
     tracing::info!("product info: {first:?} failed ({first_error}); asking {second:?}");
     match ask(second).await {
@@ -696,6 +721,7 @@ mod full_client_tests {
             &format!("{base}/maplestory/productInfo.json"),
             &format!("{base}/product_list.json"),
             ManifestSource::Beanfun,
+            true,
             &|_| {},
         )
         .await
@@ -732,6 +758,7 @@ mod full_client_tests {
             &format!("{old}/maplestory/productInfo.json"),
             &format!("{catalog_base}/product_list.json"),
             ManifestSource::Beanfun,
+            true,
             &|_| {},
         )
         .await
@@ -792,6 +819,7 @@ mod full_client_tests {
             &format!("{base}/maplestory/productInfo.json"),
             &format!("{base}/product_list.json"),
             ManifestSource::Beanfun,
+            true,
             &on_attempt,
         )
         .await
@@ -816,6 +844,7 @@ mod full_client_tests {
             &format!("{base}/maplestory/productInfo.json"),
             &format!("{base}/product_list.json"),
             ManifestSource::Beanfun,
+            true,
             &on_attempt,
         )
         .await
@@ -850,6 +879,7 @@ mod full_client_tests {
             &format!("{base}/maplestory/productInfo.json"),
             &format!("{base}/product_list.json"),
             ManifestSource::Catalog,
+            true,
             &on_attempt,
         )
         .await
@@ -858,6 +888,43 @@ mod full_client_tests {
         assert_eq!(got.source, ManifestSource::Catalog);
         assert_eq!(*asked.lock().unwrap(), vec!["/product_list.json"]);
         assert_eq!(*log.lock().unwrap(), vec![(ManifestSource::Catalog, 1)]);
+    }
+
+    /// A pinned source that fails is reported as it is; the other source is not
+    /// quietly asked in its place.
+    #[tokio::test]
+    async fn a_pinned_source_does_not_fall_back() {
+        let (base, _) = serve_in_turn(vec![Some(response("404 Not Found", "")); 2]);
+        let (log, on_attempt) = attempts_seen();
+        let err = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            false,
+            &on_attempt,
+        )
+        .await
+        .err()
+        .unwrap();
+
+        assert!(err.starts_with("beanfun:"), "{err}");
+        assert_eq!(*log.lock().unwrap(), vec![(ManifestSource::Beanfun, 1)]);
+    }
+
+    #[test]
+    fn a_pin_is_read_and_anything_else_means_automatic() {
+        let dir = std::env::temp_dir().join(format!("maplelink_pin_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        assert_eq!(pinned(&dir), None);
+        crate::services::prefs::set(&dir, PINNED_KEY, "catalog").unwrap();
+        assert_eq!(pinned(&dir), Some(ManifestSource::Catalog));
+        crate::services::prefs::set(&dir, PINNED_KEY, "auto").unwrap();
+        assert_eq!(pinned(&dir), None);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The source that answered becomes the first choice; one that was already
@@ -898,6 +965,7 @@ mod full_client_tests {
             &format!("{base}/maplestory/productInfo.json"),
             &format!("{base}/product_list.json"),
             ManifestSource::Beanfun,
+            true,
             &|_| {},
         )
         .await

@@ -16,6 +16,7 @@ import type {
   ClientLocalVersionDto,
   ClientManifestAttemptDto,
   ClientManifestDto,
+  ClientManifestSource,
   ClientNetworkStatusDto,
   ClientProgressDto,
   ClientScanReportDto,
@@ -26,6 +27,16 @@ type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done
 /** Answers to the one-time "check automatically?" prompt. */
 const AUTO_CHECK_KEY = "client.auto_check";
 const AUTO_CHECK_ASKED_KEY = "client.auto_check_asked";
+/**
+ * Where the official file list comes from. Automatic asks whichever source
+ * answered last time and falls back to the other; the two others pin one
+ * source and ask nothing else. The backend reads this key itself, so the
+ * download tab follows the same choice.
+ */
+const MANIFEST_MODE_KEY = "client.manifest_mode";
+type ManifestMode = "auto" | ClientManifestSource;
+const MANIFEST_MODES: ManifestMode[] = ["auto", "beanfun", "catalog"];
+
 /** How many files to fetch at once, remembered between runs. */
 const CONCURRENCY_KEY = "client.concurrency";
 const CONCURRENCY_DEFAULT = 6;
@@ -236,6 +247,7 @@ export function ClientManagerApp() {
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [manifestMode, setManifestMode] = useState<ManifestMode>("auto");
   // What the list load is trying right now, for the line that says so.
   const [manifestAttempt, setManifestAttempt] = useState<ClientManifestAttemptDto | null>(null);
   const [autoCheck, setAutoCheck] = useState(false);
@@ -273,6 +285,17 @@ export function ClientManagerApp() {
   useEffect(() => {
     document.title = t("client.title");
   }, [t]);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const mode = await commands.prefGet(MANIFEST_MODE_KEY).catch(() => null);
+      if (live) setManifestMode(MANIFEST_MODES.find((m) => m === mode) ?? "auto");
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -943,6 +966,30 @@ export function ClientManagerApp() {
               <p className="min-w-0 flex-1 text-[10px] text-text-faint">
                 {t("client.folder_note")}
               </p>
+              <label
+                title={t("client.manifest_source_hint")}
+                className="flex shrink-0 items-center gap-1 text-[10px] text-text-faint"
+              >
+                {t("client.manifest_source")}
+                <select
+                  value={manifestMode}
+                  onChange={async (e) => {
+                    const next = e.target.value as ManifestMode;
+                    setManifestMode(next);
+                    // Saved before the reload, because the reload reads it.
+                    await commands.prefSet(MANIFEST_MODE_KEY, next).catch(() => {});
+                    void reloadManifest();
+                  }}
+                  disabled={refreshing || busy || phase === "loading"}
+                  className="rounded border border-[var(--tb-border)] bg-[var(--surface)] px-1 py-px text-[10px] font-semibold text-text-dim outline-none focus:border-accent disabled:opacity-50"
+                >
+                  {MANIFEST_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {t(`client.manifest_source_${m}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {/* The list the scan compares against, on the tab that does the
                   comparing — not only on the download tab. */}
               {manifest?.manifestUrl && (
