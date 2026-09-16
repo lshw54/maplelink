@@ -196,9 +196,13 @@ fn write_cache(dir: &Path, url: &str, body: &str) {
 /// `cache_dir` is where the last good copy is kept. When beanfun cannot be
 /// reached, that copy is used instead: a scan can still say which files are
 /// wrong, even though repairing them needs the server.
-pub async fn fetch_manifest(cache_dir: &Path) -> Result<ClientManifest, String> {
+pub async fn fetch_manifest(
+    cache_dir: &Path,
+    source: crate::services::game_download::ManifestSource,
+    on_attempt: impl Fn(crate::services::game_download::ManifestAttempt) + Send + Sync,
+) -> Result<ClientManifest, String> {
     let (body, cached_at, url) =
-        match crate::services::game_download::fetch_product_info_body().await {
+        match crate::services::game_download::fetch_product_info_via(source, on_attempt).await {
             Ok((url, body)) => {
                 write_cache(cache_dir, &url, &body);
                 (body, None, url)
@@ -2030,7 +2034,9 @@ mod live_tests {
     #[ignore]
     async fn live_client_network_status_reaches_the_cdn() {
         let cache = TempDir::new("live_network_cache");
-        let manifest = fetch_manifest(cache.path()).await.unwrap();
+        let manifest = fetch_manifest(cache.path(), Default::default(), |_| {})
+            .await
+            .unwrap();
         let status = network_status(&manifest).await;
         eprintln!("network: {status:?}");
         assert!(status.error.is_none(), "{:?}", status.error);
@@ -2041,7 +2047,11 @@ mod live_tests {
     #[ignore]
     async fn live_client_fetches_and_verifies_two_small_files() {
         let cache = TempDir::new("live_manifest_cache");
-        let manifest = Arc::new(fetch_manifest(cache.path()).await.unwrap());
+        let manifest = Arc::new(
+            fetch_manifest(cache.path(), Default::default(), |_| {})
+                .await
+                .unwrap(),
+        );
         eprintln!(
             "manifest: {} {} — {} files, {} bytes",
             manifest.product_name, manifest.version, manifest.file_count, manifest.total_bytes
@@ -2109,7 +2119,9 @@ mod live_tests {
     #[ignore]
     async fn live_client_leaves_a_good_file_alone_when_a_download_fails() {
         let cache = TempDir::new("live_manifest_cache2");
-        let mut manifest = fetch_manifest(cache.path()).await.unwrap();
+        let mut manifest = fetch_manifest(cache.path(), Default::default(), |_| {})
+            .await
+            .unwrap();
         let mut small: Vec<ManifestFile> = manifest.files.clone();
         small.sort_by_key(|f| f.size);
         let victim = small[0].clone();

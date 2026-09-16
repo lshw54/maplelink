@@ -21,6 +21,8 @@ pub const CLIENT_WINDOW_LABEL: &str = "client_manager";
 
 const SCAN_PROGRESS_EVENT: &str = "client-scan-progress";
 const DOWNLOAD_PROGRESS_EVENT: &str = "client-download-progress";
+/// Which source the manifest load is trying, and which attempt this is.
+const MANIFEST_ATTEMPT_EVENT: &str = "client-manifest-attempt";
 /// One file starting, landing or failing. Two of these per file is nothing
 /// next to the 400ms tick, and it is what lets the list move while the run is
 /// still going.
@@ -138,14 +140,24 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
 
 /// Fetch the official manifest and remember it for the scan and download that
 /// follow, so all three always talk about the same published version.
+///
+/// `source` is where to ask; `None` is the automatic order.
 #[tauri::command]
 pub async fn client_load_manifest(
+    source: Option<crate::services::game_download::ManifestSource>,
     jobs: tauri::State<'_, ClientJobs>,
     app: tauri::AppHandle,
 ) -> Result<ClientManifest, ErrorDto> {
-    let manifest = client_manager::fetch_manifest(&app_data_dir(&app)?)
-        .await
-        .map_err(net("CLIENT_MANIFEST_FAILED"))?;
+    let handle = app.clone();
+    let manifest = client_manager::fetch_manifest(
+        &app_data_dir(&app)?,
+        source.unwrap_or_default(),
+        move |attempt| {
+            let _ = handle.emit(MANIFEST_ATTEMPT_EVENT, attempt);
+        },
+    )
+    .await
+    .map_err(net("CLIENT_MANIFEST_FAILED"))?;
     let shared = Arc::new(manifest.clone());
     *jobs.manifest.write().await = Some(shared);
     Ok(manifest)

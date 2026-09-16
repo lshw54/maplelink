@@ -105,6 +105,16 @@ export interface ClientProgressDto {
   active: ClientActiveFileDto[];
 }
 
+/** Where the official file list is asked for. */
+export type ClientManifestSource = "auto" | "beanfun" | "catalog";
+
+/** One try at one source, sent as it starts. */
+export interface ClientManifestAttemptDto {
+  source: ClientManifestSource;
+  attempt: number;
+  attempts: number;
+}
+
 /** How the downloads reach the CDN from this machine. */
 export interface ClientNetworkStatusDto {
   /** Country code the route comes out in; the address itself is never sent. */

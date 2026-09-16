@@ -14,7 +14,9 @@ import type {
   ClientDownloadReportDto,
   ClientFileState,
   ClientLocalVersionDto,
+  ClientManifestAttemptDto,
   ClientManifestDto,
+  ClientManifestSource,
   ClientNetworkStatusDto,
   ClientProgressDto,
   ClientScanReportDto,
@@ -25,6 +27,16 @@ type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done
 /** Answers to the one-time "check automatically?" prompt. */
 const AUTO_CHECK_KEY = "client.auto_check";
 const AUTO_CHECK_ASKED_KEY = "client.auto_check_asked";
+/**
+ * Where to ask for the official file list, remembered between runs.
+ *
+ * A choice because reachability is a property of the player's route, not of
+ * the sources: an accelerator that carries beanfun's CDN may not carry HiNet's,
+ * and some networks are the other way round.
+ */
+const MANIFEST_SOURCE_KEY = "client.manifest_source";
+const MANIFEST_SOURCES: ClientManifestSource[] = ["auto", "beanfun", "catalog"];
+
 /** How many files to fetch at once, remembered between runs. */
 const CONCURRENCY_KEY = "client.concurrency";
 const CONCURRENCY_DEFAULT = 6;
@@ -235,6 +247,9 @@ export function ClientManagerApp() {
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [manifestSource, setManifestSource] = useState<ClientManifestSource>("auto");
+  // What the list load is trying right now, for the line that says so.
+  const [manifestAttempt, setManifestAttempt] = useState<ClientManifestAttemptDto | null>(null);
   const [autoCheck, setAutoCheck] = useState(false);
   // `undefined` while the first measurement runs, so the tile says so rather
   // than showing a blank that reads as "no network".
@@ -320,6 +335,9 @@ export function ClientManagerApp() {
     }
     const scan = listen<ClientProgressDto>("client-scan-progress", (e) => track(e.payload));
     const down = listen<ClientProgressDto>("client-download-progress", (e) => track(e.payload));
+    const attempt = listen<ClientManifestAttemptDto>("client-manifest-attempt", (e) =>
+      setManifestAttempt(e.payload),
+    );
     const file = listen<ClientDownloadFileDto>("client-download-file", (e) => {
       liveFiles.current.set(e.payload.path, e.payload.state);
       liveDirty.current = true;
@@ -328,6 +346,7 @@ export function ClientManagerApp() {
       scan.then((un) => un());
       down.then((un) => un());
       file.then((un) => un());
+      attempt.then((un) => un());
     };
   }, []);
 
@@ -425,39 +444,49 @@ export function ClientManagerApp() {
    * failed with no cache to fall back on.
    */
   const loadedVersion = manifest?.version ?? null;
-  const reloadManifest = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const m = await commands.clientLoadManifest();
-      setManifest(m);
-      // A result on screen describes the list it was compared against, so a
-      // different version makes it wrong rather than merely old.
-      if (loadedVersion !== null && loadedVersion !== m.version) {
-        setReport(null);
-        setSelected(new Set());
-        setOutcome(null);
+  const reloadManifest = useCallback(
+    async (source: ClientManifestSource) => {
+      setRefreshing(true);
+      setError(null);
+      setManifestAttempt(null);
+      try {
+        const m = await commands.clientLoadManifest(source);
+        setManifest(m);
+        // A result on screen describes the list it was compared against, so a
+        // different version makes it wrong rather than merely old.
+        if (loadedVersion !== null && loadedVersion !== m.version) {
+          setReport(null);
+          setSelected(new Set());
+          setOutcome(null);
+        }
+        if (m.cachedAt) {
+          // Still the stored copy: beanfun did not answer this time either.
+          setError(t("client.manifest_still_offline"));
+        }
+      } catch (e) {
+        setError(errorMessage(e));
+      } finally {
+        setRefreshing(false);
+        setManifestAttempt(null);
       }
-      if (m.cachedAt) {
-        // Still the stored copy: beanfun did not answer this time either.
-        setError(t("client.manifest_still_offline"));
-      }
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }, [t, loadedVersion]);
+    },
+    [t, loadedVersion],
+  );
 
   useEffect(() => {
     let live = true;
     (async () => {
       try {
+        const saved = await commands.prefGet(MANIFEST_SOURCE_KEY).catch(() => null);
+        const source = MANIFEST_SOURCES.find((s) => s === saved) ?? "auto";
+        if (!live) return;
+        setManifestSource(source);
         const [m, folder] = await Promise.all([
-          commands.clientLoadManifest(),
+          commands.clientLoadManifest(source),
           commands.clientDefaultFolder().catch(() => null),
         ]);
         if (!live) return;
+        setManifestAttempt(null);
         setManifest(m);
         if (folder) setDir(folder);
         setPhase("idle");
@@ -573,7 +602,17 @@ export function ClientManagerApp() {
       ? `${progress.done} / ${progress.total} · ${formatBytes(progress.bytesDone)} / ${formatBytes(progress.bytesTotal)}${busy ? speed : ""}`
       : "";
     if (phase === "loading") {
-      return { headline: t("client.loading_manifest"), detail: "", tone: "busy" };
+      return {
+        headline: manifestAttempt
+          ? t("client.loading_manifest_via", {
+              source: t(`client.manifest_source_${manifestAttempt.source}`),
+              attempt: String(manifestAttempt.attempt),
+              attempts: String(manifestAttempt.attempts),
+            })
+          : t("client.loading_manifest"),
+        detail: "",
+        tone: "busy",
+      };
     }
     if (busy && paused) {
       return {
@@ -843,6 +882,30 @@ export function ClientManagerApp() {
               <p className="min-w-0 flex-1 text-[10px] text-text-faint">
                 {t("client.folder_note")}
               </p>
+              <label
+                title={t("client.manifest_source_hint")}
+                className="flex shrink-0 items-center gap-1 text-[10px] text-text-faint"
+              >
+                {t("client.manifest_source")}
+                <select
+                  value={manifestSource}
+                  onChange={(e) => {
+                    const next = e.target.value as ClientManifestSource;
+                    setManifestSource(next);
+                    void commands.prefSet(MANIFEST_SOURCE_KEY, next).catch(() => {});
+                    // Choosing a source is asking for the list from it.
+                    void reloadManifest(next);
+                  }}
+                  disabled={refreshing || busy || phase === "loading"}
+                  className="rounded border border-[var(--tb-border)] bg-[var(--surface)] px-1 py-px text-[10px] font-semibold text-text-dim outline-none focus:border-accent disabled:opacity-50"
+                >
+                  {MANIFEST_SOURCES.map((s) => (
+                    <option key={s} value={s}>
+                      {t(`client.manifest_source_${s}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {/* The list the scan compares against, on the tab that does the
                   comparing — not only on the download tab. */}
               {manifest?.manifestUrl && (
@@ -877,7 +940,7 @@ export function ClientManagerApp() {
                   {t("client.offline_manifest", { date: formatCachedAt(manifest.cachedAt) })}
                 </p>
                 <button
-                  onClick={() => void reloadManifest()}
+                  onClick={() => void reloadManifest(manifestSource)}
                   disabled={refreshing || busy}
                   className="shrink-0 rounded-lg border border-[rgba(234,179,8,0.4)] px-2.5 py-1 text-[11px] font-semibold text-yellow-500 transition-colors hover:bg-[rgba(234,179,8,0.12)] disabled:opacity-50"
                 >
@@ -892,7 +955,7 @@ export function ClientManagerApp() {
                     to be here rather than only on the offline notice. */}
                 {!manifest && (
                   <button
-                    onClick={() => void reloadManifest()}
+                    onClick={() => void reloadManifest(manifestSource)}
                     disabled={refreshing}
                     className="shrink-0 rounded-lg border border-[rgba(239,68,68,0.4)] px-2.5 py-1 text-[11px] font-semibold text-red-400 transition-colors hover:bg-[rgba(239,68,68,0.12)] disabled:opacity-50"
                   >
