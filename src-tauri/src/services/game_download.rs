@@ -385,17 +385,7 @@ pub async fn fetch_product_info_learning(
     data_dir: &Path,
     on_attempt: impl Fn(ManifestAttempt) + Send + Sync,
 ) -> Result<(String, String), String> {
-    let client = crate::services::system_proxy::SystemProxy::read()
-        .apply(reqwest::Client::builder())
-        .user_agent(UA)
-        // A host the route cannot reach usually never answers the connect at
-        // all. Giving up on that quickly is what keeps two sources, each tried
-        // twice, from adding up to a minute of nothing.
-        .connect_timeout(std::time::Duration::from_secs(8))
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
-
+    let client = manifest_client()?;
     let pin = pinned(data_dir);
     let first = pin.unwrap_or_else(|| first_choice(data_dir));
     let fetched = fetch_product_info_from(
@@ -413,6 +403,117 @@ pub async fn fetch_product_info_learning(
     // what is known to work.
     remember(data_dir, first_choice(data_dir), fetched.source);
     Ok((fetched.url, fetched.body))
+}
+
+/// The client every manifest request goes through: Windows' proxy, and short
+/// patience with a host that does not answer.
+fn manifest_client() -> Result<reqwest::Client, String> {
+    crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
+        .user_agent(UA)
+        // A host the route cannot reach usually never answers the connect at
+        // all. Giving up on that quickly is what keeps two sources, each tried
+        // twice, from adding up to a minute of nothing.
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))
+}
+
+/// One source, asked once, for the player to compare against the other.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTest {
+    pub source: ManifestSource,
+    pub ok: bool,
+    /// From the request to the last byte of a manifest that parsed.
+    pub millis: u64,
+    /// The version the source is serving, when it answered.
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Both sources side by side, and which one automatic mode will ask first now.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTests {
+    pub results: Vec<SourceTest>,
+    pub first: ManifestSource,
+}
+
+/// Ask both sources for the real list at once, a single time each.
+///
+/// No retries: this is a picture of the route as it is right now, and a retry
+/// that papers over a dropped first attempt is exactly what it should show.
+/// What it learns is kept: when the source automatic mode would ask first
+/// failed and the other answered, the other becomes the first choice — the same
+/// rule a real load follows, reached without making the player wait for one.
+pub async fn test_sources(data_dir: &Path) -> Result<SourceTests, String> {
+    let client = manifest_client()?;
+    let results = test_sources_at(&client, PRODUCT_INFO_URL, PRODUCT_LIST_URL).await;
+    for r in &results {
+        tracing::info!(
+            "product info test: {:?} ok={} in {} ms, version={:?}, error={:?}",
+            r.source,
+            r.ok,
+            r.millis,
+            r.version,
+            r.error
+        );
+    }
+    learn_from_test(data_dir, &results);
+    Ok(SourceTests {
+        results,
+        first: first_choice(data_dir),
+    })
+}
+
+async fn test_sources_at(
+    client: &reqwest::Client,
+    manifest_url: &str,
+    catalog_url: &str,
+) -> Vec<SourceTest> {
+    let timed = |source: ManifestSource| async move {
+        let started = std::time::Instant::now();
+        let result = match source {
+            ManifestSource::Beanfun => fetch_manifest_at(client, manifest_url)
+                .await
+                .map(|body| (manifest_url.to_string(), body)),
+            ManifestSource::Catalog => fetch_via_catalog(client, catalog_url).await,
+        };
+        let millis = started.elapsed().as_millis() as u64;
+        match result {
+            Ok((url, body)) => SourceTest {
+                source,
+                ok: true,
+                millis,
+                version: full_client_info(&body, &url).ok().map(|i| i.version),
+                error: None,
+            },
+            Err(failure) => SourceTest {
+                source,
+                ok: false,
+                millis,
+                version: None,
+                error: Some(failure.message),
+            },
+        }
+    };
+    let (beanfun, catalog) = tokio::join!(
+        timed(ManifestSource::Beanfun),
+        timed(ManifestSource::Catalog)
+    );
+    vec![beanfun, catalog]
+}
+
+/// Switch the first choice when the test says it no longer works and the other
+/// source does. Both working, or both failing, teaches nothing.
+fn learn_from_test(data_dir: &Path, results: &[SourceTest]) {
+    let first = first_choice(data_dir);
+    let works = |s: ManifestSource| results.iter().any(|r| r.source == s && r.ok);
+    if !works(first) && works(first.other()) {
+        remember(data_dir, first, first.other());
+    }
 }
 
 /// Ask `first`, then — when `fall_back` — the other source if it fails.
@@ -890,6 +991,80 @@ mod full_client_tests {
         assert_eq!(*log.lock().unwrap(), vec![(ManifestSource::Catalog, 1)]);
     }
 
+    /// The test asks both sources once each and reports each on its own.
+    #[tokio::test]
+    async fn the_source_test_reports_each_source_separately() {
+        let (base, _) = serve_paths(vec![
+            (
+                "/maplestory/productInfo.json",
+                Some(response("200 OK", MANIFEST)),
+            ),
+            ("/product_list.json", None),
+        ]);
+        let results = test_sources_at(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+        )
+        .await;
+
+        assert_eq!(results.len(), 2);
+        let beanfun = &results[0];
+        assert_eq!(beanfun.source, ManifestSource::Beanfun);
+        assert!(beanfun.ok);
+        assert_eq!(beanfun.version.as_deref(), Some("V282"));
+        let catalog = &results[1];
+        assert_eq!(catalog.source, ManifestSource::Catalog);
+        assert!(!catalog.ok);
+        assert!(catalog.error.is_some());
+    }
+
+    #[test]
+    fn a_test_moves_the_first_choice_only_off_a_source_that_failed() {
+        let dir = std::env::temp_dir().join(format!("maplelink_test_learn_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let result = |source, ok| SourceTest {
+            source,
+            ok,
+            millis: 1,
+            version: None,
+            error: None,
+        };
+
+        // Both work: nothing to learn.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, true),
+                result(ManifestSource::Catalog, true),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        // Both fail: nothing to learn either.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, false),
+                result(ManifestSource::Catalog, false),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        // The first choice fails and the other works: switch.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, false),
+                result(ManifestSource::Catalog, true),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Catalog);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A pinned source that fails is reported as it is; the other source is not
     /// quietly asked in its place.
     #[tokio::test]
@@ -1289,6 +1464,21 @@ mod torrent_tests {
 #[cfg(test)]
 mod live_tests {
     use super::*;
+
+    /// Both real sources, side by side, as the button shows them.
+    #[tokio::test]
+    #[ignore]
+    async fn live_source_test_asks_both_sources() {
+        let client = manifest_client().unwrap();
+        let results = test_sources_at(&client, PRODUCT_INFO_URL, PRODUCT_LIST_URL).await;
+        for r in &results {
+            eprintln!(
+                "{:?}: ok={} {} ms version={:?} error={:?}",
+                r.source, r.ok, r.millis, r.version, r.error
+            );
+        }
+        assert_eq!(results.len(), 2);
+    }
 
     #[tokio::test]
     #[ignore]

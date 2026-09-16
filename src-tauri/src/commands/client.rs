@@ -280,6 +280,17 @@ pub async fn client_download(
     Ok(report)
 }
 
+/// Ask both list sources once, side by side. Whatever it shows about which
+/// source works is remembered for automatic mode.
+#[tauri::command]
+pub async fn client_test_sources(
+    app: tauri::AppHandle,
+) -> Result<crate::services::game_download::SourceTests, ErrorDto> {
+    crate::services::game_download::test_sources(&app_data_dir(&app)?)
+        .await
+        .map_err(net("CLIENT_SOURCE_TEST_FAILED"))
+}
+
 /// How the downloads would reach the CDN from here: proxy, exit country and
 /// latency. A few seconds at most, and safe to call while a job runs.
 #[tauri::command]

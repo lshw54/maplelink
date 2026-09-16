@@ -340,6 +340,7 @@ pub fn run() {
             commands::client::client_load_manifest,
             commands::client::client_scan,
             commands::client::client_network_status,
+            commands::client::client_test_sources,
             commands::client::client_remove_extra,
             commands::client::client_download,
             commands::client::client_cancel,

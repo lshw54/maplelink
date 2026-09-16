@@ -115,6 +115,21 @@ export interface ClientManifestAttemptDto {
   attempts: number;
 }
 
+/** One list source, asked once. */
+export interface ClientSourceTestDto {
+  source: ClientManifestSource;
+  ok: boolean;
+  millis: number;
+  version: string | null;
+  error: string | null;
+}
+
+export interface ClientSourceTestsDto {
+  results: ClientSourceTestDto[];
+  /** Which source automatic mode asks first after the test. */
+  first: ClientManifestSource;
+}
+
 /** How the downloads reach the CDN from this machine. */
 export interface ClientNetworkStatusDto {
   /** Country code the route comes out in; the address itself is never sent. */

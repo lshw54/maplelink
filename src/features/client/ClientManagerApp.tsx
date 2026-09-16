@@ -19,6 +19,8 @@ import type {
   ClientManifestSource,
   ClientNetworkStatusDto,
   ClientProgressDto,
+  ClientSourceTestDto,
+  ClientSourceTestsDto,
   ClientScanReportDto,
 } from "../../lib/types";
 
@@ -186,6 +188,14 @@ function regionName(code: string, language: string): string | undefined {
   }
 }
 
+/** A failed source test in a word or two; the full reason is in the tooltip. */
+function sourceFailure(test: ClientSourceTestDto): string {
+  const error = test.error ?? "";
+  if (/timed out|timeout/i.test(error)) return "client.source_timeout";
+  if (/HTTP \d{3}/.test(error)) return "client.source_http";
+  return "client.source_failed";
+}
+
 /** Latency that reads as good, fine, or worth a look. */
 function latencyTone(ms: number): string {
   if (ms < 60) return "text-green-500";
@@ -248,6 +258,8 @@ export function ClientManagerApp() {
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [manifestMode, setManifestMode] = useState<ManifestMode>("auto");
+  const [sourceTests, setSourceTests] = useState<ClientSourceTestsDto | null>(null);
+  const [testingSources, setTestingSources] = useState(false);
   // What the list load is trying right now, for the line that says so.
   const [manifestAttempt, setManifestAttempt] = useState<ClientManifestAttemptDto | null>(null);
   const [autoCheck, setAutoCheck] = useState(false);
@@ -488,6 +500,29 @@ export function ClientManagerApp() {
       setManifestAttempt(null);
     }
   }, [t, loadedVersion]);
+
+  /**
+   * Ask both list sources once and show them side by side.
+   *
+   * The backend keeps what it learns for automatic mode. When the list on
+   * screen is the stored copy — or there is none — and a source answered,
+   * the list is loaded for real straight away, which also refreshes the copy
+   * kept on disk.
+   */
+  const testSources = useCallback(async () => {
+    setTestingSources(true);
+    try {
+      const tests = await commands.clientTestSources();
+      setSourceTests(tests);
+      if ((!manifest || manifest.cachedAt) && tests.results.some((r) => r.ok)) {
+        void reloadManifest();
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTestingSources(false);
+    }
+  }, [manifest, reloadManifest]);
 
   useEffect(() => {
     let live = true;
@@ -990,6 +1025,14 @@ export function ClientManagerApp() {
                   ))}
                 </select>
               </label>
+              <button
+                onClick={() => void testSources()}
+                disabled={testingSources || refreshing || busy}
+                title={t("client.source_test_hint")}
+                className="shrink-0 text-[10px] font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
+              >
+                {testingSources ? t("client.source_testing") : t("client.source_test")}
+              </button>
               {/* The list the scan compares against, on the tab that does the
                   comparing — not only on the download tab. */}
               {manifest?.manifestUrl && (
@@ -1002,6 +1045,29 @@ export function ClientManagerApp() {
                 </button>
               )}
             </div>
+            {sourceTests && (
+              <div className="mt-1 flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-[10px]">
+                {sourceTests.results.map((r) => (
+                  <span
+                    key={r.source}
+                    title={r.error ?? (r.version ? `${r.version}` : undefined)}
+                    className={r.ok ? "text-green-500" : "text-red-400"}
+                  >
+                    {t(`client.manifest_source_${r.source}`)}{" "}
+                    {r.ok
+                      ? `✓ ${t("client.source_seconds", { seconds: (r.millis / 1000).toFixed(1) })}`
+                      : `✗ ${t(sourceFailure(r))}`}
+                  </span>
+                ))}
+                {manifestMode === "auto" && (
+                  <span className="text-text-faint">
+                    {t("client.source_first", {
+                      source: t(`client.manifest_source_${sourceTests.first}`),
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mt-3">
               <Progress
                 fraction={fraction}
