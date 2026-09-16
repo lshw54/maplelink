@@ -7,7 +7,7 @@ import { errorMessage } from "../../lib/errors";
 // The same hooks the main window uses, so both react to theme, language and
 // accent identically instead of drifting apart.
 import { useInitialConfigSync, useThemeEffect } from "../../lib/hooks/use-app-chrome";
-import { VerifyPanel } from "./VerifyPanel";
+import { VerifyPanel, type Filter } from "./VerifyPanel";
 import { DownloadPanel } from "./DownloadPanel";
 import type {
   ClientDownloadFileDto,
@@ -105,11 +105,14 @@ function Progress({
   headline,
   detail,
   tone,
+  file,
 }: {
   fraction: number;
   headline: string;
   detail: string;
   tone: Tone;
+  /** The file being read or written right now, on a line of its own. */
+  file?: string;
 }) {
   const pct = Math.min(100, Math.max(0, fraction * 100));
   const fill = {
@@ -131,6 +134,19 @@ function Progress({
         />
       </div>
       <span className="h-4 truncate font-mono text-[10px] text-text-faint">{detail}</span>
+      {/* Its own line: a path is 60 characters and used to push the numbers
+          it was appended to off the end of the row. The name is what is being
+          watched, so the folder in front of it is dimmed rather than cut. */}
+      {file && (
+        <span title={file} className="flex h-4 gap-0 truncate font-mono text-[10px]">
+          <span className="truncate text-text-faint">
+            {file.slice(0, file.lastIndexOf("/") + 1)}
+          </span>
+          <span className="shrink-0 font-semibold text-text-dim">
+            {file.slice(file.lastIndexOf("/") + 1)}
+          </span>
+        </span>
+      )}
     </div>
   );
 }
@@ -141,6 +157,7 @@ export function ClientManagerApp() {
   useThemeEffect();
 
   const [tab, setTab] = useState<Tab>("verify");
+  const [filter, setFilter] = useState<Filter>("all");
   const [phase, setPhase] = useState<Phase>("loading");
   const [manifest, setManifest] = useState<ClientManifestDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +217,18 @@ export function ClientManagerApp() {
       setProgress(p);
       if (liveDirty.current) {
         liveDirty.current = false;
-        setLiveStates(new Map(liveFiles.current));
+        const next = new Map(liveFiles.current);
+        setLiveStates(next);
+        // A file that has been written is no longer work to pick: dropping it
+        // here is what makes pressing repair again fetch only what is left.
+        setSelected((prev) => {
+          const keep = new Set(prev);
+          let changed = false;
+          for (const [path, state] of next) {
+            if (state === "done" && keep.delete(path)) changed = true;
+          }
+          return changed ? keep : prev;
+        });
       }
       const now = performance.now();
       const last = rateSample.current;
@@ -266,6 +294,11 @@ export function ClientManagerApp() {
     setOutcome(null);
     setReport(null);
     setProgress(null);
+    // The last repair's rows describe files as they were before this check;
+    // leaving them would have the new result read through the old one.
+    liveFiles.current = new Map();
+    liveDirty.current = false;
+    setLiveStates(new Map());
     setPhase("scanning");
     try {
       const r = await commands.clientScan(target, how);
@@ -354,6 +387,10 @@ export function ClientManagerApp() {
     liveFiles.current = new Map();
     liveDirty.current = false;
     setLiveStates(new Map());
+    // The whole list is 1,263 rows and the work is somewhere inside it, so a
+    // repair starts by showing what it is repairing — a list that empties as
+    // files land, with whatever is in flight at the top of what remains.
+    setFilter("issues");
     setPhase("downloading");
     try {
       const r = await commands.clientDownload(target, paths);
@@ -419,7 +456,7 @@ export function ClientManagerApp() {
   const notEnoughSpace = freeSpace !== null && selectedBytes > freeSpace;
   const hasWork = !!report && report.issueCount > 0 && !busy;
 
-  const status: { headline: string; detail: string; tone: Tone } = (() => {
+  const status: { headline: string; detail: string; tone: Tone; file?: string } = (() => {
     const left = progress ? progress.bytesTotal - progress.bytesDone : 0;
     const speed =
       rate > 0
@@ -436,22 +473,25 @@ export function ClientManagerApp() {
     if (busy && paused) {
       return {
         headline: t("client.paused"),
-        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        detail: counted,
         tone: "warn",
+        file: progress?.current,
       };
     }
     if (phase === "scanning") {
       return {
         headline: t("client.scanning"),
-        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        detail: counted,
         tone: "busy",
+        file: progress?.current,
       };
     }
     if (phase === "downloading") {
       return {
         headline: t("client.downloading"),
-        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        detail: counted,
         tone: "busy",
+        file: progress?.current,
       };
     }
     if (outcome) {
@@ -651,6 +691,7 @@ export function ClientManagerApp() {
                 headline={status.headline}
                 detail={status.detail}
                 tone={status.tone}
+                file={status.file}
               />
             </div>
             {report &&
@@ -699,6 +740,8 @@ export function ClientManagerApp() {
             setSelected={setSelected}
             outdated={local != null && !local.matchesOfficial}
             live={liveStates}
+            filter={filter}
+            setFilter={setFilter}
           />
         </>
       ) : (

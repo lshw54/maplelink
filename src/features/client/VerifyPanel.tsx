@@ -8,7 +8,7 @@ import type {
 } from "../../lib/types";
 import { allDirPaths, buildTree, type DirNode } from "./file-tree";
 
-export type Filter = "all" | "issues" | "ok" | "extra";
+export type Filter = "all" | "issues" | "ok" | "failed" | "extra";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -153,10 +153,16 @@ function Chip({
   onClick: () => void;
   label: string;
   count: number;
-  tone?: "ok" | "warn";
+  tone?: "ok" | "warn" | "bad";
 }) {
   const colour =
-    tone === "ok" ? "text-green-500" : tone === "warn" ? "text-yellow-500" : "text-[var(--text)]";
+    tone === "ok"
+      ? "text-green-500"
+      : tone === "warn"
+        ? "text-yellow-500"
+        : tone === "bad"
+          ? "text-red-400"
+          : "text-[var(--text)]";
   return (
     <button
       onClick={onClick}
@@ -173,8 +179,16 @@ function Chip({
 }
 
 /** How a row reads while a download is running, and after it. */
-const LIVE: Record<ClientFileState, { label: string; colour: string; mark: string }> = {
-  downloading: { label: "client.status_downloading", colour: "text-accent", mark: "↓" },
+const LIVE: Record<
+  ClientFileState,
+  { label: string; colour: string; mark: string; pulse?: boolean }
+> = {
+  downloading: {
+    label: "client.status_downloading",
+    colour: "text-accent",
+    mark: "↓",
+    pulse: true,
+  },
   done: { label: "client.status_repaired", colour: "text-green-500", mark: "✓" },
   failed: { label: "client.status_failed", colour: "text-red-400", mark: "!" },
 };
@@ -221,7 +235,13 @@ function FileRow({
       className="flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
       {live ? (
-        <span className={`w-3.5 shrink-0 text-center text-[11px] ${live.colour}`}>{live.mark}</span>
+        <span
+          className={`w-3.5 shrink-0 text-center text-[11px] ${live.colour} ${
+            live.pulse ? "animate-pulse" : ""
+          }`}
+        >
+          {live.mark}
+        </span>
       ) : issue ? (
         <input
           type="checkbox"
@@ -262,6 +282,8 @@ export function VerifyPanel({
   setSelected,
   outdated = false,
   live,
+  filter,
+  setFilter,
 }: {
   report: ClientScanReportDto | null;
   selected: Set<string>;
@@ -270,16 +292,37 @@ export function VerifyPanel({
   outdated?: boolean;
   /** What the running download has reached so far, path by path. */
   live?: ReadonlyMap<string, ClientFileState>;
+  /** Owned by the window, which points it at the work when a repair starts. */
+  filter: Filter;
+  setFilter: (next: Filter) => void;
 }) {
   const { t } = useTranslation();
-  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   // The flat list is the default: it is what the scan produces, and it reads
   // straight down. The tree is for answering "is this folder alright".
   const [view, setView] = useState<"list" | "folder">("list");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const issues = useMemo(() => report?.files.filter((f) => f.kind !== null) ?? [], [report]);
+  /**
+   * The scan said what was wrong; the repair since then says what still is.
+   *
+   * A file that has just been written is no longer a problem, so it leaves
+   * "needs work" and joins "fine" as it lands. That is what makes the list
+   * useful while a repair runs: it counts down to nothing, and whatever is
+   * being fetched right now sits at the top of what is left.
+   */
+  const { issues, fine, failed } = useMemo(() => {
+    const issues: ClientCheckedFileDto[] = [];
+    const fine: ClientCheckedFileDto[] = [];
+    const failed: ClientCheckedFileDto[] = [];
+    for (const f of report?.files ?? []) {
+      const state = live?.get(f.path);
+      if (state === "failed") failed.push(f);
+      if (state === "done" || (f.kind === null && state !== "failed")) fine.push(f);
+      else if (f.kind !== null) issues.push(f);
+    }
+    return { issues, fine, failed };
+  }, [report, live]);
 
   const rows = useMemo(() => {
     if (!report) return [];
@@ -287,11 +330,13 @@ export function VerifyPanel({
       filter === "issues"
         ? issues
         : filter === "ok"
-          ? report.files.filter((f) => f.kind === null)
-          : report.files;
+          ? fine
+          : filter === "failed"
+            ? failed
+            : report.files;
     const needle = query.trim().toLowerCase();
     return needle ? base.filter((f) => f.path.toLowerCase().includes(needle)) : base;
-  }, [report, issues, filter, query]);
+  }, [report, issues, fine, failed, filter, query]);
 
   const extras = useMemo(() => {
     if (!report) return [];
@@ -317,7 +362,7 @@ export function VerifyPanel({
 
   // A search or an issues-only filter narrows things to a handful, and leaving
   // those collapsed would hide the very rows the player asked for.
-  const narrowed = query.trim() !== "" || filter === "issues";
+  const narrowed = query.trim() !== "" || filter === "issues" || filter === "failed";
   const openDirs = useMemo(
     () => (narrowed ? allDirPaths(shownTree) : expanded),
     [narrowed, shownTree, expanded],
@@ -366,9 +411,20 @@ export function VerifyPanel({
           active={filter === "ok"}
           onClick={() => setFilter("ok")}
           label={t("client.filter_ok")}
-          count={report.okFiles}
+          count={fine.length}
           tone="ok"
         />
+        {/* Only worth a chip when something did fail; an always-present zero
+            just makes the row longer. */}
+        {failed.length > 0 && (
+          <Chip
+            active={filter === "failed"}
+            onClick={() => setFilter("failed")}
+            label={t("client.filter_failed")}
+            count={failed.length}
+            tone="bad"
+          />
+        )}
         <Chip
           active={filter === "extra"}
           onClick={() => setFilter("extra")}

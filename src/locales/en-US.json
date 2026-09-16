@@ -530,6 +530,7 @@
   "client.filter_all": "All",
   "client.filter_issues": "To fix",
   "client.filter_ok": "Fine",
+  "client.filter_failed": "Failed",
   "client.filter_extra": "Extra",
   "client.view_list": "List",
   "client.view_folder": "Folders",

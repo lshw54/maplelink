@@ -530,6 +530,7 @@
   "client.filter_all": "全部",
   "client.filter_issues": "需要处理",
   "client.filter_ok": "正常",
+  "client.filter_failed": "失败",
   "client.filter_extra": "额外文件",
   "client.view_list": "列表",
   "client.view_folder": "文件夹",
