@@ -9,6 +9,7 @@ import { errorMessage } from "../../lib/errors";
 import { useInitialConfigSync, useThemeEffect } from "../../lib/hooks/use-app-chrome";
 import { VerifyPanel, type Filter } from "./VerifyPanel";
 import { DownloadPanel } from "./DownloadPanel";
+import { Dropdown } from "../../components/Dropdown";
 import type {
   ClientDownloadFileDto,
   ClientDownloadReportDto,
@@ -1001,30 +1002,27 @@ export function ClientManagerApp() {
               <p className="min-w-0 flex-1 text-[10px] text-text-faint">
                 {t("client.folder_note")}
               </p>
-              <label
+              <span
                 title={t("client.manifest_source_hint")}
                 className="flex shrink-0 items-center gap-1 text-[10px] text-text-faint"
               >
                 {t("client.manifest_source")}
-                <select
+                <Dropdown
+                  size="sm"
                   value={manifestMode}
-                  onChange={async (e) => {
-                    const next = e.target.value as ManifestMode;
+                  options={MANIFEST_MODES.map((m) => ({
+                    value: m,
+                    label: t(`client.manifest_source_${m}`),
+                  }))}
+                  onChange={async (next) => {
                     setManifestMode(next);
                     // Saved before the reload, because the reload reads it.
                     await commands.prefSet(MANIFEST_MODE_KEY, next).catch(() => {});
                     void reloadManifest();
                   }}
                   disabled={refreshing || busy || phase === "loading"}
-                  className="rounded border border-[var(--tb-border)] bg-[var(--surface)] px-1 py-px text-[10px] font-semibold text-text-dim outline-none focus:border-accent disabled:opacity-50"
-                >
-                  {MANIFEST_MODES.map((m) => (
-                    <option key={m} value={m}>
-                      {t(`client.manifest_source_${m}`)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </span>
               <button
                 onClick={() => void testSources()}
                 disabled={testingSources || refreshing || busy}
@@ -1190,28 +1188,26 @@ export function ClientManagerApp() {
                       />
                       <span className="font-semibold">{t("client.auto_check_toggle")}</span>
                     </label>
-                    <label
+                    <span
                       title={t("client.concurrency_hint")}
-                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                      className="flex items-center gap-1.5 text-[11px]"
                     >
                       <span className="font-semibold">{t("client.concurrency")}</span>
-                      <select
-                        value={concurrency}
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
+                      <Dropdown
+                        size="sm"
+                        value={String(concurrency)}
+                        options={CONCURRENCY_CHOICES.map((n) => ({
+                          value: String(n),
+                          label: String(n),
+                        }))}
+                        onChange={(v) => {
+                          const next = Number(v);
                           setConcurrency(next);
-                          void commands.prefSet(CONCURRENCY_KEY, String(next)).catch(() => {});
+                          void commands.prefSet(CONCURRENCY_KEY, v).catch(() => {});
                         }}
                         disabled={busy}
-                        className="rounded-md border border-[var(--tb-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text)] outline-none focus:border-accent disabled:opacity-50"
-                      >
-                        {CONCURRENCY_CHOICES.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                      />
+                    </span>
                   </div>
                 </div>
               </div>

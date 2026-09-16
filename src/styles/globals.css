@@ -10,10 +10,10 @@
 
 @layer base {
   :root {
-    /* Native controls — a <select>'s open list, scrollbars, spin buttons — are
-       drawn by the webview, not by these variables. Without this they come up
-       white on the dark theme: text in the page's light colour on a white
-       popup, which is how the list-source dropdown ended up unreadable. */
+    /* Native controls — scrollbars, a closed <select>, spin buttons — are drawn
+       by the webview, not by these variables, and this is what tells it which
+       palette to use. It does NOT reach a <select>'s open list: WebView2 draws
+       that in light colours regardless, so use components/Dropdown instead. */
     color-scheme: dark;
     /* Accent family. `--accent-rgb` is the same colour as a bare triplet so
        Tailwind arbitrary values can do rgba(var(--accent-rgb),0.08). The
