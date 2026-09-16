@@ -25,8 +25,11 @@ export function OnboardingModal({ onClose }: OnboardingModalProps) {
   if (!page) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-[var(--bg)]/97 backdrop-blur-sm">
-      <div className="flex items-center justify-between px-5 pt-4">
+    // Starts below the title bar: that bar sits above every overlay so the
+    // window stays draggable, which also means anything drawn under its 34px
+    // strip cannot be clicked — the skip button used to land right there.
+    <div className="fixed inset-x-0 top-[34px] bottom-0 z-[80] flex flex-col bg-[var(--bg)]/97 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-5 pt-3">
         <span className="text-[11px] font-bold tracking-[2px] text-text-dim uppercase">
           {t("onboarding.title")}
         </span>
