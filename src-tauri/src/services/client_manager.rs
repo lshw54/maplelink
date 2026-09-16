@@ -216,10 +216,15 @@ pub async fn fetch_manifest(cache_dir: &Path) -> Result<ClientManifest, String> 
     let mut manifest = parse_manifest(&body)?;
     manifest.cached_at = cached_at;
     manifest.manifest_url = url;
-    let (size, date) = probe_exe_patch(&manifest.version).await;
+    // Both are best effort and independent, and on a route that cannot reach
+    // one of them each waits out its whole timeout — so they wait together.
+    let ((size, date), download_list) = tokio::join!(
+        probe_exe_patch(&manifest.version),
+        crate::services::game_download::fetch_download_list()
+    );
     manifest.exe_patch_size = size;
     manifest.exe_patch_date = date;
-    manifest.full_version = match crate::services::game_download::fetch_download_list().await {
+    manifest.full_version = match download_list {
         Ok(items) => {
             let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
             minor_version(&names, &manifest.version)

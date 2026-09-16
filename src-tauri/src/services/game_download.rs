@@ -161,6 +161,19 @@ fn extract_request_token(html: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 const PRODUCT_LIST_URL: &str = "http://p2p-gamania.cdn.hinet.net/product_list.json";
+/// MapleStory's manifest, at the address the catalog names for it — over HTTPS.
+///
+/// Asked first, with the catalog only as the fallback. The catalog used to come
+/// first on every load, and it is the weak link: a plain-HTTP file on HiNet's
+/// P2P CDN that accelerators do not route. Players whose accelerator opened
+/// this very address still timed out on the catalog and got no manifest at all.
+///
+/// It is also the file every SHA-256 the repair trusts comes from. Fetched over
+/// plain HTTP, anyone on the path could swap a file and its hash together and
+/// the check would pass; over TLS they cannot. Same bytes either way — checked
+/// against the HTTP copy on 2026-09-16.
+const PRODUCT_INFO_URL: &str =
+    "https://maplestory-download.beanfun.com/maplestory/productInfo.json";
 const MAPLESTORY_PRODUCT_ID: &str = "MS";
 /// `product_list.json` is a few KB; `productInfo.json` carries a per-file
 /// manifest (~330 KB today). Generous caps so a bad day upstream can't balloon.
@@ -221,10 +234,12 @@ struct ProductInfo {
     files: Vec<serde_json::Value>,
 }
 
-/// Fetch beanfun's `productInfo.json` for MapleStory TW, as raw text.
+/// Fetch beanfun's `productInfo.json` for MapleStory TW, as raw text, with the
+/// address it came from.
 ///
-/// Two public GETs: the catalog names the game's manifest URL, the manifest
-/// carries the version, the CDN base and the per-file list. Shared by the
+/// The manifest carries the version, the CDN base and the per-file list. It is
+/// fetched from its known HTTPS address; only if that fails is the catalog
+/// asked where it lives now, in case beanfun has moved it. Shared by the
 /// torrent view here and by the client manager, which needs the file list.
 pub async fn fetch_product_info_body() -> Result<(String, String), String> {
     let client = crate::services::system_proxy::SystemProxy::read()
@@ -234,21 +249,30 @@ pub async fn fetch_product_info_body() -> Result<(String, String), String> {
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
-    let resp = client.get(PRODUCT_LIST_URL).send().await.map_err(|e| {
-        format!(
-            "product list request failed: {}",
-            crate::services::http_util::with_causes(&e)
-        )
-    })?;
-    if !resp.status().is_success() {
-        return Err(format!("product list returned HTTP {}", resp.status()));
-    }
-    let body = crate::services::http_util::read_capped_text(resp, CATALOG_CAP)
-        .await
-        .ok_or_else(|| "product list body unreadable".to_string())?;
-    let info_url = product_info_url(&body)?;
+    fetch_product_info_from(&client, PRODUCT_INFO_URL, PRODUCT_LIST_URL).await
+}
 
-    let resp = client.get(&info_url).send().await.map_err(|e| {
+/// [`fetch_product_info_body`] against given addresses, so the fallback can be
+/// exercised without beanfun.
+async fn fetch_product_info_from(
+    client: &reqwest::Client,
+    manifest_url: &str,
+    catalog_url: &str,
+) -> Result<(String, String), String> {
+    let direct_error = match fetch_manifest_at(client, manifest_url).await {
+        Ok(body) => return Ok((manifest_url.to_string(), body)),
+        Err(e) => e,
+    };
+    tracing::info!("product info: {manifest_url} failed ({direct_error}); asking the catalog");
+    fetch_via_catalog(client, catalog_url)
+        .await
+        .map_err(|catalog_error| format!("{direct_error}; via the catalog: {catalog_error}"))
+}
+
+/// One manifest address. Only a body that reads as a manifest counts: a captive
+/// portal or a CDN error page answers 200 as readily as the real file does.
+async fn fetch_manifest_at(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    let resp = client.get(url).send().await.map_err(|e| {
         format!(
             "product info request failed: {}",
             crate::services::http_util::with_causes(&e)
@@ -260,7 +284,42 @@ pub async fn fetch_product_info_body() -> Result<(String, String), String> {
     let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
         .await
         .ok_or_else(|| "product info body unreadable".to_string())?;
-    Ok((info_url, body))
+    full_client_info(&body, url)?;
+    Ok(body)
+}
+
+/// The long way round: ask the catalog where the manifest is, then fetch it.
+async fn fetch_via_catalog(
+    client: &reqwest::Client,
+    catalog_url: &str,
+) -> Result<(String, String), String> {
+    let resp = client.get(catalog_url).send().await.map_err(|e| {
+        format!(
+            "product list request failed: {}",
+            crate::services::http_util::with_causes(&e)
+        )
+    })?;
+    if !resp.status().is_success() {
+        return Err(format!("product list returned HTTP {}", resp.status()));
+    }
+    let body = crate::services::http_util::read_capped_text(resp, CATALOG_CAP)
+        .await
+        .ok_or_else(|| "product list body unreadable".to_string())?;
+    let named = product_info_url(&body)?;
+
+    // The catalog names a plain-HTTP address. The host serves HTTPS as well, so
+    // that is asked first and the address as given only if it fails.
+    let secure = named
+        .strip_prefix("http://")
+        .map(|rest| format!("https://{rest}"));
+    let mut last = String::new();
+    for url in secure.iter().chain(std::iter::once(&named)) {
+        match fetch_manifest_at(client, url).await {
+            Ok(body) => return Ok((url.clone(), body)),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 /// Fetch the full-client torrent details for MapleStory TW.
@@ -316,6 +375,136 @@ fn full_client_info(product_info_json: &str, manifest_url: &str) -> Result<FullC
 #[cfg(test)]
 mod full_client_tests {
     use super::*;
+
+    /// A tiny server that answers by path, and records the paths it was asked.
+    /// `None` for a path hangs up without answering.
+    fn serve_paths(
+        routes: Vec<(&'static str, Option<String>)>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = asked.clone();
+        std::thread::spawn(move || {
+            for sock in listener.incoming() {
+                let Ok(mut sock) = sock else { return };
+                let mut buf = [0u8; 4096];
+                let n = sock.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                log.lock().unwrap().push(path.clone());
+                let reply = routes
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, r)| r.clone())
+                    .unwrap_or_else(|| Some(response("404 Not Found", "")));
+                if let Some(reply) = reply {
+                    let _ = sock.write_all(reply.as_bytes());
+                }
+            }
+        });
+        (base, asked)
+    }
+
+    fn response(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    const MANIFEST: &str = r#"{"productName":"新楓之谷","productId":"MS","version":"V282",
+        "baseUrl":"https://maplestory-download.beanfun.com/maplestory/download/",
+        "executionPath":"P2PdPoyK5obH/MapleStory.exe","files":[]}"#;
+
+    fn test_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap()
+    }
+
+    /// The report that led here: the manifest's own address works, the catalog
+    /// does not answer. The catalog must not even be asked.
+    #[tokio::test]
+    async fn the_manifest_is_fetched_directly_without_the_catalog() {
+        let (base, asked) = serve_paths(vec![
+            (
+                "/maplestory/productInfo.json",
+                Some(response("200 OK", MANIFEST)),
+            ),
+            ("/product_list.json", None),
+        ]);
+        let (url, body) = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+        )
+        .await
+        .unwrap();
+
+        assert!(url.ends_with("/maplestory/productInfo.json"));
+        assert!(body.contains("V282"));
+        assert_eq!(*asked.lock().unwrap(), vec!["/maplestory/productInfo.json"]);
+    }
+
+    /// If beanfun moves the manifest, the catalog still finds it.
+    #[tokio::test]
+    async fn a_moved_manifest_is_found_through_the_catalog() {
+        // The old address is gone (404) ...
+        let (old, _) = serve_paths(vec![]);
+        // ... the manifest now lives somewhere else ...
+        let (moved, _) = serve_paths(vec![(
+            "/moved/productInfo.json",
+            Some(response("200 OK", MANIFEST)),
+        )]);
+        // ... and the catalog knows where. Its server is started last because
+        // the catalog has to name the new address, port and all.
+        let catalog = format!(
+            r#"{{"products":[{{"productId":"MS","infoData":"{moved}/moved/productInfo.json"}}]}}"#
+        );
+        let (catalog_base, _) = serve_paths(vec![(
+            "/product_list.json",
+            Some(response("200 OK", &catalog)),
+        )]);
+
+        let (url, body) = fetch_product_info_from(
+            &test_client(),
+            &format!("{old}/maplestory/productInfo.json"),
+            &format!("{catalog_base}/product_list.json"),
+        )
+        .await
+        .unwrap();
+
+        // An https upgrade of a plain-HTTP test server cannot work, so this also
+        // shows the address as named being used once the upgrade fails.
+        assert_eq!(url, format!("{moved}/moved/productInfo.json"));
+        assert!(body.contains("V282"));
+    }
+
+    /// A 200 that is not a manifest — a captive portal, an error page — must
+    /// not be taken as one.
+    #[tokio::test]
+    async fn a_page_that_is_not_a_manifest_is_not_accepted() {
+        let (base, _) = serve_paths(vec![(
+            "/maplestory/productInfo.json",
+            Some(response(
+                "200 OK",
+                "<html>please log in to the hotel wifi</html>",
+            )),
+        )]);
+        let err = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("via the catalog"), "{err}");
+    }
 
     const MANIFEST_URL: &str = "http://maplestory-download.beanfun.com/maplestory/productInfo.json";
 
