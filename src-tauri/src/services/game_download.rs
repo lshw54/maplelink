@@ -161,6 +161,41 @@ fn extract_request_token(html: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 const PRODUCT_LIST_URL: &str = "http://p2p-gamania.cdn.hinet.net/product_list.json";
+/// The only host game files may come from.
+///
+/// The manifest decides two things at once: where each file is fetched from
+/// (`baseUrl`) and which SHA-256 counts as correct. Whoever writes a manifest
+/// can therefore make a repair write any bytes they like into the game folder
+/// and have them verify. Over HTTPS from beanfun that is beanfun; but a
+/// manifest also arrives from the cache in the app data folder, which players
+/// have already started handing each other when their own fetch failed. So the
+/// address it names is held to beanfun's CDN over HTTPS, whatever it came from.
+///
+/// If beanfun ever moves the CDN, repairs stop with a clear error until this
+/// is updated — the price of a file from a stranger not being able to redirect
+/// them.
+pub const CDN_HOST: &str = "maplestory-download.beanfun.com";
+
+/// Refuse a manifest `baseUrl` that is not beanfun's CDN over HTTPS.
+///
+/// Parsed rather than prefix-matched: `https://maplestory-download.beanfun.com.evil.example/`
+/// and `https://maplestory-download.beanfun.com@evil.example/` both start with
+/// the right text and go somewhere else entirely.
+pub fn check_cdn_base(base: &str) -> Result<(), String> {
+    let refuse = || format!("product info names a download address outside {CDN_HOST}: {base}");
+    let url = reqwest::Url::parse(base).map_err(|_| refuse())?;
+    let sound = url.scheme() == "https"
+        && url.host_str() == Some(CDN_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    if sound {
+        Ok(())
+    } else {
+        Err(refuse())
+    }
+}
+
 /// MapleStory's manifest, at the address the catalog names for it — over HTTPS.
 ///
 /// Asked first, with the catalog only as the fallback. The catalog used to come
@@ -353,6 +388,8 @@ fn full_client_info(product_info_json: &str, manifest_url: &str) -> Result<FullC
     if !base.starts_with("http://") && !base.starts_with("https://") {
         return Err("product info has no usable baseUrl".to_string());
     }
+    // The torrent is fetched from here too.
+    check_cdn_base(&base)?;
     if !base.ends_with('/') {
         base.push('/');
     }
@@ -572,6 +609,37 @@ mod full_client_tests {
         assert!(got
             .torrent_url
             .ends_with("/download/torrent/MS_V282.torrent"));
+    }
+
+    #[test]
+    fn only_beanfuns_cdn_over_https_is_accepted_as_the_download_address() {
+        assert!(
+            check_cdn_base("https://maplestory-download.beanfun.com/maplestory/download/").is_ok()
+        );
+        for bad in [
+            // somewhere else
+            "https://evil.example/maplestory/download/",
+            // the right host, but readable and changeable on the way
+            "http://maplestory-download.beanfun.com/maplestory/download/",
+            // text that starts right and goes elsewhere
+            "https://maplestory-download.beanfun.com.evil.example/",
+            "https://maplestory-download.beanfun.com@evil.example/",
+            // the right host on a port it does not serve the CDN from
+            "https://maplestory-download.beanfun.com:8443/",
+            "not a url",
+        ] {
+            assert!(check_cdn_base(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    fn a_manifest_pointing_downloads_elsewhere_is_refused() {
+        let body = INFO.replace(
+            "https://maplestory-download.beanfun.com",
+            "https://evil.example",
+        );
+        let err = full_client_info(&body, MANIFEST_URL).unwrap_err();
+        assert!(err.contains("outside"), "{err}");
     }
 
     #[test]

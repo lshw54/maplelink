@@ -294,6 +294,9 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
     if !base.starts_with("http://") && !base.starts_with("https://") {
         return Err("product info has no usable baseUrl".to_string());
     }
+    // Checked here, where every manifest passes — fetched or read from the
+    // cache a player may have been handed by someone else.
+    crate::services::game_download::check_cdn_base(&base)?;
     if !base.ends_with('/') {
         base.push('/');
     }
@@ -1466,7 +1469,7 @@ mod tests {
     const INFO: &str = r#"{
         "productName":"新楓之谷","productId":"MS","sizeInBytes":3,
         "version":"V282","publishDate":"2026/09/04",
-        "baseUrl":"https://cdn.example.com/maplestory/download/",
+        "baseUrl":"https://maplestory-download.beanfun.com/maplestory/download/",
         "executionPath":"P2PdPoyK5obH/MapleStory.exe",
         "files":[
             {"path":"a.txt","sizeInBytes":5,"sha256":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},
@@ -1488,6 +1491,26 @@ mod tests {
         assert_eq!(m.files[0].size, 5);
         assert_eq!(m.files[1].size, 3);
         assert_eq!(m.total_bytes, 8);
+    }
+
+    /// The case that made this matter: a manifest file passed between
+    /// players. Read from the cache, it is held to the same rule as one fetched.
+    #[test]
+    fn a_cached_manifest_that_redirects_downloads_is_refused() {
+        let dir = TempDir::new("manifest_redirect");
+        let doctored = INFO.replace(
+            "https://maplestory-download.beanfun.com/",
+            "https://files.evil.example/",
+        );
+        write_cache(
+            dir.path(),
+            "https://maplestory-download.beanfun.com/x",
+            &doctored,
+        );
+
+        let cached = read_cache(dir.path()).expect("the file itself is readable");
+        let err = parse_manifest(&cached.body).unwrap_err();
+        assert!(err.contains("outside"), "{err}");
     }
 
     #[test]
