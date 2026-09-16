@@ -31,6 +31,8 @@ Here it is to play with — press the buttons and walk through it:
 |---|---|
 | Fresh install, or moving to another PC | [Download and install](#install) |
 | Broken client, failed update, "file corrupted" on launch | [Check and repair](#repair) |
+| The game folder is full of files you don't recognise | [Clean up extra files](#extra) |
+| The manifest won't load with your accelerator on, or downloads crawl | [Manifest source and network](#network) |
 | You'd rather drive the download yourself | [Manual: use the torrent](#torrent) |
 
 ## Download and install {#install}
@@ -39,7 +41,8 @@ On the Download & install tab, press **Download and install** and pick an empty 
 
 - You can **pause** and **resume** at any point, or cancel.
 - Closing part-way is fine: check the same folder again later and finished files are not fetched twice.
-- **Direct** at the bottom is on by default, meaning the system proxy and any accelerator are bypassed. Direct is faster on many lines; if yours is the exception, switch it off and compare.
+- A file whose connection drops is retried automatically, up to three times. Errors a retry cannot fix, such as a file that does not exist, are reported straight away.
+- **At once** at the bottom sets how many files download at the same time; the default is 6. More connections do not add bandwidth, they share the line: more is faster over a long path, while a slow or rate-limited line does better with fewer — each file finishes sooner and progress is steadier.
 
 When it finishes, point Settings → Game path at `MapleStory.exe` inside that folder.
 
@@ -53,6 +56,13 @@ On the Check & repair tab, set the **game path** and press Check files.
 | Full | Verifies every file's SHA-256 | Depends on the drive; minutes on an SSD |
 
 The result lists every file. Filter by "to fix / fine / extra", or search the paths. Confirm what you want back and press Download and repair.
+
+Once the repair starts, the list switches to "to fix":
+
+- Each file being downloaded has its own progress bar, and the line under the main bar names the file in progress.
+- Finished files move to "fine", so "to fix" counts down to zero.
+- Failed files are gathered under a "failed" filter, with the reason in the status column.
+- Finished files are unticked as they land, so pressing Download and repair again fetches only what is left.
 
 :::warning Repair overwrites anything that doesn't match
 Close the game first, and back up anything you modified yourself. Anything outside the manifest is only listed for your information, unless you pick it under Extra files and confirm — then it is moved to the Recycle Bin, where you can restore it.
@@ -77,6 +87,64 @@ If the game runs correctly today, you can leave these unticked. Repairing restor
 Yes. The first time the window opens it asks whether to check automatically on every open; afterwards, **Auto check** at the bottom changes it whenever you like. With it on, a quick check runs as the window appears.
 
 If you use "Block the game's auto-update", the notice that appears when an update is blocked has a button that takes you straight to this window.
+
+</details>
+
+## Clean up extra files {#extra}
+
+"Extra files" lists what is in the game folder but not in the official manifest: logs, screenshots, leftovers from older versions, or files another program put there. Nothing happens to them by default.
+
+To clear some out, tick them, press **Move to Recycle Bin** and confirm:
+
+- Files go to the **Recycle Bin** rather than being deleted, so any of them can be restored.
+- A file in the official manifest is never moved, whatever the case of its name; folders and links are not either.
+- Close the game first. A file in use cannot be moved; the window says so and keeps it ticked.
+
+:::warning If in doubt, leave it
+An extra file may be your own settings, or something another program needs. Only move what you recognise.
+:::
+
+## Manifest source and network {#network}
+
+The four tiles at the top of the window show where things stand:
+
+| Tile | What it shows |
+|---|---|
+| MapleStory TW | The official version, its publish date and the executable's date |
+| Installed client | Whether this folder is up to date, and how many files matched on the last check |
+| Disk space | Free space on that drive, and what a full install or this repair needs |
+| Network | The region downloads come out in, the official CDN's latency, and whether a system proxy is in use |
+
+### Where the manifest comes from
+
+The manifest has two sources: beanfun's own address, and the HiNet catalog the game manager uses. Some accelerators can reach only one of them.
+
+**List from** defaults to **Automatic**: it asks whichever source worked last time, uses the other only if that fails, and remembers the one that answered. Each source is retried once after a dropped connection or a timeout.
+
+You can also pick **beanfun** or **HiNet catalog** yourself. Then only that source is used, and a failure does not quietly switch to the other — useful for finding out which side is unreachable.
+
+**Test sources** asks both sources for the manifest once each, at the same time, and shows whether each answered, how long it took and which version it serves, for example:
+
+> beanfun ✓ 0.4 s　HiNet catalog ✗ timed out
+
+Automatic mode learns from the test: if the source it would ask first failed and the other worked, the one that worked is asked first from then on. If the window is running on its stored copy, a test that finds a working source loads the manifest again straight away.
+
+### Accelerators and the system proxy
+
+Downloads, manifest loads and the source test all follow Windows' system proxy setting, the way a browser does, so an accelerator or proxy tool that works by setting the system proxy applies to them too.
+
+An accelerator that intercepts traffic per program instead shows here as "No system proxy", but connections still go through it. A PAC auto-config script is not applied, and the Network tile says so.
+
+### The stored copy for when the source is unreachable
+
+Every time the manifest loads, MapleLink keeps a copy on disk. If the official side cannot be reached later, the window uses that copy and says how old it is in a yellow notice: checking still works, but fetching files back still needs a connection.
+
+<details>
+<summary>Can I send my stored copy to a friend who can't connect?</summary>
+
+There is no need, and it is not advised. Ask them to press **Test sources** first, or switch **List from** to the other source; that nearly always gets the manifest directly.
+
+MapleLink also accepts only a manifest whose download address is beanfun's official CDN over HTTPS. A copy that was edited to point somewhere else is refused; don't use a copy you can't vouch for.
 
 </details>
 
