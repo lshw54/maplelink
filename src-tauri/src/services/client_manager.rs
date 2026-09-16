@@ -28,6 +28,20 @@ use crate::services::http_util;
 /// How many files to fetch at once. beanfun's CDN is fine with this and it
 /// keeps a slow file from stalling the run, without looking like an attack.
 const DOWNLOAD_CONCURRENCY: usize = 6;
+/// How many times one file may be fetched before it counts as failed.
+///
+/// A repair is over a thousand files, so a single dropped connection somewhere
+/// in the middle is close to certain — and used to cost the player the whole
+/// run, since the only way back was another full scan. Each attempt starts the
+/// file over rather than resuming: the SHA-256 check is what makes a retry safe
+/// to trust, and it only means anything over the whole file.
+const DOWNLOAD_ATTEMPTS: usize = 3;
+/// Waited before the second and third attempts. Long enough for a blip to pass,
+/// short enough that nobody watches a stalled bar wondering.
+const DOWNLOAD_BACKOFF: [std::time::Duration; 2] = [
+    std::time::Duration::from_millis(500),
+    std::time::Duration::from_secs(2),
+];
 /// Read buffer for hashing. Large enough that 67 GB does not die of syscalls.
 const HASH_BUFFER: usize = 1024 * 1024;
 
@@ -928,33 +942,24 @@ pub async fn download(
                     state: FileState::Downloading,
                     error: None,
                 });
-                // Bytes already counted for this file, so a retry or a failure
-                // can be rolled back out of the running total.
-                let counted = Arc::new(AtomicU64::new(0));
-                let tally = counted.clone();
-                let p = progress.clone();
-                let result = fetch_one(&client, &dir, &manifest, &f, &cancel, move |n| {
-                    tally.fetch_add(n, Ordering::Relaxed);
-                    p.bytes_done.fetch_add(n, Ordering::Relaxed);
-                })
-                .await;
+                let result =
+                    fetch_with_retries(&client, &dir, &manifest, &f, &cancel, &progress).await;
                 progress.finish(&f.path);
-                if result.is_ok() {
-                    written.fetch_add(1, Ordering::Relaxed);
-                    on_file(FileEvent {
-                        path: f.path.clone(),
-                        state: FileState::Done,
-                        error: None,
-                    });
-                }
-                if let Err(e) = result {
-                    // The file did not land, so its bytes are not progress.
-                    progress
-                        .bytes_done
-                        .fetch_sub(counted.load(Ordering::Relaxed), Ordering::Relaxed);
+                match result {
+                    Ok(()) => {
+                        written.fetch_add(1, Ordering::Relaxed);
+                        on_file(FileEvent {
+                            path: f.path.clone(),
+                            state: FileState::Done,
+                            error: None,
+                        });
+                    }
                     // A cancelled run did not fail this file, it stopped it, so
                     // it is neither reported nor marked as a failure.
-                    if !cancel.is_cancelled() {
+                    Err(e) if cancel.is_cancelled() => {
+                        tracing::debug!("client manager: {} stopped: {e}", f.path);
+                    }
+                    Err(e) => {
                         tracing::warn!("client manager: {} failed: {e}", f.path);
                         on_file(FileEvent {
                             path: f.path.clone(),
@@ -981,6 +986,90 @@ pub async fn download(
     })
 }
 
+/// Fetch one file, trying again when what went wrong could go right.
+///
+/// Every attempt starts from nothing, so the bytes an abandoned one reported
+/// are taken back out of the running total first — otherwise a retried 177 MB
+/// file counts twice and the bar runs past the end.
+async fn fetch_with_retries(
+    client: &reqwest::Client,
+    dir: &Path,
+    manifest: &ClientManifest,
+    f: &ManifestFile,
+    cancel: &Cancel,
+    progress: &Arc<DownloadProgress>,
+) -> Result<(), String> {
+    for attempt in 1..=DOWNLOAD_ATTEMPTS {
+        let counted = Arc::new(AtomicU64::new(0));
+        let tally = counted.clone();
+        let p = progress.clone();
+        let result = fetch_one(client, dir, manifest, f, cancel, move |n| {
+            tally.fetch_add(n, Ordering::Relaxed);
+            p.bytes_done.fetch_add(n, Ordering::Relaxed);
+        })
+        .await;
+
+        let error = match result {
+            Ok(()) => return Ok(()),
+            Err(e) => e,
+        };
+        // Nothing landed, so nothing this attempt read was progress.
+        progress
+            .bytes_done
+            .fetch_sub(counted.load(Ordering::Relaxed), Ordering::Relaxed);
+
+        let last = attempt == DOWNLOAD_ATTEMPTS;
+        if !error.retryable || last || cancel.is_cancelled() {
+            return Err(match attempt > 1 {
+                true => format!("{} (after {attempt} attempts)", error.message),
+                false => error.message,
+            });
+        }
+        tracing::info!(
+            "client manager: {} attempt {attempt} failed ({}), trying again",
+            f.path,
+            error.message
+        );
+        tokio::time::sleep(DOWNLOAD_BACKOFF[attempt - 1]).await;
+        // Pausing during the wait should still hold, and cancelling should
+        // still end it here rather than after one more transfer.
+        if !cancel.hold_async().await {
+            return Err(error.message);
+        }
+    }
+    unreachable!("the loop returns on the last attempt")
+}
+
+/// Why one attempt at a file did not land, and whether another could do better.
+///
+/// The distinction is the whole point of retrying: a dropped connection or a
+/// 503 is worth another go, while a 404 means the file is not there and three
+/// tries only make the player wait three times as long to be told so.
+#[derive(Debug)]
+struct FetchError {
+    message: String,
+    retryable: bool,
+}
+
+impl FetchError {
+    /// Something on the way there. Worth another attempt.
+    fn transient(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: true,
+        }
+    }
+
+    /// Something about this file, or about this machine. Trying again cannot
+    /// change it.
+    fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: false,
+        }
+    }
+}
+
 /// Download one file, verify it, then put it in place.
 async fn fetch_one(
     client: &reqwest::Client,
@@ -989,11 +1078,11 @@ async fn fetch_one(
     f: &ManifestFile,
     cancel: &Cancel,
     mut on_bytes: impl FnMut(u64),
-) -> Result<(), String> {
+) -> Result<(), FetchError> {
     use futures_util::StreamExt;
     use tokio::io::AsyncWriteExt;
 
-    let target = safe_join(dir, &f.path)?;
+    let target = safe_join(dir, &f.path).map_err(FetchError::permanent)?;
     let part = target.with_extension(format!(
         "{}{}",
         target
@@ -1003,58 +1092,81 @@ async fn fetch_one(
         PART_SUFFIX
     ));
     if let Some(parent) = target.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            FetchError::permanent(format!("could not create {}: {e}", parent.display()))
+        })?;
     }
 
     let url = format!("{}{}/{}", manifest.base_url, manifest.folder_name, f.path);
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("request failed: {}", http_util::with_causes(&e)))?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        FetchError::transient(format!("request failed: {}", http_util::with_causes(&e)))
+    })?;
+    // 5xx, 408 and 429 are the server saying "not now"; every other refusal is
+    // about this URL and will say the same thing three times.
     if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+        let status = resp.status();
+        let again = status.is_server_error()
+            || status == reqwest::StatusCode::REQUEST_TIMEOUT
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+        let message = format!("HTTP {status}");
+        return Err(match again {
+            true => FetchError::transient(message),
+            false => FetchError::permanent(message),
+        });
     }
 
     let mut file = tokio::fs::File::create(&part)
         .await
-        .map_err(|e| format!("could not open {}: {e}", part.display()))?;
+        .map_err(|e| FetchError::permanent(format!("could not open {}: {e}", part.display())))?;
     let mut hasher = Sha256::new();
     let mut written = 0u64;
     let mut stream = resp.bytes_stream();
     let outcome = loop {
         // Pausing mid-file matters: one of these is 177 MB.
         if !cancel.hold_async().await {
-            break Err("cancelled".to_string());
+            break Err(FetchError::permanent("cancelled"));
         }
         match stream.next().await {
             None => break Ok(()),
-            Some(Err(e)) => break Err(format!("transfer failed: {}", http_util::with_causes(&e))),
+            Some(Err(e)) => {
+                break Err(FetchError::transient(format!(
+                    "transfer failed: {}",
+                    http_util::with_causes(&e)
+                )))
+            }
             Some(Ok(chunk)) => {
                 written += chunk.len() as u64;
                 if written > f.size {
-                    break Err("server sent more than the manifest states".to_string());
+                    break Err(FetchError::transient(
+                        "server sent more than the manifest states",
+                    ));
                 }
                 hasher.update(&chunk);
                 if let Err(e) = file.write_all(&chunk).await {
-                    break Err(format!("write failed: {e}"));
+                    break Err(FetchError::permanent(format!("write failed: {e}")));
                 }
                 on_bytes(chunk.len() as u64);
             }
         }
     };
-    let flushed = file.flush().await.map_err(|e| format!("flush failed: {e}"));
+    let flushed = file
+        .flush()
+        .await
+        .map_err(|e| FetchError::permanent(format!("flush failed: {e}")));
     drop(file);
 
     let verdict = outcome.and(flushed).and_then(|()| {
+        // Both of these are what a transfer that was cut short or mangled on
+        // the way looks like from here, so both are worth fetching again.
         if written != f.size {
-            return Err(format!("got {written} bytes, manifest says {}", f.size));
+            return Err(FetchError::transient(format!(
+                "got {written} bytes, manifest says {}",
+                f.size
+            )));
         }
         let got = hex(&hasher.finalize());
         if !f.sha256.is_empty() && !got.eq_ignore_ascii_case(&f.sha256) {
-            return Err("SHA-256 does not match the manifest".to_string());
+            return Err(FetchError::transient("SHA-256 does not match the manifest"));
         }
         Ok(())
     });
@@ -1062,9 +1174,9 @@ async fn fetch_one(
     match verdict {
         Ok(()) => {
             // Only now does the player's file change.
-            tokio::fs::rename(&part, &target)
-                .await
-                .map_err(|e| format!("could not replace {}: {e}", target.display()))
+            tokio::fs::rename(&part, &target).await.map_err(|e| {
+                FetchError::permanent(format!("could not replace {}: {e}", target.display()))
+            })
         }
         Err(e) => {
             let _ = tokio::fs::remove_file(&part).await;
@@ -1577,6 +1689,103 @@ mod tests {
         // Nothing was fetched, so nothing may be reported as written.
         assert_eq!(report.written, 0);
         assert!(report.failures.is_empty());
+    }
+
+    /// Answer each connection from a script, and count the connections seen.
+    ///
+    /// `None` hangs up without replying. A real socket rather than a mocked
+    /// client, because what is under test is precisely what happens to a
+    /// connection that dies part-way.
+    fn serve_script(script: Vec<Option<&'static str>>) -> (String, Arc<AtomicUsize>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let seen = hits.clone();
+        std::thread::spawn(move || {
+            for step in script {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    return;
+                };
+                seen.fetch_add(1, Ordering::Relaxed);
+                let _ = sock.read(&mut [0u8; 2048]);
+                if let Some(response) = step {
+                    let _ = sock.write_all(response.as_bytes());
+                }
+                // Dropped here either way: a partial body followed by a closed
+                // connection is the failure this is here to reproduce.
+            }
+        });
+        (format!("http://{addr}/"), hits)
+    }
+
+    /// One file of the fixture manifest, served by `base`.
+    fn manifest_served_by(base: String) -> ClientManifest {
+        let mut m = manifest();
+        m.base_url = base;
+        m.folder_name = "f".to_string();
+        m.files.retain(|f| f.path == "a.txt");
+        m
+    }
+
+    /// The failure that cost a 1,116-file repair its last file: one connection
+    /// died mid-transfer, and the run had no answer but to report it.
+    #[tokio::test]
+    async fn a_transfer_that_dies_part_way_is_fetched_again() {
+        let (base, hits) = serve_script(vec![
+            // Promises five bytes, sends three, hangs up.
+            Some("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhel"),
+            Some("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"),
+        ]);
+        let dir = TempDir::new("mlretry");
+        let progress = Arc::new(DownloadProgress::default());
+        let report = download(
+            dir.path().to_path_buf(),
+            Arc::new(manifest_served_by(base)),
+            vec!["a.txt".to_string()],
+            Arc::new(Control::default()),
+            progress.clone(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.written, 1, "{:?}", report.failures);
+        assert!(report.failures.is_empty());
+        assert_eq!(hits.load(Ordering::Relaxed), 2);
+        assert_eq!(std::fs::read(dir.path().join("a.txt")).unwrap(), b"hello");
+        // The three bytes of the abandoned attempt are not progress as well as
+        // the five of the one that worked.
+        assert_eq!(progress.bytes_done.load(Ordering::Relaxed), 5);
+    }
+
+    /// The other half of the bargain: a file that is not there is reported at
+    /// once, not after three rounds of waiting.
+    #[tokio::test]
+    async fn a_file_the_server_does_not_have_is_asked_for_once() {
+        let (base, hits) = serve_script(vec![
+            Some(
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+            );
+            DOWNLOAD_ATTEMPTS
+        ]);
+        let dir = TempDir::new("ml404");
+        let report = download(
+            dir.path().to_path_buf(),
+            Arc::new(manifest_served_by(base)),
+            vec!["a.txt".to_string()],
+            Arc::new(Control::default()),
+            Arc::new(DownloadProgress::default()),
+            |_| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.written, 0);
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0].error.contains("404"));
+        assert_eq!(hits.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
