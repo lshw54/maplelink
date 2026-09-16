@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::client_manager::{
     self, Cancel, ClientManifest, Control, DownloadProgress, DownloadReport, LocalVersion,
-    ScanMode, ScanReport,
+    NetworkStatus, RemoveReport, ScanMode, ScanReport,
 };
 
 /// The window the client manager runs in. `main.tsx` reads this label to decide
@@ -21,6 +21,12 @@ pub const CLIENT_WINDOW_LABEL: &str = "client_manager";
 
 const SCAN_PROGRESS_EVENT: &str = "client-scan-progress";
 const DOWNLOAD_PROGRESS_EVENT: &str = "client-download-progress";
+/// Which source the manifest load is trying, and which attempt this is.
+const MANIFEST_ATTEMPT_EVENT: &str = "client-manifest-attempt";
+/// One file starting, landing or failing. Two of these per file is nothing
+/// next to the 400ms tick, and it is what lets the list move while the run is
+/// still going.
+const DOWNLOAD_FILE_EVENT: &str = "client-download-file";
 /// How often a running download reports itself. Often enough to look live,
 /// rarely enough that 1263 files do not flood the webview.
 const TICK: std::time::Duration = std::time::Duration::from_millis(400);
@@ -134,14 +140,20 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
 
 /// Fetch the official manifest and remember it for the scan and download that
 /// follow, so all three always talk about the same published version.
+///
+/// Whichever source answered last time is asked first (see
+/// `game_download::fetch_product_info_learning`).
 #[tauri::command]
 pub async fn client_load_manifest(
     jobs: tauri::State<'_, ClientJobs>,
     app: tauri::AppHandle,
 ) -> Result<ClientManifest, ErrorDto> {
-    let manifest = client_manager::fetch_manifest(&app_data_dir(&app)?)
-        .await
-        .map_err(net("CLIENT_MANIFEST_FAILED"))?;
+    let handle = app.clone();
+    let manifest = client_manager::fetch_manifest(&app_data_dir(&app)?, move |attempt| {
+        let _ = handle.emit(MANIFEST_ATTEMPT_EVENT, attempt);
+    })
+    .await
+    .map_err(net("CLIENT_MANIFEST_FAILED"))?;
     let shared = Arc::new(manifest.clone());
     *jobs.manifest.write().await = Some(shared);
     Ok(manifest)
@@ -193,11 +205,15 @@ pub async fn client_scan(
 
 /// Fetch the named files into `dir`. Only paths the manifest lists are allowed,
 /// and each one is verified before it replaces anything.
+///
+/// `concurrency` is how many files to pull at once, 1..=8; `None` takes the
+/// default. It travels with the job rather than living in the config, so it
+/// only ever affects the run it was given to.
 #[tauri::command]
 pub async fn client_download(
     dir: String,
     paths: Vec<String>,
-    direct: bool,
+    concurrency: Option<usize>,
     app: tauri::AppHandle,
     jobs: tauri::State<'_, ClientJobs>,
 ) -> Result<DownloadReport, ErrorDto> {
@@ -223,13 +239,28 @@ pub async fn client_download(
         })
     };
 
+    let at_once = concurrency.unwrap_or(0);
+    // Worth having in a log someone sends in: most "cannot download" reports
+    // come down to the route.
+    tracing::info!(
+        "client download route: proxy={:?}",
+        crate::services::system_proxy::SystemProxy::read().describe()
+    );
     let report = client_manager::download(
         PathBuf::from(&dir),
         manifest,
         paths,
-        direct,
+        at_once,
         guard.cancel.clone(),
         progress.clone(),
+        {
+            let handle = app.clone();
+            move |e| {
+                if let Err(e) = handle.emit(DOWNLOAD_FILE_EVENT, e) {
+                    tracing::warn!("client download: file emit failed: {e}");
+                }
+            }
+        },
     )
     .await
     .map_err(|e| err("CLIENT_DOWNLOAD_FAILED", e, ErrorCategory::Network));
@@ -240,12 +271,67 @@ pub async fn client_download(
 
     let report = report?;
     tracing::info!(
-        "client download into {dir} (direct={direct}): {} of {} written, {} failed, cancelled={}",
+        "client download into {dir} ({at_once} at once): {} of {} written, {} failed, cancelled={}",
         report.written,
         report.requested,
         report.failures.len(),
         report.cancelled
     );
+    Ok(report)
+}
+
+/// Ask both list sources once, side by side. Whatever it shows about which
+/// source works is remembered for automatic mode.
+#[tauri::command]
+pub async fn client_test_sources(
+    app: tauri::AppHandle,
+) -> Result<crate::services::game_download::SourceTests, ErrorDto> {
+    crate::services::game_download::test_sources(&app_data_dir(&app)?)
+        .await
+        .map_err(net("CLIENT_SOURCE_TEST_FAILED"))
+}
+
+/// How the downloads would reach the CDN from here: proxy, exit country and
+/// latency. A few seconds at most, and safe to call while a job runs.
+#[tauri::command]
+pub async fn client_network_status(
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<NetworkStatus, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    Ok(client_manager::network_status(&manifest).await)
+}
+
+/// Move the files the player picked from the extra-files list to the Recycle
+/// Bin. Holds the job slot, so it cannot run under a scan or a download.
+#[tauri::command]
+pub async fn client_remove_extra(
+    dir: String,
+    paths: Vec<String>,
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<RemoveReport, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    let _guard = jobs.start()?;
+    let root = PathBuf::from(&dir);
+    let report = tokio::task::spawn_blocking(move || {
+        client_manager::remove_extra_files(&root, &manifest, &paths)
+    })
+    .await
+    .map_err(|e| {
+        err(
+            "CLIENT_REMOVE_FAILED",
+            format!("clean-up task failed: {e}"),
+            ErrorCategory::FileSystem,
+        )
+    })?;
+    tracing::info!(
+        "client clean-up in {dir}: {} moved to the Recycle Bin ({} bytes), {} refused or failed",
+        report.removed.len(),
+        report.bytes,
+        report.failures.len()
+    );
+    for f in &report.failures {
+        tracing::info!("client clean-up: {} not removed: {}", f.path, f.error);
+    }
     Ok(report)
 }
 

@@ -46,4 +46,46 @@ MapleLink 目前与原版 Beanfun 维持双线并行开发，旨在为玩家提�
 
 ## 更新公告 {#updates}
 
-每个版本改了什么，列在 [GitHub Releases](https://github.com/lshw54/maplelink/releases)。版本更新不会出现在页面顶端的跑马灯，也不会在程序启动时弹出来 —— 跑马灯只放上面那一类公告。
+每个版本改了什么列在下面，完整记录与下载在 [GitHub Releases](https://github.com/lshw54/maplelink/releases)。版本更新不会出现在页面顶端的跑马灯，也不会在程序启动时弹出来 —— 跑马灯只放上面那一类公告。
+
+<div className="timeline">
+
+<section className="tl-item">
+<div className="tl-meta"><time>2026-09-11</time><span className="tl-tag">正式版</span></div>
+
+## MapleLink v0.6.0 {#v0-6-0}
+
+**新功能**
+
+- 游戏客户端管理器：按官方清单检查、修复与安装客户端
+- 内置 beanfun 浏览器，带地址栏与连接信息
+- 账号列表可以直接新增游戏账号
+- 精简模式，工具箱一并重新整理
+- 自定义主题色
+- 官方网站上线，教程、下载与可试玩的界面演示都在上面
+
+**更安全**
+
+- 自动更新改为验证我们持有的签名，下载先保存成文件、检查通过才替换
+- 连接一律验证证书，对外读取设有上限
+- 不再关闭 WebView 的渲染沙箱
+
+**修正**
+
+- OTP 自动粘贴不再落在账号栏
+- QR 登录的刷新、复制与倒计时，窗口尺寸也已调整
+- Windows 用户名含非 ASCII 字符时的路径问题
+- 分页的关闭与新增按钮太小
+- 浏览器工具栏提示遮住地址栏
+
+**其他**
+
+- 内置字体只保留界面用得到的字，体积更小
+- 清理无用代码，统一登录后的流程
+- 依赖包安全更新
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.0">GitHub Releases：v0.6.0</a></p>
+
+</section>
+
+</div>

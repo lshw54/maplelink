@@ -5,7 +5,8 @@ import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig, type ConfigKey } from "../../lib/hooks/use-config";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
-import { Section, Row, Dropdown } from "./ToolboxUi";
+import { Section, Row } from "./ToolboxUi";
+import { Dropdown } from "../../components/Dropdown";
 
 export function AdvancedTab() {
   const { t } = useTranslation();

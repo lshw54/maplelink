@@ -8,6 +8,7 @@
 //! CDN directly.
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 const DOWNLOAD_PAGE: &str = "https://maplestory.beanfun.com/download";
 const DOWNLOAD_LIST_HANDLER: &str = "https://maplestory.beanfun.com/download?handler=DownloadList";
@@ -51,7 +52,8 @@ struct ApiItem {
 
 /// Fetch the official download list. Returns items grouped by `kind`.
 pub async fn fetch_download_list() -> Result<Vec<GameDownloadItem>, String> {
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .cookie_store(true)
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(20))
@@ -160,6 +162,54 @@ fn extract_request_token(html: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 const PRODUCT_LIST_URL: &str = "http://p2p-gamania.cdn.hinet.net/product_list.json";
+/// The only host game files may come from.
+///
+/// The manifest decides two things at once: where each file is fetched from
+/// (`baseUrl`) and which SHA-256 counts as correct. Whoever writes a manifest
+/// can therefore make a repair write any bytes they like into the game folder
+/// and have them verify. Over HTTPS from beanfun that is beanfun; but a
+/// manifest also arrives from the cache in the app data folder, which players
+/// have already started handing each other when their own fetch failed. So the
+/// address it names is held to beanfun's CDN over HTTPS, whatever it came from.
+///
+/// If beanfun ever moves the CDN, repairs stop with a clear error until this
+/// is updated — the price of a file from a stranger not being able to redirect
+/// them.
+pub const CDN_HOST: &str = "maplestory-download.beanfun.com";
+
+/// Refuse a manifest `baseUrl` that is not beanfun's CDN over HTTPS.
+///
+/// Parsed rather than prefix-matched: `https://maplestory-download.beanfun.com.evil.example/`
+/// and `https://maplestory-download.beanfun.com@evil.example/` both start with
+/// the right text and go somewhere else entirely.
+pub fn check_cdn_base(base: &str) -> Result<(), String> {
+    let refuse = || format!("product info names a download address outside {CDN_HOST}: {base}");
+    let url = reqwest::Url::parse(base).map_err(|_| refuse())?;
+    let sound = url.scheme() == "https"
+        && url.host_str() == Some(CDN_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    if sound {
+        Ok(())
+    } else {
+        Err(refuse())
+    }
+}
+
+/// MapleStory's manifest, at the address the catalog names for it — over HTTPS.
+///
+/// Asked first, with the catalog only as the fallback. The catalog used to come
+/// first on every load, and it is the weak link: a plain-HTTP file on HiNet's
+/// P2P CDN that accelerators do not route. Players whose accelerator opened
+/// this very address still timed out on the catalog and got no manifest at all.
+///
+/// It is also the file every SHA-256 the repair trusts comes from. Fetched over
+/// plain HTTP, anyone on the path could swap a file and its hash together and
+/// the check would pass; over TLS they cannot. Same bytes either way — checked
+/// against the HTTP copy on 2026-09-16.
+const PRODUCT_INFO_URL: &str =
+    "https://maplestory-download.beanfun.com/maplestory/productInfo.json";
 const MAPLESTORY_PRODUCT_ID: &str = "MS";
 /// `product_list.json` is a few KB; `productInfo.json` carries a per-file
 /// manifest (~330 KB today). Generous caps so a bad day upstream can't balloon.
@@ -220,48 +270,439 @@ struct ProductInfo {
     files: Vec<serde_json::Value>,
 }
 
-/// Fetch beanfun's `productInfo.json` for MapleStory TW, as raw text.
+/// Fetch beanfun's `productInfo.json` for MapleStory TW, as raw text, with the
+/// address it came from.
 ///
-/// Two public GETs: the catalog names the game's manifest URL, the manifest
-/// carries the version, the CDN base and the per-file list. Shared by the
+/// The manifest carries the version, the CDN base and the per-file list. It is
+/// fetched from its known HTTPS address; only if that fails is the catalog
+/// asked where it lives now, in case beanfun has moved it. Shared by the
 /// torrent view here and by the client manager, which needs the file list.
-pub async fn fetch_product_info_body() -> Result<(String, String), String> {
-    let client = reqwest::Client::builder()
+pub async fn fetch_product_info_body(data_dir: &Path) -> Result<(String, String), String> {
+    fetch_product_info_learning(data_dir, |_| {}).await
+}
+
+/// Where the manifest can be asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ManifestSource {
+    /// beanfun's own HTTPS address.
+    Beanfun,
+    /// The HiNet catalog, the way the Gamania game manager asks.
+    Catalog,
+}
+
+impl ManifestSource {
+    fn other(self) -> Self {
+        match self {
+            Self::Beanfun => Self::Catalog,
+            Self::Catalog => Self::Beanfun,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Beanfun => "beanfun",
+            Self::Catalog => "catalog",
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        [Self::Beanfun, Self::Catalog]
+            .into_iter()
+            .find(|s| s.key() == key)
+    }
+}
+
+/// Which source to ask first: the one that last worked on this machine.
+///
+/// Reachability belongs to the player's route rather than to either source — an
+/// accelerator that carries beanfun's CDN may not carry HiNet's, and some
+/// networks are the other way round — so nobody is asked to choose. Whatever
+/// answered last time is asked first next time, and the other only when it
+/// fails. A machine that has never loaded the list starts with beanfun.
+const FIRST_CHOICE_KEY: &str = "client.manifest_source";
+
+/// The player's own pick, when they have made one: `"beanfun"` or `"catalog"`
+/// asks only that source; anything else, or nothing, is automatic. Written by
+/// the client manager window through the prefs commands.
+///
+/// Automatic is right for almost everyone. The override is for the player who
+/// knows better than the last result — a route that answers one source slowly
+/// but does answer, or a source that works for the list but not for them.
+const PINNED_KEY: &str = "client.manifest_mode";
+
+fn pinned(data_dir: &Path) -> Option<ManifestSource> {
+    crate::services::prefs::get(data_dir, PINNED_KEY).and_then(|k| ManifestSource::from_key(&k))
+}
+
+fn first_choice(data_dir: &Path) -> ManifestSource {
+    crate::services::prefs::get(data_dir, FIRST_CHOICE_KEY)
+        .and_then(|k| ManifestSource::from_key(&k))
+        .unwrap_or(ManifestSource::Beanfun)
+}
+
+/// Make `used` the first choice, when it is not already.
+fn remember(data_dir: &Path, first: ManifestSource, used: ManifestSource) {
+    if used == first {
+        return;
+    }
+    tracing::info!(
+        "product info: {first:?} did not answer and {used:?} did; asking {used:?} first from now on"
+    );
+    if let Err(e) = crate::services::prefs::set(data_dir, FIRST_CHOICE_KEY, used.key()) {
+        tracing::warn!("product info: could not remember the source that worked: {e}");
+    }
+}
+
+/// One try at one source, sent as it starts, so a slow load can say what it is
+/// waiting on instead of a spinner that might as well have hung.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestAttempt {
+    pub source: ManifestSource,
+    pub attempt: usize,
+    pub attempts: usize,
+}
+
+/// Tries per source. A dropped connection or a 503 is often gone a second
+/// later; a host the route cannot reach at all is not, so more than one retry
+/// only makes the player wait longer to be told.
+const MANIFEST_ATTEMPTS: usize = 2;
+const MANIFEST_RETRY_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// A manifest, where it came from, and which source that was.
+#[derive(Debug)]
+struct Fetched {
+    url: String,
+    body: String,
+    source: ManifestSource,
+}
+
+/// Fetch the manifest from whichever source worked last, falling back to the
+/// other, and remember which one answered — or, when the player has pinned a
+/// source, from that one alone. `data_dir` is where both are kept.
+pub async fn fetch_product_info_learning(
+    data_dir: &Path,
+    on_attempt: impl Fn(ManifestAttempt) + Send + Sync,
+) -> Result<(String, String), String> {
+    let client = manifest_client()?;
+    let pin = pinned(data_dir);
+    let first = pin.unwrap_or_else(|| first_choice(data_dir));
+    let fetched = fetch_product_info_from(
+        &client,
+        PRODUCT_INFO_URL,
+        PRODUCT_LIST_URL,
+        first,
+        // A pinned source is the player saying "this one". Quietly answering
+        // from the other would hide exactly what they are trying to find out.
+        pin.is_none(),
+        &on_attempt,
+    )
+    .await?;
+    // Still worth learning from: if the pin is lifted, automatic starts from
+    // what is known to work.
+    remember(data_dir, first_choice(data_dir), fetched.source);
+    Ok((fetched.url, fetched.body))
+}
+
+/// The client every manifest request goes through: Windows' proxy, and short
+/// patience with a host that does not answer.
+fn manifest_client() -> Result<reqwest::Client, String> {
+    crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(UA)
+        // A host the route cannot reach usually never answers the connect at
+        // all. Giving up on that quickly is what keeps two sources, each tried
+        // twice, from adding up to a minute of nothing.
+        .connect_timeout(std::time::Duration::from_secs(8))
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+        .map_err(|e| format!("failed to build HTTP client: {e}"))
+}
 
-    let resp = client
-        .get(PRODUCT_LIST_URL)
-        .send()
-        .await
-        .map_err(|e| format!("product list request failed: {e}"))?;
+/// One source, asked once, for the player to compare against the other.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTest {
+    pub source: ManifestSource,
+    pub ok: bool,
+    /// From the request to the last byte of a manifest that parsed.
+    pub millis: u64,
+    /// The version the source is serving, when it answered.
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Both sources side by side, and which one automatic mode will ask first now.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTests {
+    pub results: Vec<SourceTest>,
+    pub first: ManifestSource,
+}
+
+/// Ask both sources for the real list at once, a single time each.
+///
+/// No retries: this is a picture of the route as it is right now, and a retry
+/// that papers over a dropped first attempt is exactly what it should show.
+/// What it learns is kept: when the source automatic mode would ask first
+/// failed and the other answered, the other becomes the first choice — the same
+/// rule a real load follows, reached without making the player wait for one.
+pub async fn test_sources(data_dir: &Path) -> Result<SourceTests, String> {
+    let client = manifest_client()?;
+    let results = test_sources_at(&client, PRODUCT_INFO_URL, PRODUCT_LIST_URL).await;
+    for r in &results {
+        tracing::info!(
+            "product info test: {:?} ok={} in {} ms, version={:?}, error={:?}",
+            r.source,
+            r.ok,
+            r.millis,
+            r.version,
+            r.error
+        );
+    }
+    learn_from_test(data_dir, &results);
+    Ok(SourceTests {
+        results,
+        first: first_choice(data_dir),
+    })
+}
+
+async fn test_sources_at(
+    client: &reqwest::Client,
+    manifest_url: &str,
+    catalog_url: &str,
+) -> Vec<SourceTest> {
+    let timed = |source: ManifestSource| async move {
+        let started = std::time::Instant::now();
+        let result = match source {
+            ManifestSource::Beanfun => fetch_manifest_at(client, manifest_url)
+                .await
+                .map(|body| (manifest_url.to_string(), body)),
+            ManifestSource::Catalog => fetch_via_catalog(client, catalog_url).await,
+        };
+        let millis = started.elapsed().as_millis() as u64;
+        match result {
+            Ok((url, body)) => SourceTest {
+                source,
+                ok: true,
+                millis,
+                version: full_client_info(&body, &url).ok().map(|i| i.version),
+                error: None,
+            },
+            Err(failure) => SourceTest {
+                source,
+                ok: false,
+                millis,
+                version: None,
+                error: Some(failure.message),
+            },
+        }
+    };
+    let (beanfun, catalog) = tokio::join!(
+        timed(ManifestSource::Beanfun),
+        timed(ManifestSource::Catalog)
+    );
+    vec![beanfun, catalog]
+}
+
+/// Switch the first choice when the test says it no longer works and the other
+/// source does. Both working, or both failing, teaches nothing.
+fn learn_from_test(data_dir: &Path, results: &[SourceTest]) {
+    let first = first_choice(data_dir);
+    let works = |s: ManifestSource| results.iter().any(|r| r.source == s && r.ok);
+    if !works(first) && works(first.other()) {
+        remember(data_dir, first, first.other());
+    }
+}
+
+/// Ask `first`, then — when `fall_back` — the other source if it fails.
+/// Against given addresses, so the order and the retries can be exercised
+/// without beanfun.
+async fn fetch_product_info_from(
+    client: &reqwest::Client,
+    manifest_url: &str,
+    catalog_url: &str,
+    first: ManifestSource,
+    fall_back: bool,
+    on_attempt: &(dyn Fn(ManifestAttempt) + Send + Sync),
+) -> Result<Fetched, String> {
+    let ask = |source: ManifestSource| async move {
+        match source {
+            ManifestSource::Beanfun => retrying(source, on_attempt, || {
+                fetch_manifest_at(client, manifest_url)
+            })
+            .await
+            .map(|body| (manifest_url.to_string(), body)),
+            ManifestSource::Catalog => {
+                retrying(source, on_attempt, || {
+                    fetch_via_catalog(client, catalog_url)
+                })
+                .await
+            }
+        }
+    };
+
+    let first_error = match ask(first).await {
+        Ok((url, body)) => {
+            return Ok(Fetched {
+                url,
+                body,
+                source: first,
+            })
+        }
+        Err(e) => e,
+    };
+    if !fall_back {
+        return Err(format!("{}: {first_error}", first.key()));
+    }
+    let second = first.other();
+    tracing::info!("product info: {first:?} failed ({first_error}); asking {second:?}");
+    match ask(second).await {
+        Ok((url, body)) => Ok(Fetched {
+            url,
+            body,
+            source: second,
+        }),
+        Err(second_error) => Err(format!(
+            "{}: {first_error}; {}: {second_error}",
+            first.key(),
+            second.key()
+        )),
+    }
+}
+
+/// Why one attempt did not produce a manifest, and whether another might.
+struct Failure {
+    message: String,
+    retryable: bool,
+}
+
+impl Failure {
+    fn transient(message: String) -> Self {
+        Self {
+            message,
+            retryable: true,
+        }
+    }
+
+    fn permanent(message: String) -> Self {
+        Self {
+            message,
+            retryable: false,
+        }
+    }
+
+    /// A refusal from the server: worth another go only when it says "not now".
+    fn status(what: &str, status: reqwest::StatusCode) -> Self {
+        let message = format!("{what} returned HTTP {status}");
+        match status.is_server_error()
+            || status == reqwest::StatusCode::REQUEST_TIMEOUT
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        {
+            true => Self::transient(message),
+            false => Self::permanent(message),
+        }
+    }
+}
+
+/// Run one source up to [`MANIFEST_ATTEMPTS`] times, telling `on_attempt` as
+/// each try starts. A failure that cannot improve — a 404, a page that is not
+/// a manifest — is returned at once rather than asked for again.
+async fn retrying<T, F, Fut>(
+    source: ManifestSource,
+    on_attempt: &(dyn Fn(ManifestAttempt) + Send + Sync),
+    mut run: F,
+) -> Result<T, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, Failure>>,
+{
+    let mut attempt = 1;
+    loop {
+        on_attempt(ManifestAttempt {
+            source,
+            attempt,
+            attempts: MANIFEST_ATTEMPTS,
+        });
+        match run().await {
+            Ok(found) => return Ok(found),
+            Err(failure) if failure.retryable && attempt < MANIFEST_ATTEMPTS => {
+                tracing::info!(
+                    "product info: {source:?} attempt {attempt} failed ({}), trying again",
+                    failure.message
+                );
+                attempt += 1;
+                tokio::time::sleep(MANIFEST_RETRY_WAIT).await;
+            }
+            Err(failure) => {
+                return Err(match attempt > 1 {
+                    true => format!("{} (after {attempt} attempts)", failure.message),
+                    false => failure.message,
+                })
+            }
+        }
+    }
+}
+
+/// One manifest address. Only a body that reads as a manifest counts: a captive
+/// portal or a CDN error page answers 200 as readily as the real file does.
+async fn fetch_manifest_at(client: &reqwest::Client, url: &str) -> Result<String, Failure> {
+    let resp = client.get(url).send().await.map_err(|e| {
+        Failure::transient(format!(
+            "product info request failed: {}",
+            crate::services::http_util::with_causes(&e)
+        ))
+    })?;
     if !resp.status().is_success() {
-        return Err(format!("product list returned HTTP {}", resp.status()));
+        return Err(Failure::status("product info", resp.status()));
+    }
+    // A body cut off part-way reads as unreadable; that is the connection, not
+    // the file, so it is worth another go.
+    let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
+        .await
+        .ok_or_else(|| Failure::transient("product info body unreadable".to_string()))?;
+    full_client_info(&body, url).map_err(Failure::permanent)?;
+    Ok(body)
+}
+
+/// The long way round: ask the catalog where the manifest is, then fetch it.
+async fn fetch_via_catalog(
+    client: &reqwest::Client,
+    catalog_url: &str,
+) -> Result<(String, String), Failure> {
+    let resp = client.get(catalog_url).send().await.map_err(|e| {
+        Failure::transient(format!(
+            "product list request failed: {}",
+            crate::services::http_util::with_causes(&e)
+        ))
+    })?;
+    if !resp.status().is_success() {
+        return Err(Failure::status("product list", resp.status()));
     }
     let body = crate::services::http_util::read_capped_text(resp, CATALOG_CAP)
         .await
-        .ok_or_else(|| "product list body unreadable".to_string())?;
-    let info_url = product_info_url(&body)?;
+        .ok_or_else(|| Failure::transient("product list body unreadable".to_string()))?;
+    let named = product_info_url(&body).map_err(Failure::permanent)?;
 
-    let resp = client
-        .get(&info_url)
-        .send()
-        .await
-        .map_err(|e| format!("product info request failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("product info returned HTTP {}", resp.status()));
+    // The catalog names a plain-HTTP address. The host serves HTTPS as well, so
+    // that is asked first and the address as given only if it fails.
+    let secure = named
+        .strip_prefix("http://")
+        .map(|rest| format!("https://{rest}"));
+    let mut last = Failure::permanent(String::new());
+    for url in secure.iter().chain(std::iter::once(&named)) {
+        match fetch_manifest_at(client, url).await {
+            Ok(body) => return Ok((url.clone(), body)),
+            Err(e) => last = e,
+        }
     }
-    let body = crate::services::http_util::read_capped_text(resp, MANIFEST_CAP)
-        .await
-        .ok_or_else(|| "product info body unreadable".to_string())?;
-    Ok((info_url, body))
+    Err(last)
 }
 
 /// Fetch the full-client torrent details for MapleStory TW.
-pub async fn fetch_full_client_info() -> Result<FullClientInfo, String> {
-    let (url, body) = fetch_product_info_body().await?;
+pub async fn fetch_full_client_info(data_dir: &Path) -> Result<FullClientInfo, String> {
+    let (url, body) = fetch_product_info_body(data_dir).await?;
     full_client_info(&body, &url)
 }
 
@@ -290,6 +731,8 @@ fn full_client_info(product_info_json: &str, manifest_url: &str) -> Result<FullC
     if !base.starts_with("http://") && !base.starts_with("https://") {
         return Err("product info has no usable baseUrl".to_string());
     }
+    // The torrent is fetched from here too.
+    check_cdn_base(&base)?;
     if !base.ends_with('/') {
         base.push('/');
     }
@@ -312,6 +755,399 @@ fn full_client_info(product_info_json: &str, manifest_url: &str) -> Result<FullC
 #[cfg(test)]
 mod full_client_tests {
     use super::*;
+
+    /// A tiny server that answers by path, and records the paths it was asked.
+    /// `None` for a path hangs up without answering.
+    fn serve_paths(
+        routes: Vec<(&'static str, Option<String>)>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = asked.clone();
+        std::thread::spawn(move || {
+            for sock in listener.incoming() {
+                let Ok(mut sock) = sock else { return };
+                let mut buf = [0u8; 4096];
+                let n = sock.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                log.lock().unwrap().push(path.clone());
+                let reply = routes
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, r)| r.clone())
+                    .unwrap_or_else(|| Some(response("404 Not Found", "")));
+                if let Some(reply) = reply {
+                    let _ = sock.write_all(reply.as_bytes());
+                }
+            }
+        });
+        (base, asked)
+    }
+
+    fn response(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    const MANIFEST: &str = r#"{"productName":"新楓之谷","productId":"MS","version":"V282",
+        "baseUrl":"https://maplestory-download.beanfun.com/maplestory/download/",
+        "executionPath":"P2PdPoyK5obH/MapleStory.exe","files":[]}"#;
+
+    fn test_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap()
+    }
+
+    /// The report that led here: the manifest's own address works, the catalog
+    /// does not answer. The catalog must not even be asked.
+    #[tokio::test]
+    async fn the_manifest_is_fetched_directly_without_the_catalog() {
+        let (base, asked) = serve_paths(vec![
+            (
+                "/maplestory/productInfo.json",
+                Some(response("200 OK", MANIFEST)),
+            ),
+            ("/product_list.json", None),
+        ]);
+        let got = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            true,
+            &|_| {},
+        )
+        .await
+        .unwrap();
+
+        assert!(got.url.ends_with("/maplestory/productInfo.json"));
+        assert!(got.body.contains("V282"));
+        assert_eq!(got.source, ManifestSource::Beanfun);
+        assert_eq!(*asked.lock().unwrap(), vec!["/maplestory/productInfo.json"]);
+    }
+
+    /// If beanfun moves the manifest, the catalog still finds it.
+    #[tokio::test]
+    async fn a_moved_manifest_is_found_through_the_catalog() {
+        // The old address is gone (404) ...
+        let (old, _) = serve_paths(vec![]);
+        // ... the manifest now lives somewhere else ...
+        let (moved, _) = serve_paths(vec![(
+            "/moved/productInfo.json",
+            Some(response("200 OK", MANIFEST)),
+        )]);
+        // ... and the catalog knows where. Its server is started last because
+        // the catalog has to name the new address, port and all.
+        let catalog = format!(
+            r#"{{"products":[{{"productId":"MS","infoData":"{moved}/moved/productInfo.json"}}]}}"#
+        );
+        let (catalog_base, _) = serve_paths(vec![(
+            "/product_list.json",
+            Some(response("200 OK", &catalog)),
+        )]);
+
+        let got = fetch_product_info_from(
+            &test_client(),
+            &format!("{old}/maplestory/productInfo.json"),
+            &format!("{catalog_base}/product_list.json"),
+            ManifestSource::Beanfun,
+            true,
+            &|_| {},
+        )
+        .await
+        .unwrap();
+
+        // An https upgrade of a plain-HTTP test server cannot work, so this also
+        // shows the address as named being used once the upgrade fails.
+        assert_eq!(got.url, format!("{moved}/moved/productInfo.json"));
+        assert!(got.body.contains("V282"));
+        // ...and says which source it was, which is what gets remembered.
+        assert_eq!(got.source, ManifestSource::Catalog);
+    }
+
+    /// Answer each connection in turn from `replies`, whatever it asks for.
+    /// `None` hangs up without replying.
+    fn serve_in_turn(
+        replies: Vec<Option<String>>,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = hits.clone();
+        std::thread::spawn(move || {
+            for reply in replies {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    return;
+                };
+                seen.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let _ = sock.read(&mut [0u8; 4096]);
+                if let Some(reply) = reply {
+                    let _ = sock.write_all(reply.as_bytes());
+                }
+            }
+        });
+        (base, hits)
+    }
+
+    /// Every attempt reported, in order.
+    type AttemptLog = std::sync::Arc<std::sync::Mutex<Vec<(ManifestSource, usize)>>>;
+
+    fn attempts_seen() -> (AttemptLog, impl Fn(ManifestAttempt) + Send + Sync) {
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = log.clone();
+        (log, move |a: ManifestAttempt| {
+            sink.lock().unwrap().push((a.source, a.attempt))
+        })
+    }
+
+    /// One dropped connection is not the end of the load.
+    #[tokio::test]
+    async fn a_dropped_connection_is_retried_and_reported() {
+        let (base, hits) = serve_in_turn(vec![None, Some(response("200 OK", MANIFEST))]);
+        let (log, on_attempt) = attempts_seen();
+        let got = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            true,
+            &on_attempt,
+        )
+        .await
+        .unwrap();
+
+        assert!(got.body.contains("V282"));
+        assert_eq!(hits.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![(ManifestSource::Beanfun, 1), (ManifestSource::Beanfun, 2)]
+        );
+    }
+
+    /// A file that is not there is not asked for twice — the other source is
+    /// tried instead.
+    #[tokio::test]
+    async fn a_missing_manifest_is_not_retried_but_the_other_source_is_tried() {
+        let (base, _) = serve_in_turn(vec![Some(response("404 Not Found", "")); 2]);
+        let (log, on_attempt) = attempts_seen();
+        let err = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            true,
+            &on_attempt,
+        )
+        .await
+        .err()
+        .unwrap();
+
+        assert!(err.contains("404"), "{err}");
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![(ManifestSource::Beanfun, 1), (ManifestSource::Catalog, 1)]
+        );
+    }
+
+    /// Once the catalog is the one that works, it is asked first and beanfun's
+    /// address is not tried at all while it keeps working.
+    #[tokio::test]
+    async fn a_remembered_catalog_is_asked_first() {
+        let (moved, _) = serve_paths(vec![(
+            "/moved/productInfo.json",
+            Some(response("200 OK", MANIFEST)),
+        )]);
+        let catalog = format!(
+            r#"{{"products":[{{"productId":"MS","infoData":"{moved}/moved/productInfo.json"}}]}}"#
+        );
+        let (base, asked) = serve_paths(vec![(
+            "/product_list.json",
+            Some(response("200 OK", &catalog)),
+        )]);
+        let (log, on_attempt) = attempts_seen();
+        let got = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Catalog,
+            true,
+            &on_attempt,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(got.source, ManifestSource::Catalog);
+        assert_eq!(*asked.lock().unwrap(), vec!["/product_list.json"]);
+        assert_eq!(*log.lock().unwrap(), vec![(ManifestSource::Catalog, 1)]);
+    }
+
+    /// The test asks both sources once each and reports each on its own.
+    #[tokio::test]
+    async fn the_source_test_reports_each_source_separately() {
+        let (base, _) = serve_paths(vec![
+            (
+                "/maplestory/productInfo.json",
+                Some(response("200 OK", MANIFEST)),
+            ),
+            ("/product_list.json", None),
+        ]);
+        let results = test_sources_at(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+        )
+        .await;
+
+        assert_eq!(results.len(), 2);
+        let beanfun = &results[0];
+        assert_eq!(beanfun.source, ManifestSource::Beanfun);
+        assert!(beanfun.ok);
+        assert_eq!(beanfun.version.as_deref(), Some("V282"));
+        let catalog = &results[1];
+        assert_eq!(catalog.source, ManifestSource::Catalog);
+        assert!(!catalog.ok);
+        assert!(catalog.error.is_some());
+    }
+
+    #[test]
+    fn a_test_moves_the_first_choice_only_off_a_source_that_failed() {
+        let dir = std::env::temp_dir().join(format!("maplelink_test_learn_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let result = |source, ok| SourceTest {
+            source,
+            ok,
+            millis: 1,
+            version: None,
+            error: None,
+        };
+
+        // Both work: nothing to learn.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, true),
+                result(ManifestSource::Catalog, true),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        // Both fail: nothing to learn either.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, false),
+                result(ManifestSource::Catalog, false),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        // The first choice fails and the other works: switch.
+        learn_from_test(
+            &dir,
+            &[
+                result(ManifestSource::Beanfun, false),
+                result(ManifestSource::Catalog, true),
+            ],
+        );
+        assert_eq!(first_choice(&dir), ManifestSource::Catalog);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pinned source that fails is reported as it is; the other source is not
+    /// quietly asked in its place.
+    #[tokio::test]
+    async fn a_pinned_source_does_not_fall_back() {
+        let (base, _) = serve_in_turn(vec![Some(response("404 Not Found", "")); 2]);
+        let (log, on_attempt) = attempts_seen();
+        let err = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            false,
+            &on_attempt,
+        )
+        .await
+        .err()
+        .unwrap();
+
+        assert!(err.starts_with("beanfun:"), "{err}");
+        assert_eq!(*log.lock().unwrap(), vec![(ManifestSource::Beanfun, 1)]);
+    }
+
+    #[test]
+    fn a_pin_is_read_and_anything_else_means_automatic() {
+        let dir = std::env::temp_dir().join(format!("maplelink_pin_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        assert_eq!(pinned(&dir), None);
+        crate::services::prefs::set(&dir, PINNED_KEY, "catalog").unwrap();
+        assert_eq!(pinned(&dir), Some(ManifestSource::Catalog));
+        crate::services::prefs::set(&dir, PINNED_KEY, "auto").unwrap();
+        assert_eq!(pinned(&dir), None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The source that answered becomes the first choice; one that was already
+    /// first leaves nothing to write.
+    #[test]
+    fn the_source_that_answered_is_asked_first_next_time() {
+        let dir =
+            std::env::temp_dir().join(format!("maplelink_first_choice_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+        remember(&dir, ManifestSource::Beanfun, ManifestSource::Catalog);
+        assert_eq!(first_choice(&dir), ManifestSource::Catalog);
+        remember(&dir, ManifestSource::Catalog, ManifestSource::Beanfun);
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        // An old value this build does not know is ignored, not trusted.
+        crate::services::prefs::set(&dir, FIRST_CHOICE_KEY, "auto").unwrap();
+        assert_eq!(first_choice(&dir), ManifestSource::Beanfun);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A 200 that is not a manifest — a captive portal, an error page — must
+    /// not be taken as one.
+    #[tokio::test]
+    async fn a_page_that_is_not_a_manifest_is_not_accepted() {
+        let (base, _) = serve_paths(vec![(
+            "/maplestory/productInfo.json",
+            Some(response(
+                "200 OK",
+                "<html>please log in to the hotel wifi</html>",
+            )),
+        )]);
+        let err = fetch_product_info_from(
+            &test_client(),
+            &format!("{base}/maplestory/productInfo.json"),
+            &format!("{base}/product_list.json"),
+            ManifestSource::Beanfun,
+            true,
+            &|_| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("catalog:"), "{err}");
+    }
 
     const MANIFEST_URL: &str = "http://maplestory-download.beanfun.com/maplestory/productInfo.json";
 
@@ -382,6 +1218,37 @@ mod full_client_tests {
     }
 
     #[test]
+    fn only_beanfuns_cdn_over_https_is_accepted_as_the_download_address() {
+        assert!(
+            check_cdn_base("https://maplestory-download.beanfun.com/maplestory/download/").is_ok()
+        );
+        for bad in [
+            // somewhere else
+            "https://evil.example/maplestory/download/",
+            // the right host, but readable and changeable on the way
+            "http://maplestory-download.beanfun.com/maplestory/download/",
+            // text that starts right and goes elsewhere
+            "https://maplestory-download.beanfun.com.evil.example/",
+            "https://maplestory-download.beanfun.com@evil.example/",
+            // the right host on a port it does not serve the CDN from
+            "https://maplestory-download.beanfun.com:8443/",
+            "not a url",
+        ] {
+            assert!(check_cdn_base(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    fn a_manifest_pointing_downloads_elsewhere_is_refused() {
+        let body = INFO.replace(
+            "https://maplestory-download.beanfun.com",
+            "https://evil.example",
+        );
+        let err = full_client_info(&body, MANIFEST_URL).unwrap_err();
+        assert!(err.contains("outside"), "{err}");
+    }
+
+    #[test]
     fn missing_version_or_base_url_is_an_error() {
         assert!(full_client_info(&INFO.replace("\"V282\"", "\"\""), MANIFEST_URL).is_err());
         assert!(full_client_info(
@@ -421,12 +1288,15 @@ const TORRENT_CAP: u64 = 32 * 1024 * 1024;
 
 /// Fetch beanfun's torrent for the full client and return it with its root
 /// folder renamed to the CDN folder, plus the record the UI already shows.
-pub async fn fetch_full_client_torrent() -> Result<(FullClientInfo, Vec<u8>), String> {
-    let info = fetch_full_client_info().await?;
+pub async fn fetch_full_client_torrent(
+    data_dir: &Path,
+) -> Result<(FullClientInfo, Vec<u8>), String> {
+    let info = fetch_full_client_info(data_dir).await?;
     if info.folder_name.is_empty() {
         return Err("product info names no game folder".to_string());
     }
-    let client = reqwest::Client::builder()
+    let client = crate::services::system_proxy::SystemProxy::read()
+        .apply(reqwest::Client::builder())
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(60))
         .build()
@@ -595,10 +1465,29 @@ mod torrent_tests {
 mod live_tests {
     use super::*;
 
+    /// Both real sources, side by side, as the button shows them.
+    #[tokio::test]
+    #[ignore]
+    async fn live_source_test_asks_both_sources() {
+        let client = manifest_client().unwrap();
+        let results = test_sources_at(&client, PRODUCT_INFO_URL, PRODUCT_LIST_URL).await;
+        for r in &results {
+            eprintln!(
+                "{:?}: ok={} {} ms version={:?} error={:?}",
+                r.source, r.ok, r.millis, r.version, r.error
+            );
+        }
+        assert_eq!(results.len(), 2);
+    }
+
     #[tokio::test]
     #[ignore]
     async fn live_torrent_root_matches_the_cdn_folder() {
-        let (info, fixed) = fetch_full_client_torrent().await.unwrap();
+        // A throwaway folder, so this run's source is not remembered for the app.
+        let data =
+            std::env::temp_dir().join(format!("maplelink_live_torrent_{}", std::process::id()));
+        let (info, fixed) = fetch_full_client_torrent(&data).await.unwrap();
+        let _ = std::fs::remove_dir_all(&data);
         let top = crate::services::bencode::decode(&fixed).unwrap();
         let name = top.as_dict().unwrap()[b"info".as_slice()]
             .as_dict()

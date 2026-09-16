@@ -7,13 +7,21 @@ import { errorMessage } from "../../lib/errors";
 // The same hooks the main window uses, so both react to theme, language and
 // accent identically instead of drifting apart.
 import { useInitialConfigSync, useThemeEffect } from "../../lib/hooks/use-app-chrome";
-import { VerifyPanel } from "./VerifyPanel";
+import { VerifyPanel, type Filter } from "./VerifyPanel";
 import { DownloadPanel } from "./DownloadPanel";
+import { Dropdown } from "../../components/Dropdown";
 import type {
+  ClientDownloadFileDto,
   ClientDownloadReportDto,
+  ClientFileState,
   ClientLocalVersionDto,
+  ClientManifestAttemptDto,
   ClientManifestDto,
+  ClientManifestSource,
+  ClientNetworkStatusDto,
   ClientProgressDto,
+  ClientSourceTestDto,
+  ClientSourceTestsDto,
   ClientScanReportDto,
 } from "../../lib/types";
 
@@ -22,6 +30,29 @@ type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done
 /** Answers to the one-time "check automatically?" prompt. */
 const AUTO_CHECK_KEY = "client.auto_check";
 const AUTO_CHECK_ASKED_KEY = "client.auto_check_asked";
+/**
+ * Where the official file list comes from. Automatic asks whichever source
+ * answered last time and falls back to the other; the two others pin one
+ * source and ask nothing else. The backend reads this key itself, so the
+ * download tab follows the same choice.
+ */
+const MANIFEST_MODE_KEY = "client.manifest_mode";
+type ManifestMode = "auto" | ClientManifestSource;
+const MANIFEST_MODES: ManifestMode[] = ["auto", "beanfun", "catalog"];
+
+/** How many files to fetch at once, remembered between runs. */
+const CONCURRENCY_KEY = "client.concurrency";
+const CONCURRENCY_DEFAULT = 6;
+/**
+ * What the setting offers.
+ *
+ * Six connections do not add bandwidth — they share the line — but on a long
+ * path they use it better, because one stream spends its time waiting out the
+ * round trip. The low end is for the opposite case: a slow or shaped line,
+ * where splitting it six ways only means six files crawling instead of one
+ * finishing.
+ */
+const CONCURRENCY_CHOICES = [1, 2, 4, 6, 8];
 type Tone = "busy" | "ok" | "warn";
 type Tab = "verify" | "download";
 
@@ -103,11 +134,14 @@ function Progress({
   headline,
   detail,
   tone,
+  file,
 }: {
   fraction: number;
   headline: string;
   detail: string;
   tone: Tone;
+  /** The file being read or written right now, on a line of its own. */
+  file?: string;
 }) {
   const pct = Math.min(100, Math.max(0, fraction * 100));
   const fill = {
@@ -129,16 +163,88 @@ function Progress({
         />
       </div>
       <span className="h-4 truncate font-mono text-[10px] text-text-faint">{detail}</span>
+      {/* Its own line: a path is 60 characters and used to push the numbers
+          it was appended to off the end of the row. The name is what is being
+          watched, so the folder in front of it is dimmed rather than cut. */}
+      {file && (
+        <span title={file} className="flex h-4 gap-0 truncate font-mono text-[10px]">
+          <span className="truncate text-text-faint">
+            {file.slice(0, file.lastIndexOf("/") + 1)}
+          </span>
+          <span className="shrink-0 font-semibold text-text-dim">
+            {file.slice(file.lastIndexOf("/") + 1)}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** `HK` -> 香港, in the language the window is showing. */
+function regionName(code: string, language: string): string | undefined {
+  try {
+    return new Intl.DisplayNames([language], { type: "region" }).of(code);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A failed source test in a word or two; the full reason is in the tooltip. */
+function sourceFailure(test: ClientSourceTestDto): string {
+  const error = test.error ?? "";
+  if (/timed out|timeout/i.test(error)) return "client.source_timeout";
+  if (/HTTP \d{3}/.test(error)) return "client.source_http";
+  return "client.source_failed";
+}
+
+/** Latency that reads as good, fine, or worth a look. */
+function latencyTone(ms: number): string {
+  if (ms < 60) return "text-green-500";
+  if (ms < 150) return "text-[var(--text)]";
+  return "text-yellow-500";
+}
+
+/**
+ * One fact about the install or the connection: a caption, the value, and a
+ * line under it. Four of these replace a header that was a name, one line of
+ * dates and a lot of nothing.
+ */
+function StatTile({
+  caption,
+  value,
+  valueClass = "text-[var(--text)]",
+  sub,
+  title,
+}: {
+  caption: string;
+  value: React.ReactNode;
+  valueClass?: string;
+  sub?: React.ReactNode;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] px-3.5 py-2.5"
+    >
+      <span className="truncate text-[10px] font-semibold tracking-[1px] text-text-faint">
+        {caption}
+      </span>
+      <span className={`truncate text-[13px] leading-tight font-bold ${valueClass}`}>{value}</span>
+      <span className="flex h-4 min-w-0 items-center truncate text-[10px] text-text-dim">
+        {sub}
+      </span>
     </div>
   );
 }
 
 export function ClientManagerApp() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   useInitialConfigSync();
   useThemeEffect();
 
   const [tab, setTab] = useState<Tab>("verify");
+  const [filter, setFilter] = useState<Filter>("all");
   const [phase, setPhase] = useState<Phase>("loading");
   const [manifest, setManifest] = useState<ClientManifestDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -152,8 +258,22 @@ export function ClientManagerApp() {
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [direct, setDirect] = useState(true);
+  const [manifestMode, setManifestMode] = useState<ManifestMode>("auto");
+  const [sourceTests, setSourceTests] = useState<ClientSourceTestsDto | null>(null);
+  const [testingSources, setTestingSources] = useState(false);
+  // What the list load is trying right now, for the line that says so.
+  const [manifestAttempt, setManifestAttempt] = useState<ClientManifestAttemptDto | null>(null);
   const [autoCheck, setAutoCheck] = useState(false);
+  // Extra files picked for the Recycle Bin, the confirmation, and its outcome.
+  const [extraSelected, setExtraSelected] = useState<Set<string>>(new Set());
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [extraBusy, setExtraBusy] = useState(false);
+  const [extraNotice, setExtraNotice] = useState<string | null>(null);
+  // `undefined` while the first measurement runs, so the tile says so rather
+  // than showing a blank that reads as "no network".
+  const [net, setNet] = useState<ClientNetworkStatusDto | undefined>(undefined);
+  const [netTesting, setNetTesting] = useState(false);
+  const [concurrency, setConcurrency] = useState(CONCURRENCY_DEFAULT);
   // `undefined` until the stored answer is read, so the prompt cannot flash.
   const [askAutoCheck, setAskAutoCheck] = useState<boolean | undefined>(undefined);
   // Set once the stored answer says the check should run without being asked.
@@ -161,6 +281,19 @@ export function ClientManagerApp() {
   // Bytes per second, measured between progress events rather than assumed.
   const [rate, setRate] = useState(0);
   const rateSample = useRef<{ at: number; bytes: number } | null>(null);
+  /**
+   * What each file is doing right now, for the list.
+   *
+   * Events arrive twice per file — 2,500 of them in a full install — so they
+   * are collected in a ref and handed to React on the progress tick instead.
+   * Rebuilding a 1,263-row list per event is what would make the window crawl
+   * exactly while it is busiest.
+   */
+  const liveFiles = useRef(new Map<string, ClientFileState>());
+  const liveDirty = useRef(false);
+  /** How far each in-flight file has got, straight from the progress tick. */
+  const [inFlight, setInFlight] = useState<ReadonlyMap<string, number>>(new Map());
+  const [liveStates, setLiveStates] = useState<ReadonlyMap<string, ClientFileState>>(new Map());
 
   useEffect(() => {
     document.title = t("client.title");
@@ -169,11 +302,25 @@ export function ClientManagerApp() {
   useEffect(() => {
     let live = true;
     (async () => {
-      const [on, asked] = await Promise.all([
+      const mode = await commands.prefGet(MANIFEST_MODE_KEY).catch(() => null);
+      if (live) setManifestMode(MANIFEST_MODES.find((m) => m === mode) ?? "auto");
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const [on, asked, atOnce] = await Promise.all([
         commands.prefGet(AUTO_CHECK_KEY).catch(() => null),
         commands.prefGet(AUTO_CHECK_ASKED_KEY).catch(() => null),
+        commands.prefGet(CONCURRENCY_KEY).catch(() => null),
       ]);
       if (!live) return;
+      const saved = Number(atOnce);
+      if (CONCURRENCY_CHOICES.includes(saved)) setConcurrency(saved);
       setAutoCheck(on === "on");
       setAskAutoCheck(asked !== "1");
       autoOnOpen.current = on === "on" && asked === "1";
@@ -186,6 +333,24 @@ export function ClientManagerApp() {
   useEffect(() => {
     function track(p: ClientProgressDto) {
       setProgress(p);
+      setInFlight(
+        new Map(p.active.map((f) => [f.path, f.total > 0 ? f.done / f.total : 0] as const)),
+      );
+      if (liveDirty.current) {
+        liveDirty.current = false;
+        const next = new Map(liveFiles.current);
+        setLiveStates(next);
+        // A file that has been written is no longer work to pick: dropping it
+        // here is what makes pressing repair again fetch only what is left.
+        setSelected((prev) => {
+          const keep = new Set(prev);
+          let changed = false;
+          for (const [path, state] of next) {
+            if (state === "done" && keep.delete(path)) changed = true;
+          }
+          return changed ? keep : prev;
+        });
+      }
       const now = performance.now();
       const last = rateSample.current;
       // Average over at least half a second, or the number jumps around.
@@ -199,9 +364,18 @@ export function ClientManagerApp() {
     }
     const scan = listen<ClientProgressDto>("client-scan-progress", (e) => track(e.payload));
     const down = listen<ClientProgressDto>("client-download-progress", (e) => track(e.payload));
+    const attempt = listen<ClientManifestAttemptDto>("client-manifest-attempt", (e) =>
+      setManifestAttempt(e.payload),
+    );
+    const file = listen<ClientDownloadFileDto>("client-download-file", (e) => {
+      liveFiles.current.set(e.payload.path, e.payload.state);
+      liveDirty.current = true;
+    });
     return () => {
       scan.then((un) => un());
       down.then((un) => un());
+      file.then((un) => un());
+      attempt.then((un) => un());
     };
   }, []);
 
@@ -212,6 +386,28 @@ export function ClientManagerApp() {
       .then(setFreeSpace)
       .catch(() => setFreeSpace(null));
   }, [dir, report]);
+
+  // How this machine reaches the CDN. It needs the manifest for the address,
+  // and after that it is measured again only when asked: it costs requests.
+  const manifestVersion = manifest?.version;
+  useEffect(() => {
+    if (!manifestVersion) return;
+    let live = true;
+    (async () => {
+      const status = await commands.clientNetworkStatus().catch(() => null);
+      if (live && status) setNet(status);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [manifestVersion]);
+
+  const retestNetwork = useCallback(async () => {
+    setNetTesting(true);
+    const status = await commands.clientNetworkStatus().catch(() => null);
+    if (status) setNet(status);
+    setNetTesting(false);
+  }, []);
 
   // What the install says about itself, refreshed after a repair.
   useEffect(() => {
@@ -245,6 +441,15 @@ export function ClientManagerApp() {
     setOutcome(null);
     setReport(null);
     setProgress(null);
+    // The last repair's rows describe files as they were before this check;
+    // leaving them would have the new result read through the old one.
+    liveFiles.current = new Map();
+    liveDirty.current = false;
+    setLiveStates(new Map());
+    setInFlight(new Map());
+    // Picks belong to the list they were made from.
+    setExtraSelected(new Set());
+    setExtraNotice(null);
     setPhase("scanning");
     try {
       const r = await commands.clientScan(target, how);
@@ -274,6 +479,7 @@ export function ClientManagerApp() {
   const reloadManifest = useCallback(async () => {
     setRefreshing(true);
     setError(null);
+    setManifestAttempt(null);
     try {
       const m = await commands.clientLoadManifest();
       setManifest(m);
@@ -292,8 +498,32 @@ export function ClientManagerApp() {
       setError(errorMessage(e));
     } finally {
       setRefreshing(false);
+      setManifestAttempt(null);
     }
   }, [t, loadedVersion]);
+
+  /**
+   * Ask both list sources once and show them side by side.
+   *
+   * The backend keeps what it learns for automatic mode. When the list on
+   * screen is the stored copy — or there is none — and a source answered,
+   * the list is loaded for real straight away, which also refreshes the copy
+   * kept on disk.
+   */
+  const testSources = useCallback(async () => {
+    setTestingSources(true);
+    try {
+      const tests = await commands.clientTestSources();
+      setSourceTests(tests);
+      if ((!manifest || manifest.cachedAt) && tests.results.some((r) => r.ok)) {
+        void reloadManifest();
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTestingSources(false);
+    }
+  }, [manifest, reloadManifest]);
 
   useEffect(() => {
     let live = true;
@@ -304,6 +534,7 @@ export function ClientManagerApp() {
           commands.clientDefaultFolder().catch(() => null),
         ]);
         if (!live) return;
+        setManifestAttempt(null);
         setManifest(m);
         if (folder) setDir(folder);
         setPhase("idle");
@@ -331,18 +562,78 @@ export function ClientManagerApp() {
       setRate(0);
       rateSample.current = null;
       setProgress(null);
+      liveFiles.current = new Map();
+      liveDirty.current = false;
+      setLiveStates(new Map());
+      setInFlight(new Map());
+      // The whole list is 1,263 rows and the work is somewhere inside it, so a
+      // repair starts by showing what it is repairing — a list that empties as
+      // files land, with whatever is in flight at the top of what remains.
+      setFilter("issues");
       setPhase("downloading");
       try {
-        const r = await commands.clientDownload(target, paths, direct);
+        const r = await commands.clientDownload(target, paths, concurrency);
         setOutcome(r);
         setPhase("done");
       } catch (e) {
         setError(errorMessage(e));
         setPhase("scanned");
+      } finally {
+        // Whatever was mid-flight when the run ended is not still downloading —
+        // a cancelled file has no event of its own, so it is dropped here.
+        for (const [path, state] of liveFiles.current) {
+          if (state === "downloading") liveFiles.current.delete(path);
+        }
+        liveDirty.current = false;
+        setLiveStates(new Map(liveFiles.current));
+        setInFlight(new Map());
       }
     },
-    [direct],
+    [concurrency],
   );
+
+  /**
+   * Move the picked extra files to the Recycle Bin, once confirmed.
+   *
+   * The list is updated from what the backend says it removed rather than from
+   * what was asked: a file the game still holds open, or one refused by the
+   * checks, stays listed and stays picked.
+   */
+  const removeExtra = useCallback(async () => {
+    setConfirmRemove(false);
+    setExtraBusy(true);
+    setExtraNotice(null);
+    setError(null);
+    try {
+      const r = await commands.clientRemoveExtra(dir, [...extraSelected]);
+      const gone = new Set(r.removed);
+      setReport((prev) =>
+        prev ? { ...prev, extraFiles: prev.extraFiles.filter((p) => !gone.has(p)) } : prev,
+      );
+      setExtraSelected((prev) => new Set([...prev].filter((p) => !gone.has(p))));
+      if (r.removed.length > 0) {
+        setExtraNotice(
+          t("client.extra_removed", {
+            count: String(r.removed.length),
+            size: formatBytes(r.bytes),
+          }),
+        );
+      }
+      const first = r.failures[0];
+      if (first) {
+        setError(
+          t("client.extra_remove_failed", {
+            count: String(r.failures.length),
+            reason: `${first.path}: ${first.error}`,
+          }),
+        );
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setExtraBusy(false);
+    }
+  }, [dir, extraSelected, t]);
 
   const runDownload = useCallback(
     () => downloadInto(dir, [...selected]),
@@ -390,7 +681,7 @@ export function ClientManagerApp() {
   const notEnoughSpace = freeSpace !== null && selectedBytes > freeSpace;
   const hasWork = !!report && report.issueCount > 0 && !busy;
 
-  const status: { headline: string; detail: string; tone: Tone } = (() => {
+  const status: { headline: string; detail: string; tone: Tone; file?: string } = (() => {
     const left = progress ? progress.bytesTotal - progress.bytesDone : 0;
     const speed =
       rate > 0
@@ -401,25 +692,44 @@ export function ClientManagerApp() {
     const counted = progress
       ? `${progress.done} / ${progress.total} · ${formatBytes(progress.bytesDone)} / ${formatBytes(progress.bytesTotal)}${busy ? speed : ""}`
       : "";
-    if (phase === "loading") {
-      return { headline: t("client.loading_manifest"), detail: "", tone: "busy" };
+    // A reload after start-up says what it is trying as well, or switching the
+    // source would look like nothing happened for up to half a minute.
+    if (phase === "loading" || (refreshing && manifestAttempt)) {
+      return {
+        headline: manifestAttempt
+          ? t("client.loading_manifest_via", {
+              source: t(`client.manifest_source_${manifestAttempt.source}`),
+              attempt: String(manifestAttempt.attempt),
+              attempts: String(manifestAttempt.attempts),
+            })
+          : t("client.loading_manifest"),
+        detail: "",
+        tone: "busy",
+      };
     }
     if (busy && paused) {
       return {
         headline: t("client.paused"),
-        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        detail: counted,
         tone: "warn",
+        file: progress?.current,
       };
     }
     if (phase === "scanning") {
       return {
         headline: t("client.scanning"),
-        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        detail: counted,
         tone: "busy",
+        file: progress?.current,
       };
     }
     if (phase === "downloading") {
-      return { headline: t("client.downloading"), detail: counted, tone: "busy" };
+      return {
+        headline: t("client.downloading"),
+        detail: counted,
+        tone: "busy",
+        file: progress?.current,
+      };
     }
     if (outcome) {
       // A cancelled run stopped part-way; saying "done" would be a lie.
@@ -486,6 +796,33 @@ export function ClientManagerApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
 
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px]">
+          <div className="w-[440px] rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <h2 className="text-[14px] font-bold">
+              {t("client.extra_confirm_title", { count: String(extraSelected.size) })}
+            </h2>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-dim">
+              {t("client.extra_confirm_body")}
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmRemove(false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("client.cancel")}
+              </button>
+              <button
+                onClick={() => void removeExtra()}
+                className="rounded-lg bg-red-500 px-4 py-1.5 text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+              >
+                {t("client.extra_confirm_yes")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {askAutoCheck && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px]">
           <div className="w-[420px] rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
@@ -511,51 +848,116 @@ export function ClientManagerApp() {
         </div>
       )}
 
-      {/* Which game, which version, how it stands. Two lines, no boxes: the
-          numbers are context, not the point of the window. */}
-      <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-[20px] leading-none font-bold tracking-tight">
-              {manifest?.productName ?? "…"}
-            </h1>
-            <span className="text-[13px] leading-none font-semibold text-text-dim">
-              {manifest?.fullVersion ?? manifest?.version ?? ""}
-            </span>
-          </div>
-          {manifest && (
-            <p className="mt-1.5 text-[11px] leading-none text-text-faint">
-              {[
-                manifest.publishDate && t("client.published", { date: manifest.publishDate }),
-                exeDate && t("client.exe_dated", { date: exeDate }),
-                t("client.stats", {
-                  count: String(manifest.fileCount),
-                  size: formatBytes(manifest.totalBytes),
-                }),
-              ]
-                .filter(Boolean)
-                .join("  ·  ")}
-            </p>
-          )}
-        </div>
-
-        {local !== undefined && (
-          <span
-            className={`flex shrink-0 items-center gap-1.5 text-[11px] font-semibold ${
-              local?.matchesOfficial ? "text-green-500" : "text-yellow-500"
-            }`}
-          >
-            <span className="text-[8px]">●</span>
-            {local === null
-              ? t("client.no_client_here")
+      {/* Four tiles and nothing above them. The game and its version used to
+          sit over these as a title with a line of dates, and once the tiles
+          existed that only said the same things twice. */}
+      <div className="grid shrink-0 grid-cols-2 gap-2.5 px-6 pt-1 pb-4 min-[860px]:grid-cols-4">
+        <StatTile
+          caption={manifest?.productName ?? t("client.official_version")}
+          value={manifest?.fullVersion ?? manifest?.version ?? "…"}
+          sub={[
+            manifest?.publishDate && t("client.published", { date: manifest.publishDate }),
+            exeDate && t("client.exe_dated", { date: exeDate }),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        />
+        <StatTile
+          caption={t("client.stat_local")}
+          value={
+            local === undefined
+              ? "—"
+              : local === null
+                ? t("client.local_none")
+                : local.matchesOfficial
+                  ? t("client.up_to_date")
+                  : t("client.update_available")
+          }
+          valueClass={
+            local == null
+              ? "text-text-faint"
               : local.matchesOfficial
-                ? t("client.up_to_date")
-                : t("client.version_ambiguous", {
-                    marker: String(local.marker),
-                    candidates: local.candidates.join(" / ") || "?",
-                  })}
-          </span>
-        )}
+                ? "text-green-500"
+                : "text-yellow-500"
+          }
+          sub={
+            // The version marker says which build this is; the file check says
+            // whether the files agree with it. Two different questions.
+            local && !local.matchesOfficial
+              ? t("client.local_candidates", {
+                  candidates:
+                    local.candidates.map((v) => `V${v}`).join(" / ") || String(local.marker),
+                })
+              : phase === "scanning"
+                ? t("client.scanning")
+                : report && !report.cancelled
+                  ? t("client.local_files_ok", {
+                      ok: String(report.files.length - report.issueCount),
+                      total: String(report.totalFiles),
+                    })
+                  : t("client.local_not_checked")
+          }
+        />
+        <StatTile
+          caption={
+            /^[A-Za-z]:/.test(dir)
+              ? `${t("client.stat_disk")} · ${dir.slice(0, 2).toUpperCase()}`
+              : t("client.stat_disk")
+          }
+          value={freeSpace === null ? "—" : t("client.disk_free", { size: formatBytes(freeSpace) })}
+          valueClass={notEnoughSpace ? "text-red-400" : "text-[var(--text)]"}
+          sub={
+            report && report.issueCount > 0
+              ? t("client.disk_need_repair", { size: formatBytes(selectedBytes) })
+              : manifest
+                ? t("client.disk_need_full", { size: formatBytes(manifest.totalBytes) })
+                : ""
+          }
+        />
+        {/* Where the downloads come out and how fast the CDN answers along that
+            route: one question, so one tile. */}
+        <StatTile
+          caption={t("client.stat_network")}
+          title={net?.error ?? t("client.net_hint")}
+          value={
+            net === undefined || netTesting ? (
+              t("client.net_testing")
+            ) : (
+              <>
+                {net.country
+                  ? (regionName(net.country, language) ?? net.country)
+                  : t("client.net_region_unknown")}
+                <span
+                  className={net.latencyMs !== null ? latencyTone(net.latencyMs) : "text-red-400"}
+                >
+                  {" · "}
+                  {net.latencyMs !== null ? `${net.latencyMs} ms` : t("client.net_unreachable")}
+                </span>
+              </>
+            )
+          }
+          valueClass={net === undefined || netTesting ? "text-text-faint" : "text-[var(--text)]"}
+          sub={
+            <>
+              <span className="min-w-0 truncate">
+                {net === undefined
+                  ? ""
+                  : net.proxy
+                    ? t("client.net_via_proxy", { proxy: net.proxy })
+                    : net.pac
+                      ? t("client.net_pac")
+                      : t("client.net_no_proxy")}
+              </span>
+              <button
+                onClick={() => void retestNetwork()}
+                disabled={net === undefined || netTesting}
+                className="ml-2 shrink-0 font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
+              >
+                {t("client.net_retest")}
+              </button>
+            </>
+          }
+        />
       </div>
 
       {/* Tabs. */}
@@ -600,6 +1002,35 @@ export function ClientManagerApp() {
               <p className="min-w-0 flex-1 text-[10px] text-text-faint">
                 {t("client.folder_note")}
               </p>
+              <span
+                title={t("client.manifest_source_hint")}
+                className="flex shrink-0 items-center gap-1 text-[10px] text-text-faint"
+              >
+                {t("client.manifest_source")}
+                <Dropdown
+                  size="sm"
+                  value={manifestMode}
+                  options={MANIFEST_MODES.map((m) => ({
+                    value: m,
+                    label: t(`client.manifest_source_${m}`),
+                  }))}
+                  onChange={async (next) => {
+                    setManifestMode(next);
+                    // Saved before the reload, because the reload reads it.
+                    await commands.prefSet(MANIFEST_MODE_KEY, next).catch(() => {});
+                    void reloadManifest();
+                  }}
+                  disabled={refreshing || busy || phase === "loading"}
+                />
+              </span>
+              <button
+                onClick={() => void testSources()}
+                disabled={testingSources || refreshing || busy}
+                title={t("client.source_test_hint")}
+                className="shrink-0 text-[10px] font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
+              >
+                {testingSources ? t("client.source_testing") : t("client.source_test")}
+              </button>
               {/* The list the scan compares against, on the tab that does the
                   comparing — not only on the download tab. */}
               {manifest?.manifestUrl && (
@@ -612,12 +1043,36 @@ export function ClientManagerApp() {
                 </button>
               )}
             </div>
+            {sourceTests && (
+              <div className="mt-1 flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-[10px]">
+                {sourceTests.results.map((r) => (
+                  <span
+                    key={r.source}
+                    title={r.error ?? (r.version ? `${r.version}` : undefined)}
+                    className={r.ok ? "text-green-500" : "text-red-400"}
+                  >
+                    {t(`client.manifest_source_${r.source}`)}{" "}
+                    {r.ok
+                      ? `✓ ${t("client.source_seconds", { seconds: (r.millis / 1000).toFixed(1) })}`
+                      : `✗ ${t(sourceFailure(r))}`}
+                  </span>
+                ))}
+                {manifestMode === "auto" && (
+                  <span className="text-text-faint">
+                    {t("client.source_first", {
+                      source: t(`client.manifest_source_${sourceTests.first}`),
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mt-3">
               <Progress
                 fraction={fraction}
                 headline={status.headline}
                 detail={status.detail}
                 tone={status.tone}
+                file={status.file}
               />
             </div>
             {report &&
@@ -665,6 +1120,15 @@ export function ClientManagerApp() {
             selected={selected}
             setSelected={setSelected}
             outdated={local != null && !local.matchesOfficial}
+            live={liveStates}
+            inFlight={inFlight}
+            filter={filter}
+            setFilter={setFilter}
+            extraSelected={extraSelected}
+            setExtraSelected={setExtraSelected}
+            onRemoveExtra={() => setConfirmRemove(true)}
+            extraBusy={extraBusy || busy}
+            extraNotice={extraNotice}
           />
         </>
       ) : (
@@ -724,19 +1188,26 @@ export function ClientManagerApp() {
                       />
                       <span className="font-semibold">{t("client.auto_check_toggle")}</span>
                     </label>
-                    <label
-                      title={t("client.direct_hint")}
-                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                    <span
+                      title={t("client.concurrency_hint")}
+                      className="flex items-center gap-1.5 text-[11px]"
                     >
-                      <input
-                        type="checkbox"
-                        checked={direct}
-                        onChange={(e) => setDirect(e.target.checked)}
+                      <span className="font-semibold">{t("client.concurrency")}</span>
+                      <Dropdown
+                        size="sm"
+                        value={String(concurrency)}
+                        options={CONCURRENCY_CHOICES.map((n) => ({
+                          value: String(n),
+                          label: String(n),
+                        }))}
+                        onChange={(v) => {
+                          const next = Number(v);
+                          setConcurrency(next);
+                          void commands.prefSet(CONCURRENCY_KEY, v).catch(() => {});
+                        }}
                         disabled={busy}
-                        className="accent-[var(--accent)]"
                       />
-                      <span className="font-semibold">{t("client.direct")}</span>
-                    </label>
+                    </span>
                   </div>
                 </div>
               </div>

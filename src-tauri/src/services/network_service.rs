@@ -27,6 +27,17 @@ pub async fn geo_lookup_cached(client: &reqwest::Client) -> (String, String) {
     fresh
 }
 
+/// The country requests made with `client` appear to come from, asked fresh.
+///
+/// Uncached on purpose: the client manager asks along the route its downloads
+/// take, and a proxy tool can change that while the app runs. The public
+/// address is dropped here, so it never reaches a window — players post
+/// screenshots of that window.
+pub async fn country_via(client: &reqwest::Client) -> Option<String> {
+    let (_ip, country) = geo_lookup(client).await;
+    (!country.is_empty()).then_some(country)
+}
+
 /// Geo-IP lookup via ip-api.com. Returns `(public_ip, country_code)`, empty on
 /// failure. Best-effort — never errors.
 async fn geo_lookup(client: &reqwest::Client) -> (String, String) {

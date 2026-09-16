@@ -101,6 +101,60 @@ export interface ClientProgressDto {
   bytesDone: number;
   bytesTotal: number;
   current: string;
+  /** The files in flight, with how far each has got. Empty during a scan. */
+  active: ClientActiveFileDto[];
+}
+
+/** Where the official file list was asked for. */
+export type ClientManifestSource = "beanfun" | "catalog";
+
+/** One try at one source, sent as it starts. */
+export interface ClientManifestAttemptDto {
+  source: ClientManifestSource;
+  attempt: number;
+  attempts: number;
+}
+
+/** One list source, asked once. */
+export interface ClientSourceTestDto {
+  source: ClientManifestSource;
+  ok: boolean;
+  millis: number;
+  version: string | null;
+  error: string | null;
+}
+
+export interface ClientSourceTestsDto {
+  results: ClientSourceTestDto[];
+  /** Which source automatic mode asks first after the test. */
+  first: ClientManifestSource;
+}
+
+/** How the downloads reach the CDN from this machine. */
+export interface ClientNetworkStatusDto {
+  /** Country code the route comes out in; the address itself is never sent. */
+  country: string | null;
+  /** The Windows system proxy the downloads go through, if any. */
+  proxy: string | null;
+  /** Windows has a PAC script set, which is not followed. */
+  pac: boolean;
+  latencyMs: number | null;
+  error: string | null;
+}
+
+export interface ClientActiveFileDto {
+  path: string;
+  done: number;
+  total: number;
+}
+
+/** How one file is doing during a download, as the backend reports it. */
+export type ClientFileState = "downloading" | "done" | "failed";
+
+export interface ClientDownloadFileDto {
+  path: string;
+  state: ClientFileState;
+  error: string | null;
 }
 
 export interface ClientDownloadReportDto {
@@ -108,6 +162,13 @@ export interface ClientDownloadReportDto {
   written: number;
   failures: { path: string; error: string }[];
   cancelled: boolean;
+}
+
+/** What moving extra files to the Recycle Bin did. */
+export interface ClientRemoveReportDto {
+  removed: string[];
+  failures: { path: string; error: string }[];
+  bytes: number;
 }
 
 /** Full-client torrent details, read from the Gamania Games Manager's public download chain. */

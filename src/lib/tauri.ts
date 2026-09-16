@@ -22,6 +22,9 @@ import type {
   ClientScanReportDto,
   ClientDownloadReportDto,
   ClientLocalVersionDto,
+  ClientNetworkStatusDto,
+  ClientRemoveReportDto,
+  ClientSourceTestsDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
   BrowserBookmark,
@@ -203,13 +206,17 @@ export const commands = {
   clientLoadManifest: () => invoke<ClientManifestDto>("client_load_manifest"),
   clientScan: (dir: string, mode: "quick" | "full") =>
     invoke<ClientScanReportDto>("client_scan", { dir, mode }),
-  clientDownload: (dir: string, paths: string[], direct: boolean) =>
-    invoke<ClientDownloadReportDto>("client_download", { dir, paths, direct }),
+  clientDownload: (dir: string, paths: string[], concurrency: number) =>
+    invoke<ClientDownloadReportDto>("client_download", { dir, paths, concurrency }),
   clientCancel: () => invoke("client_cancel"),
   clientSetPaused: (paused: boolean) => invoke("client_set_paused", { paused }),
   prefGet: (key: string) => invoke<string | null>("pref_get", { key }),
   prefSet: (key: string, value: string) => invoke("pref_set", { key, value }),
   clientFreeSpace: (dir: string) => invoke<number | null>("client_free_space", { dir }),
+  clientNetworkStatus: () => invoke<ClientNetworkStatusDto>("client_network_status"),
+  clientTestSources: () => invoke<ClientSourceTestsDto>("client_test_sources"),
+  clientRemoveExtra: (dir: string, paths: string[]) =>
+    invoke<ClientRemoveReportDto>("client_remove_extra", { dir, paths }),
   clientPickFolder: (startIn: string | null) =>
     invoke<string | null>("client_pick_folder", { startIn }),
   clientDefaultFolder: () => invoke<string | null>("client_default_folder"),

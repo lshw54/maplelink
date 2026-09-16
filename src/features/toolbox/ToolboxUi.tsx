@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
-import { useClickOutside } from "../../lib/hooks/use-click-outside";
+import type { ReactNode } from "react";
 
 /**
  * Shared building blocks for the toolbox tabs — the grouped-list look the
@@ -140,64 +139,5 @@ export function RowValue({ children, mono }: { children: ReactNode; mono?: boole
     >
       {children}
     </span>
-  );
-}
-
-/** Theme-styled dropdown (the native <select> popup ignores the dark theme). */
-export function Dropdown({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const close = useCallback(() => setOpen(false), []);
-  useClickOutside(ref, close, { active: open });
-
-  const current = options.find((o) => o.value === value);
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-md border border-[var(--tb-border)] px-2.5 py-1 text-[11px] text-[var(--text)] transition-colors hover:border-accent"
-      >
-        {current?.label ?? value}
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="text-text-dim">
-          <path
-            d="M3 4.5L6 7.5L9 4.5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border border-[var(--tb-border)] bg-[var(--tb-card)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-              className={`block w-full px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--surface-hover)] ${
-                o.value === value ? "font-semibold text-accent" : "text-[var(--text)]"
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

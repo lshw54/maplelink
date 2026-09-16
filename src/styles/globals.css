@@ -10,6 +10,11 @@
 
 @layer base {
   :root {
+    /* Native controls — scrollbars, a closed <select>, spin buttons — are drawn
+       by the webview, not by these variables, and this is what tells it which
+       palette to use. It does NOT reach a <select>'s open list: WebView2 draws
+       that in light colours regardless, so use components/Dropdown instead. */
+    color-scheme: dark;
     /* Accent family. `--accent-rgb` is the same colour as a bare triplet so
        Tailwind arbitrary values can do rgba(var(--accent-rgb),0.08). The
        darker pair ends the gradients. All four are overridden at runtime by
@@ -52,6 +57,7 @@
      light mode that is not a white screen, so the page sits at ~91% lightness
      with cards and inputs a step above it to keep the layering. */
   .light {
+    color-scheme: light;
     --bg: var(--bg-user-light, #e6e6ea);
     --surface: rgba(0, 0, 0, 0.04);
     --surface-hover: rgba(0, 0, 0, 0.08);

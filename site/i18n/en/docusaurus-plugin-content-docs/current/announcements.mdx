@@ -46,4 +46,46 @@ MapleLink is developed side by side with the original Beanfun to give players mo
 
 ## Release notes {#updates}
 
-What changed in each version is listed on [GitHub Releases](https://github.com/lshw54/maplelink/releases). Release notes never ride the ticker at the top of the page and never open on launch — the ticker carries notices only.
+What changed in each version is listed below; the full history and downloads are on [GitHub Releases](https://github.com/lshw54/maplelink/releases). Release notes never ride the ticker at the top of the page and never open on launch — the ticker carries notices only.
+
+<div className="timeline">
+
+<section className="tl-item">
+<div className="tl-meta"><time>2026-09-11</time><span className="tl-tag">Stable</span></div>
+
+## MapleLink v0.6.0 {#v0-6-0}
+
+**New**
+
+- Game client manager: check, repair and install the client from the official manifest
+- Built-in beanfun browser with an address bar and connection details
+- Add game accounts straight from the account list
+- Compact mode, with a reorganised toolbox
+- Custom accent colour
+- The official website is live, with the guide, downloads and playable UI demos
+
+**Safer**
+
+- Auto-update verifies a signature we hold; the download is saved to a file and checked before anything is replaced
+- Every connection verifies its certificate, and reads from outside sources are capped
+- The WebView renderer sandbox is no longer turned off
+
+**Fixed**
+
+- OTP auto-paste no longer lands in the account field
+- QR sign-in refresh, copy and countdown, and the window size
+- Paths when the Windows user name contains non-ASCII characters
+- Tab close and new-tab buttons were too small
+- A browser toolbar tooltip covered the address bar
+
+**Other**
+
+- The bundled font keeps only the characters the UI uses, so it is smaller
+- Dead code removed, and one path after sign-in
+- Dependency security updates
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.0">GitHub Releases: v0.6.0</a></p>
+
+</section>
+
+</div>
