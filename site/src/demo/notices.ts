@@ -24,6 +24,16 @@ export function noticeKind(n: Notice): "notice" | "update" {
 
 export const NOTICES: Notice[] = [
   {
+    id: "v0-6-0",
+    date: "2026-09",
+    kind: "update",
+    title: {
+      "zh-TW": "MapleLink v0.6.0：遊戲客戶端管理員、內建 beanfun 瀏覽器、官方網站上線。",
+      "zh-CN": "MapleLink v0.6.0：游戏客户端管理器、内置 beanfun 浏览器、官方网站上线。",
+      en: "MapleLink v0.6.0: game client manager, built-in beanfun browser, and the official website.",
+    },
+  },
+  {
     id: "2026-09-download-source",
     date: "2026-09",
     title: {
