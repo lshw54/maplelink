@@ -101,6 +101,14 @@ export interface ClientProgressDto {
   bytesDone: number;
   bytesTotal: number;
   current: string;
+  /** The files in flight, with how far each has got. Empty during a scan. */
+  active: ClientActiveFileDto[];
+}
+
+export interface ClientActiveFileDto {
+  path: string;
+  done: number;
+  total: number;
 }
 
 /** How one file is doing during a download, as the backend reports it. */

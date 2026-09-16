@@ -575,6 +575,8 @@
   "client.auto_check_no": "No, I'll press it",
   "client.auto_check_toggle": "Auto check",
   "client.auto_check_toggle_hint": "Run a quick check whenever this window opens.",
+  "client.concurrency": "At once",
+  "client.concurrency_hint": "How many files to download at the same time. More connections do not add bandwidth, they share the line: more is faster over a long path; fewer is steadier on a slow or rate-limited one.",
   "launcher.patcher_open_manager": "Open the client manager",
   "toolbox.tools.client_manager_short": "Client",
   "shared.titlebar.client_manager": "Game client manager",

@@ -197,10 +197,15 @@ pub async fn client_scan(
 
 /// Fetch the named files into `dir`. Only paths the manifest lists are allowed,
 /// and each one is verified before it replaces anything.
+///
+/// `concurrency` is how many files to pull at once, 1..=8; `None` takes the
+/// default. It travels with the job rather than living in the config, so it
+/// only ever affects the run it was given to.
 #[tauri::command]
 pub async fn client_download(
     dir: String,
     paths: Vec<String>,
+    concurrency: Option<usize>,
     app: tauri::AppHandle,
     jobs: tauri::State<'_, ClientJobs>,
 ) -> Result<DownloadReport, ErrorDto> {
@@ -226,10 +231,12 @@ pub async fn client_download(
         })
     };
 
+    let at_once = concurrency.unwrap_or(0);
     let report = client_manager::download(
         PathBuf::from(&dir),
         manifest,
         paths,
+        at_once,
         guard.cancel.clone(),
         progress.clone(),
         {
@@ -250,7 +257,7 @@ pub async fn client_download(
 
     let report = report?;
     tracing::info!(
-        "client download into {dir}: {} of {} written, {} failed, cancelled={}",
+        "client download into {dir} ({at_once} at once): {} of {} written, {} failed, cancelled={}",
         report.written,
         report.requested,
         report.failures.len(),

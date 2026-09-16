@@ -575,6 +575,8 @@
   "client.auto_check_no": "不用，我自己点",
   "client.auto_check_toggle": "自动检查",
   "client.auto_check_toggle_hint": "打开这个窗口时自动跑一次快速检查。",
+  "client.concurrency": "同时下载",
+  "client.concurrency_hint": "同一时间下载几个文件。多开连接不会增加带宽，只是分用同一条线路：路径较远时多开较快；线路慢或加速器有限速时调低，单个文件较快完成、进度也较稳定。",
   "launcher.patcher_open_manager": "打开客户端管理",
   "toolbox.tools.client_manager_short": "客户端",
   "shared.titlebar.client_manager": "游戏客户端管理",

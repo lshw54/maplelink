@@ -201,6 +201,7 @@ function FileRow({
   label,
   indent = 12,
   state,
+  fraction,
 }: {
   file: ClientCheckedFileDto;
   checked: boolean;
@@ -212,6 +213,8 @@ function FileRow({
   indent?: number;
   /** What the running download has done with this file, if anything yet. */
   state?: ClientFileState;
+  /** How much of this file has arrived, 0–1, while it is in flight. */
+  fraction?: number;
 }) {
   const { t } = useTranslation();
   const issue = file.kind !== null;
@@ -232,8 +235,19 @@ function FileRow({
     <div
       // 1263 rows: let the engine skip what is scrolled out of view.
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px", paddingLeft: indent }}
-      className="flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
+      className="relative flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
+      {/* This file's own transfer, along the bottom edge of its row. A column
+          of its own would cost width on every one of 1,263 rows; a rule that
+          fills as the file arrives costs none, and reads at a glance down the
+          handful of rows that are moving. */}
+      {fraction !== undefined && (
+        <span
+          aria-hidden
+          className="absolute bottom-0 left-0 h-[2px] rounded-full bg-accent transition-[width] duration-300"
+          style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+        />
+      )}
       {live ? (
         <span
           className={`w-3.5 shrink-0 text-center text-[11px] ${live.colour} ${
@@ -266,7 +280,11 @@ function FileRow({
           live ? live.colour : issue ? "text-yellow-500" : "text-text-faint"
         }`}
       >
-        {live ? t(live.label) : issue ? t(issueLabel(kind, outdated)) : t("client.status_ok")}
+        {live
+          ? `${t(live.label)}${fraction === undefined ? "" : ` ${Math.round(fraction * 100)}%`}`
+          : issue
+            ? t(issueLabel(kind, outdated))
+            : t("client.status_ok")}
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-[10px] text-text-faint">
         {formatBytes(file.expectedSize)}
@@ -282,6 +300,7 @@ export function VerifyPanel({
   setSelected,
   outdated = false,
   live,
+  inFlight,
   filter,
   setFilter,
 }: {
@@ -292,6 +311,8 @@ export function VerifyPanel({
   outdated?: boolean;
   /** What the running download has reached so far, path by path. */
   live?: ReadonlyMap<string, ClientFileState>;
+  /** How far each file still in flight has got, 0–1. */
+  inFlight?: ReadonlyMap<string, number>;
   /** Owned by the window, which points it at the work when a repair starts. */
   filter: Filter;
   setFilter: (next: Filter) => void;
@@ -522,6 +543,7 @@ export function VerifyPanel({
                   checked={selected.has(f.path)}
                   outdated={outdated}
                   state={live?.get(f.path)}
+                  fraction={inFlight?.get(f.path)}
                   onToggle={() => {
                     const next = new Set(selected);
                     if (next.has(f.path)) next.delete(f.path);
@@ -539,6 +561,7 @@ export function VerifyPanel({
                 checked={selected.has(f.path)}
                 outdated={outdated}
                 state={live?.get(f.path)}
+                fraction={inFlight?.get(f.path)}
                 onToggle={() => {
                   const next = new Set(selected);
                   if (next.has(f.path)) next.delete(f.path);

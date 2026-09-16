@@ -24,6 +24,19 @@ type Phase = "loading" | "idle" | "scanning" | "scanned" | "downloading" | "done
 /** Answers to the one-time "check automatically?" prompt. */
 const AUTO_CHECK_KEY = "client.auto_check";
 const AUTO_CHECK_ASKED_KEY = "client.auto_check_asked";
+/** How many files to fetch at once, remembered between runs. */
+const CONCURRENCY_KEY = "client.concurrency";
+const CONCURRENCY_DEFAULT = 6;
+/**
+ * What the setting offers.
+ *
+ * Six connections do not add bandwidth — they share the line — but on a long
+ * path they use it better, because one stream spends its time waiting out the
+ * round trip. The low end is for the opposite case: a slow or shaped line,
+ * where splitting it six ways only means six files crawling instead of one
+ * finishing.
+ */
+const CONCURRENCY_CHOICES = [1, 2, 4, 6, 8];
 type Tone = "busy" | "ok" | "warn";
 type Tab = "verify" | "download";
 
@@ -172,6 +185,7 @@ export function ClientManagerApp() {
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [autoCheck, setAutoCheck] = useState(false);
+  const [concurrency, setConcurrency] = useState(CONCURRENCY_DEFAULT);
   // `undefined` until the stored answer is read, so the prompt cannot flash.
   const [askAutoCheck, setAskAutoCheck] = useState<boolean | undefined>(undefined);
   // Set once the stored answer says the check should run without being asked.
@@ -189,6 +203,8 @@ export function ClientManagerApp() {
    */
   const liveFiles = useRef(new Map<string, ClientFileState>());
   const liveDirty = useRef(false);
+  /** How far each in-flight file has got, straight from the progress tick. */
+  const [inFlight, setInFlight] = useState<ReadonlyMap<string, number>>(new Map());
   const [liveStates, setLiveStates] = useState<ReadonlyMap<string, ClientFileState>>(new Map());
 
   useEffect(() => {
@@ -198,11 +214,14 @@ export function ClientManagerApp() {
   useEffect(() => {
     let live = true;
     (async () => {
-      const [on, asked] = await Promise.all([
+      const [on, asked, atOnce] = await Promise.all([
         commands.prefGet(AUTO_CHECK_KEY).catch(() => null),
         commands.prefGet(AUTO_CHECK_ASKED_KEY).catch(() => null),
+        commands.prefGet(CONCURRENCY_KEY).catch(() => null),
       ]);
       if (!live) return;
+      const saved = Number(atOnce);
+      if (CONCURRENCY_CHOICES.includes(saved)) setConcurrency(saved);
       setAutoCheck(on === "on");
       setAskAutoCheck(asked !== "1");
       autoOnOpen.current = on === "on" && asked === "1";
@@ -215,6 +234,9 @@ export function ClientManagerApp() {
   useEffect(() => {
     function track(p: ClientProgressDto) {
       setProgress(p);
+      setInFlight(
+        new Map(p.active.map((f) => [f.path, f.total > 0 ? f.done / f.total : 0] as const)),
+      );
       if (liveDirty.current) {
         liveDirty.current = false;
         const next = new Map(liveFiles.current);
@@ -299,6 +321,7 @@ export function ClientManagerApp() {
     liveFiles.current = new Map();
     liveDirty.current = false;
     setLiveStates(new Map());
+    setInFlight(new Map());
     setPhase("scanning");
     try {
       const r = await commands.clientScan(target, how);
@@ -378,37 +401,42 @@ export function ClientManagerApp() {
     // `scanInto` has no dependencies of its own, so this still runs once.
   }, [scanInto]);
 
-  const downloadInto = useCallback(async (target: string, paths: string[]) => {
-    setError(null);
-    setPaused(false);
-    setRate(0);
-    rateSample.current = null;
-    setProgress(null);
-    liveFiles.current = new Map();
-    liveDirty.current = false;
-    setLiveStates(new Map());
-    // The whole list is 1,263 rows and the work is somewhere inside it, so a
-    // repair starts by showing what it is repairing — a list that empties as
-    // files land, with whatever is in flight at the top of what remains.
-    setFilter("issues");
-    setPhase("downloading");
-    try {
-      const r = await commands.clientDownload(target, paths);
-      setOutcome(r);
-      setPhase("done");
-    } catch (e) {
-      setError(errorMessage(e));
-      setPhase("scanned");
-    } finally {
-      // Whatever was mid-flight when the run ended is not still downloading —
-      // a cancelled file has no event of its own, so it is dropped here.
-      for (const [path, state] of liveFiles.current) {
-        if (state === "downloading") liveFiles.current.delete(path);
-      }
+  const downloadInto = useCallback(
+    async (target: string, paths: string[]) => {
+      setError(null);
+      setPaused(false);
+      setRate(0);
+      rateSample.current = null;
+      setProgress(null);
+      liveFiles.current = new Map();
       liveDirty.current = false;
-      setLiveStates(new Map(liveFiles.current));
-    }
-  }, []);
+      setLiveStates(new Map());
+      setInFlight(new Map());
+      // The whole list is 1,263 rows and the work is somewhere inside it, so a
+      // repair starts by showing what it is repairing — a list that empties as
+      // files land, with whatever is in flight at the top of what remains.
+      setFilter("issues");
+      setPhase("downloading");
+      try {
+        const r = await commands.clientDownload(target, paths, concurrency);
+        setOutcome(r);
+        setPhase("done");
+      } catch (e) {
+        setError(errorMessage(e));
+        setPhase("scanned");
+      } finally {
+        // Whatever was mid-flight when the run ended is not still downloading —
+        // a cancelled file has no event of its own, so it is dropped here.
+        for (const [path, state] of liveFiles.current) {
+          if (state === "downloading") liveFiles.current.delete(path);
+        }
+        liveDirty.current = false;
+        setLiveStates(new Map(liveFiles.current));
+        setInFlight(new Map());
+      }
+    },
+    [concurrency],
+  );
 
   const runDownload = useCallback(
     () => downloadInto(dir, [...selected]),
@@ -740,6 +768,7 @@ export function ClientManagerApp() {
             setSelected={setSelected}
             outdated={local != null && !local.matchesOfficial}
             live={liveStates}
+            inFlight={inFlight}
             filter={filter}
             setFilter={setFilter}
           />
@@ -800,6 +829,28 @@ export function ClientManagerApp() {
                         className="accent-[var(--accent)]"
                       />
                       <span className="font-semibold">{t("client.auto_check_toggle")}</span>
+                    </label>
+                    <label
+                      title={t("client.concurrency_hint")}
+                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                    >
+                      <span className="font-semibold">{t("client.concurrency")}</span>
+                      <select
+                        value={concurrency}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setConcurrency(next);
+                          void commands.prefSet(CONCURRENCY_KEY, String(next)).catch(() => {});
+                        }}
+                        disabled={busy}
+                        className="rounded-md border border-[var(--tb-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text)] outline-none focus:border-accent disabled:opacity-50"
+                      >
+                        {CONCURRENCY_CHOICES.map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                   </div>
                 </div>

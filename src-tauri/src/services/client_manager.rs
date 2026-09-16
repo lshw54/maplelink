@@ -25,9 +25,18 @@ use std::sync::Arc;
 
 use crate::services::http_util;
 
-/// How many files to fetch at once. beanfun's CDN is fine with this and it
-/// keeps a slow file from stalling the run, without looking like an attack.
-const DOWNLOAD_CONCURRENCY: usize = 6;
+/// How many files to fetch at once when nobody has said otherwise. beanfun's
+/// CDN is fine with this and it keeps a slow file from stalling the run,
+/// without looking like an attack.
+///
+/// Six connections do not create bandwidth — they share the line. They are
+/// faster anyway on a long path, where one TCP stream spends its time waiting
+/// out the round trip rather than filling the link. On a genuinely slow or
+/// shaped line the trade turns the other way: each file crawls, and the player
+/// watches six bars move instead of one finishing. Hence the setting.
+pub const DOWNLOAD_CONCURRENCY: usize = 6;
+/// The most connections the setting may ask for.
+pub const DOWNLOAD_CONCURRENCY_MAX: usize = 8;
 /// How many times one file may be fetched before it counts as failed.
 ///
 /// A repair is over a thousand files, so a single dropped connection somewhere
@@ -409,6 +418,19 @@ pub struct Progress {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub current: String,
+    /// The files in flight, with how far each one has got. Empty for a scan,
+    /// and at most `DOWNLOAD_CONCURRENCY` long for a download — small enough
+    /// to send with every tick.
+    pub active: Vec<ActiveFile>,
+}
+
+/// One file being fetched right now.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveFile {
+    pub path: String,
+    pub done: u64,
+    pub total: u64,
 }
 
 /// Shared run control: stop a job, or hold it without losing its place.
@@ -523,6 +545,7 @@ fn scan_blocking(
                 bytes_done: 0,
                 bytes_total: 0,
                 current: f.path.clone(),
+                active: Vec::new(),
             });
         }
     }
@@ -610,6 +633,7 @@ fn hash_in_parallel(
                     bytes_done: seen,
                     bytes_total,
                     current: f.path.clone(),
+                    active: Vec::new(),
                 });
             });
         }
@@ -812,39 +836,58 @@ pub struct DownloadProgress {
     /// Six files are fetched at once, so "the file being downloaded" is a
     /// choice rather than a fact. The oldest is the one that has been on
     /// screen longest and the one most likely to still be there next tick,
-    /// which is what keeps the line from flickering between six names.
-    active: std::sync::Mutex<Vec<String>>,
+    /// which is what keeps the line from flickering between six names. The
+    /// rest are not dropped, though: each carries its own byte count, which is
+    /// what draws the bar on its row.
+    active: std::sync::Mutex<Vec<InFlight>>,
+}
+
+/// A file being fetched, and the counter its own progress bar reads.
+#[derive(Debug)]
+struct InFlight {
+    path: String,
+    total: u64,
+    done: Arc<AtomicU64>,
 }
 
 impl DownloadProgress {
-    fn begin(&self, path: &str) {
+    /// Start counting a file, handing back the counter its transfer adds to.
+    fn begin(&self, path: &str, total: u64) -> Arc<AtomicU64> {
+        let done = Arc::new(AtomicU64::new(0));
         self.active
             .lock()
             .expect("download progress lock")
-            .push(path.to_string());
+            .push(InFlight {
+                path: path.to_string(),
+                total,
+                done: done.clone(),
+            });
+        done
     }
 
     fn finish(&self, path: &str) {
         let mut active = self.active.lock().expect("download progress lock");
-        if let Some(at) = active.iter().position(|p| p == path) {
+        if let Some(at) = active.iter().position(|f| f.path == path) {
             active.remove(at);
         }
     }
 
     pub fn snapshot(&self) -> Progress {
-        let current = self
-            .active
-            .lock()
-            .expect("download progress lock")
-            .first()
-            .cloned()
-            .unwrap_or_default();
+        let active = self.active.lock().expect("download progress lock");
         Progress {
             done: self.files_done.load(Ordering::Relaxed) as usize,
             total: self.files_total.load(Ordering::Relaxed) as usize,
             bytes_done: self.bytes_done.load(Ordering::Relaxed),
             bytes_total: self.bytes_total.load(Ordering::Relaxed),
-            current,
+            current: active.first().map(|f| f.path.clone()).unwrap_or_default(),
+            active: active
+                .iter()
+                .map(|f| ActiveFile {
+                    path: f.path.clone(),
+                    done: f.done.load(Ordering::Relaxed),
+                    total: f.total,
+                })
+                .collect(),
         }
     }
 }
@@ -882,10 +925,14 @@ pub struct FileEvent {
 ///
 /// `on_file` is told about each file as it starts and as it lands, so the
 /// caller can move a list while the run is going rather than at the end of it.
+///
+/// `concurrency` is clamped to 1..=[`DOWNLOAD_CONCURRENCY_MAX`]; 0 means the
+/// default.
 pub async fn download(
     dir: PathBuf,
     manifest: Arc<ClientManifest>,
     paths: Vec<String>,
+    concurrency: usize,
     cancel: Cancel,
     progress: Arc<DownloadProgress>,
     on_file: impl Fn(FileEvent) + Send + Sync + 'static,
@@ -903,6 +950,10 @@ pub async fn download(
         return Err("asked for a file the manifest does not list".to_string());
     }
 
+    let at_once = match concurrency {
+        0 => DOWNLOAD_CONCURRENCY,
+        n => n.min(DOWNLOAD_CONCURRENCY_MAX),
+    };
     let total = files.len();
     progress.files_total.store(total as u64, Ordering::Relaxed);
     progress
@@ -922,7 +973,7 @@ pub async fn download(
     let written = Arc::new(AtomicUsize::new(0));
 
     futures_util::stream::iter(files)
-        .for_each_concurrent(DOWNLOAD_CONCURRENCY, |f| {
+        .for_each_concurrent(at_once, |f| {
             let (client, dir, manifest, cancel) = (
                 client.clone(),
                 dir.clone(),
@@ -936,14 +987,15 @@ pub async fn download(
                 if !cancel.hold_async().await {
                     return;
                 }
-                progress.begin(&f.path);
+                let counter = progress.begin(&f.path, f.size);
                 on_file(FileEvent {
                     path: f.path.clone(),
                     state: FileState::Downloading,
                     error: None,
                 });
                 let result =
-                    fetch_with_retries(&client, &dir, &manifest, &f, &cancel, &progress).await;
+                    fetch_with_retries(&client, &dir, &manifest, &f, &cancel, &progress, &counter)
+                        .await;
                 progress.finish(&f.path);
                 match result {
                     Ok(()) => {
@@ -998,13 +1050,18 @@ async fn fetch_with_retries(
     f: &ManifestFile,
     cancel: &Cancel,
     progress: &Arc<DownloadProgress>,
+    counter: &Arc<AtomicU64>,
 ) -> Result<(), String> {
     for attempt in 1..=DOWNLOAD_ATTEMPTS {
+        // This file's own bar starts over with the attempt.
+        counter.store(0, Ordering::Relaxed);
         let counted = Arc::new(AtomicU64::new(0));
         let tally = counted.clone();
+        let mine = counter.clone();
         let p = progress.clone();
         let result = fetch_one(client, dir, manifest, f, cancel, move |n| {
             tally.fetch_add(n, Ordering::Relaxed);
+            mine.fetch_add(n, Ordering::Relaxed);
             p.bytes_done.fetch_add(n, Ordering::Relaxed);
         })
         .await;
@@ -1677,6 +1734,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             vec!["a.txt".to_string(), "sub/b.bin".to_string()],
+            0,
             cancel,
             Arc::new(DownloadProgress::default()),
             |_| {},
@@ -1744,6 +1802,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest_served_by(base)),
             vec!["a.txt".to_string()],
+            0,
             Arc::new(Control::default()),
             progress.clone(),
             |_| {},
@@ -1775,6 +1834,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest_served_by(base)),
             vec!["a.txt".to_string()],
+            0,
             Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
             |_| {},
@@ -1795,6 +1855,7 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             vec!["not-in-manifest.dll".to_string()],
+            0,
             Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
             |_| {},
@@ -1890,6 +1951,7 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest.clone(),
             picked.clone(),
+            0,
             cancel.clone(),
             progress.clone(),
             |_| {},
@@ -1944,6 +2006,7 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest,
             vec![victim.path.clone()],
+            0,
             Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
             |_| {},
