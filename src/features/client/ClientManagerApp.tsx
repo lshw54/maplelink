@@ -251,6 +251,11 @@ export function ClientManagerApp() {
   // What the list load is trying right now, for the line that says so.
   const [manifestAttempt, setManifestAttempt] = useState<ClientManifestAttemptDto | null>(null);
   const [autoCheck, setAutoCheck] = useState(false);
+  // Extra files picked for the Recycle Bin, the confirmation, and its outcome.
+  const [extraSelected, setExtraSelected] = useState<Set<string>>(new Set());
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [extraBusy, setExtraBusy] = useState(false);
+  const [extraNotice, setExtraNotice] = useState<string | null>(null);
   // `undefined` while the first measurement runs, so the tile says so rather
   // than showing a blank that reads as "no network".
   const [net, setNet] = useState<ClientNetworkStatusDto | undefined>(undefined);
@@ -418,6 +423,9 @@ export function ClientManagerApp() {
     liveDirty.current = false;
     setLiveStates(new Map());
     setInFlight(new Map());
+    // Picks belong to the list they were made from.
+    setExtraSelected(new Set());
+    setExtraNotice(null);
     setPhase("scanning");
     try {
       const r = await commands.clientScan(target, how);
@@ -544,6 +552,49 @@ export function ClientManagerApp() {
     [concurrency],
   );
 
+  /**
+   * Move the picked extra files to the Recycle Bin, once confirmed.
+   *
+   * The list is updated from what the backend says it removed rather than from
+   * what was asked: a file the game still holds open, or one refused by the
+   * checks, stays listed and stays picked.
+   */
+  const removeExtra = useCallback(async () => {
+    setConfirmRemove(false);
+    setExtraBusy(true);
+    setExtraNotice(null);
+    setError(null);
+    try {
+      const r = await commands.clientRemoveExtra(dir, [...extraSelected]);
+      const gone = new Set(r.removed);
+      setReport((prev) =>
+        prev ? { ...prev, extraFiles: prev.extraFiles.filter((p) => !gone.has(p)) } : prev,
+      );
+      setExtraSelected((prev) => new Set([...prev].filter((p) => !gone.has(p))));
+      if (r.removed.length > 0) {
+        setExtraNotice(
+          t("client.extra_removed", {
+            count: String(r.removed.length),
+            size: formatBytes(r.bytes),
+          }),
+        );
+      }
+      const first = r.failures[0];
+      if (first) {
+        setError(
+          t("client.extra_remove_failed", {
+            count: String(r.failures.length),
+            reason: `${first.path}: ${first.error}`,
+          }),
+        );
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setExtraBusy(false);
+    }
+  }, [dir, extraSelected, t]);
+
   const runDownload = useCallback(
     () => downloadInto(dir, [...selected]),
     [downloadInto, dir, selected],
@@ -601,7 +652,9 @@ export function ClientManagerApp() {
     const counted = progress
       ? `${progress.done} / ${progress.total} · ${formatBytes(progress.bytesDone)} / ${formatBytes(progress.bytesTotal)}${busy ? speed : ""}`
       : "";
-    if (phase === "loading") {
+    // A reload after start-up says what it is trying as well, or switching the
+    // source would look like nothing happened for up to half a minute.
+    if (phase === "loading" || (refreshing && manifestAttempt)) {
       return {
         headline: manifestAttempt
           ? t("client.loading_manifest_via", {
@@ -702,6 +755,33 @@ export function ClientManagerApp() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <Titlebar />
+
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px]">
+          <div className="w-[440px] rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <h2 className="text-[14px] font-bold">
+              {t("client.extra_confirm_title", { count: String(extraSelected.size) })}
+            </h2>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-dim">
+              {t("client.extra_confirm_body")}
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmRemove(false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-text-dim transition-colors hover:bg-[var(--surface-hover)]"
+              >
+                {t("client.cancel")}
+              </button>
+              <button
+                onClick={() => void removeExtra()}
+                className="rounded-lg bg-red-500 px-4 py-1.5 text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+              >
+                {t("client.extra_confirm_yes")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {askAutoCheck && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px]">
@@ -976,6 +1056,11 @@ export function ClientManagerApp() {
             inFlight={inFlight}
             filter={filter}
             setFilter={setFilter}
+            extraSelected={extraSelected}
+            setExtraSelected={setExtraSelected}
+            onRemoveExtra={() => setConfirmRemove(true)}
+            extraBusy={extraBusy || busy}
+            extraNotice={extraNotice}
           />
         </>
       ) : (

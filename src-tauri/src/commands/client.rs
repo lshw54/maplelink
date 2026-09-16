@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use crate::models::error::{ErrorCategory, ErrorDto};
 use crate::services::client_manager::{
     self, Cancel, ClientManifest, Control, DownloadProgress, DownloadReport, LocalVersion,
-    NetworkStatus, ScanMode, ScanReport,
+    NetworkStatus, RemoveReport, ScanMode, ScanReport,
 };
 
 /// The window the client manager runs in. `main.tsx` reads this label to decide
@@ -292,6 +292,40 @@ pub async fn client_network_status(
 ) -> Result<NetworkStatus, ErrorDto> {
     let manifest = manifest_of(&jobs).await?;
     Ok(client_manager::network_status(&manifest).await)
+}
+
+/// Move the files the player picked from the extra-files list to the Recycle
+/// Bin. Holds the job slot, so it cannot run under a scan or a download.
+#[tauri::command]
+pub async fn client_remove_extra(
+    dir: String,
+    paths: Vec<String>,
+    jobs: tauri::State<'_, ClientJobs>,
+) -> Result<RemoveReport, ErrorDto> {
+    let manifest = manifest_of(&jobs).await?;
+    let _guard = jobs.start()?;
+    let root = PathBuf::from(&dir);
+    let report = tokio::task::spawn_blocking(move || {
+        client_manager::remove_extra_files(&root, &manifest, &paths)
+    })
+    .await
+    .map_err(|e| {
+        err(
+            "CLIENT_REMOVE_FAILED",
+            format!("clean-up task failed: {e}"),
+            ErrorCategory::FileSystem,
+        )
+    })?;
+    tracing::info!(
+        "client clean-up in {dir}: {} moved to the Recycle Bin ({} bytes), {} refused or failed",
+        report.removed.len(),
+        report.bytes,
+        report.failures.len()
+    );
+    for f in &report.failures {
+        tracing::info!("client clean-up: {} not removed: {}", f.path, f.error);
+    }
+    Ok(report)
 }
 
 /// Ask the running scan or download to stop. Safe to call when nothing runs.

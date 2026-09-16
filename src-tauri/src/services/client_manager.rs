@@ -782,10 +782,21 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Files on disk the manifest does not list. Reported so the player can decide;
-/// the client manager never removes anything itself.
+/// nothing is removed unless the player picks it (see [`remove_extra_files`]).
+///
+/// Two things this has to get right now that the list can lead to removal:
+/// - NTFS ignores case, so `data/base/Base.wz` on disk IS the manifest's
+///   `Data/Base/Base.wz`. Compared case-sensitively, a real game file whose
+///   folder was renamed in another case would be offered for removal.
+/// - A symbolic link or junction inside the game folder can point anywhere.
+///   Following one would list — and so offer up — files outside the folder.
 fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> Vec<String> {
     use std::collections::HashSet;
-    let known: HashSet<&str> = manifest.files.iter().map(|f| f.path.as_str()).collect();
+    let known: HashSet<String> = manifest
+        .files
+        .iter()
+        .map(|f| f.path.to_lowercase())
+        .collect();
     let mut extra = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
@@ -796,8 +807,16 @@ fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> V
             continue;
         };
         for entry in entries.flatten() {
+            // `file_type` does not follow links, and on Windows it reports a
+            // junction as one, so neither kind is walked into or listed.
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_symlink() {
+                continue;
+            }
             let p = entry.path();
-            if p.is_dir() {
+            if kind.is_dir() {
                 stack.push(p);
                 continue;
             }
@@ -809,7 +828,7 @@ fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> V
             if rel.ends_with(PART_SUFFIX) {
                 continue;
             }
-            if !known.contains(rel.as_str()) {
+            if !known.contains(&rel.to_lowercase()) {
                 extra.push(rel);
             }
         }
@@ -819,6 +838,128 @@ fn find_extra_files(dir: &Path, manifest: &ClientManifest, cancel: &Cancel) -> V
 }
 
 const PART_SUFFIX: &str = ".mlpart";
+
+/// What a clean-up did.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveReport {
+    pub removed: Vec<String>,
+    pub failures: Vec<DownloadFailure>,
+    /// Bytes moved out of the game folder.
+    pub bytes: u64,
+}
+
+/// Move the chosen extra files to the Recycle Bin.
+///
+/// This is the only code that takes anything out of the game folder, so every
+/// path is checked again here rather than trusted because a scan once listed
+/// it. A path is refused unless it is a valid relative path, is not in the
+/// manifest under any casing, is a plain file (not a folder, not a link), and
+/// really resolves inside the folder once links further up are followed. The
+/// Recycle Bin rather than deletion, so a wrong pick costs a restore, not a
+/// file.
+pub fn remove_extra_files(dir: &Path, manifest: &ClientManifest, paths: &[String]) -> RemoveReport {
+    remove_extra_files_with(dir, manifest, paths, recycle)
+}
+
+/// [`remove_extra_files`] with the removal itself supplied, so the checks can
+/// be tested without filling the Recycle Bin of whoever runs the tests.
+fn remove_extra_files_with(
+    dir: &Path,
+    manifest: &ClientManifest,
+    paths: &[String],
+    remove: impl Fn(&Path) -> Result<(), String>,
+) -> RemoveReport {
+    use std::collections::HashSet;
+    let known: HashSet<String> = manifest
+        .files
+        .iter()
+        .map(|f| f.path.to_lowercase())
+        .collect();
+    let root = std::fs::canonicalize(dir).ok();
+    let mut report = RemoveReport::default();
+
+    for rel in paths {
+        let checked = (|| -> Result<(PathBuf, u64), String> {
+            if known.contains(&rel.to_lowercase()) {
+                return Err("listed in the official manifest; not removed".to_string());
+            }
+            let target = safe_join(dir, rel)?;
+            let meta = std::fs::symlink_metadata(&target)
+                .map_err(|e| format!("could not read it: {e}"))?;
+            if !meta.file_type().is_file() {
+                return Err("not a plain file; not removed".to_string());
+            }
+            // A junction further up the path would put the file somewhere else.
+            let real =
+                std::fs::canonicalize(&target).map_err(|e| format!("could not resolve it: {e}"))?;
+            match &root {
+                Some(root) if real.starts_with(root) => {}
+                _ => return Err("resolves outside the game folder; not removed".to_string()),
+            }
+            Ok((target, meta.len()))
+        })();
+
+        let outcome = checked.and_then(|(target, size)| remove(&target).map(|()| size));
+        match outcome {
+            Ok(size) => {
+                report.bytes += size;
+                report.removed.push(rel.clone());
+            }
+            Err(error) => report.failures.push(DownloadFailure {
+                path: rel.clone(),
+                error,
+            }),
+        }
+    }
+    report
+}
+
+/// Send one file to the Recycle Bin.
+///
+/// `FOF_WANTNUKEWARNING` matters: when a file cannot be recycled — too big for
+/// the bin, or the bin is off for that drive — Windows would otherwise delete
+/// it outright without a word, which is exactly what choosing the bin was
+/// meant to rule out. With it, Windows asks first.
+#[cfg(target_os = "windows")]
+fn recycle(path: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT,
+        FOF_WANTNUKEWARNING, FO_DELETE, SHFILEOPSTRUCTW,
+    };
+
+    // A list of paths, each ending in NUL, the whole list ending in another.
+    let mut from: Vec<u16> = path.as_os_str().encode_wide().collect();
+    from.extend([0, 0]);
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: from.as_ptr(),
+        fFlags: (FOF_ALLOWUNDO
+            | FOF_NOCONFIRMATION
+            | FOF_WANTNUKEWARNING
+            | FOF_NOERRORUI
+            | FOF_SILENT) as u16,
+        ..Default::default()
+    };
+    // SAFETY: `op` is fully initialised, and `from` is a double-NUL-terminated
+    // UTF-16 list that outlives the call.
+    let code = unsafe { SHFileOperationW(&mut op) };
+    if code != 0 {
+        return Err(format!(
+            "could not move it to the Recycle Bin (code {code})"
+        ));
+    }
+    if op.fAnyOperationsAborted != 0 {
+        return Err("not moved: the move was cancelled".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn recycle(_path: &Path) -> Result<(), String> {
+    Err("moving to the Recycle Bin is only supported on Windows".to_string())
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1589,6 +1730,124 @@ mod tests {
         dir
     }
 
+    /// Removal against a real folder, with deletion standing in for the
+    /// Recycle Bin.
+    fn remove_for_test(dir: &Path, manifest: &ClientManifest, paths: &[&str]) -> RemoveReport {
+        let paths: Vec<String> = paths.iter().map(|p| p.to_string()).collect();
+        remove_extra_files_with(dir, manifest, &paths, |p| {
+            std::fs::remove_file(p).map_err(|e| e.to_string())
+        })
+    }
+
+    #[test]
+    fn a_picked_extra_file_is_removed_and_counted() {
+        let dir = TempDir::new("extra_remove");
+        std::fs::write(dir.path().join("old.log"), b"12345678").unwrap();
+        let report = remove_for_test(dir.path(), &manifest(), &["old.log"]);
+
+        assert_eq!(report.removed, vec!["old.log"]);
+        assert_eq!(report.bytes, 8);
+        assert!(report.failures.is_empty());
+        assert!(!dir.path().join("old.log").exists());
+    }
+
+    /// The whole reason the checks exist: a game file is never removed, not
+    /// even when asked for under another casing.
+    #[test]
+    fn a_file_in_the_manifest_is_never_removed_whatever_its_case() {
+        let dir = TempDir::new("extra_manifest");
+        std::fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+        let report = remove_for_test(dir.path(), &manifest(), &["a.txt", "A.TXT"]);
+
+        assert!(report.removed.is_empty());
+        assert_eq!(report.failures.len(), 2);
+        assert!(dir.path().join("a.txt").exists());
+    }
+
+    #[test]
+    fn paths_that_leave_the_folder_or_are_not_plain_files_are_refused() {
+        let dir = TempDir::new("extra_escape");
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        let report = remove_for_test(
+            dir.path(),
+            &manifest(),
+            &[
+                "../outside.txt",
+                "C:/Windows/win.ini",
+                "sub",
+                "never-existed.txt",
+            ],
+        );
+
+        assert!(report.removed.is_empty());
+        assert_eq!(report.failures.len(), 4);
+        assert!(dir.path().join("sub").is_dir());
+    }
+
+    /// A link inside the folder is neither listed nor removable.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_link_inside_the_folder_is_not_followed() {
+        let outside = TempDir::new("extra_outside");
+        std::fs::write(outside.path().join("precious.txt"), b"not the game's").unwrap();
+        let dir = TempDir::new("extra_link");
+        let link = dir.path().join("linked.txt");
+        // Creating a symbolic link needs a privilege most test runs lack.
+        if std::os::windows::fs::symlink_file(outside.path().join("precious.txt"), &link).is_err() {
+            return;
+        }
+
+        let found = find_extra_files(dir.path(), &manifest(), &Arc::new(Control::default()));
+        assert!(!found.contains(&"linked.txt".to_string()), "{found:?}");
+
+        let report = remove_for_test(dir.path(), &manifest(), &["linked.txt"]);
+        assert!(report.removed.is_empty());
+        assert!(outside.path().join("precious.txt").exists());
+    }
+
+    /// A junction needs no privilege to make, which makes it the link a game
+    /// folder is most likely to really contain. Its files are neither listed
+    /// nor removable through it.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_junction_inside_the_folder_is_not_followed() {
+        let outside = TempDir::new("extra_junction_target");
+        std::fs::write(outside.path().join("precious.txt"), b"not the game's").unwrap();
+        let dir = TempDir::new("extra_junction");
+        let junction = dir.path().join("elsewhere");
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(outside.path())
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        assert!(made, "mklink /J should work without privileges");
+
+        let found = find_extra_files(dir.path(), &manifest(), &Arc::new(Control::default()));
+        assert!(found.is_empty(), "{found:?}");
+
+        let report = remove_for_test(dir.path(), &manifest(), &["elsewhere/precious.txt"]);
+        assert!(report.removed.is_empty(), "{:?}", report.removed);
+        assert!(outside.path().join("precious.txt").exists());
+
+        // Take the junction itself down before the folders are cleaned up, so
+        // nothing can ever reach through it.
+        std::fs::remove_dir(&junction).unwrap();
+        assert!(outside.path().join("precious.txt").exists());
+    }
+
+    /// A folder renamed in another case still holds the game's file.
+    #[test]
+    fn a_game_file_in_differently_cased_folders_is_not_extra() {
+        let dir = TempDir::new("extra_case");
+        std::fs::create_dir_all(dir.path().join("SUB")).unwrap();
+        std::fs::write(dir.path().join("SUB").join("B.BIN"), b"123").unwrap();
+
+        let found = find_extra_files(dir.path(), &manifest(), &Arc::new(Control::default()));
+        assert!(found.is_empty(), "{found:?}");
+    }
+
     #[tokio::test]
     async fn a_quick_scan_sees_sizes_and_a_full_scan_sees_content() {
         let dir = sample_dir();
@@ -2029,6 +2288,19 @@ mod tests {
 mod live_tests {
     use super::tests::TempDir;
     use super::*;
+
+    /// The real Recycle Bin call, on a file made for it. Ignored because it
+    /// leaves `maplelink_recycle_probe.txt` in the Recycle Bin of whoever runs it.
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore]
+    fn live_recycle_moves_a_file_out_of_the_folder() {
+        let dir = TempDir::new("recycle_probe");
+        let file = dir.path().join("maplelink_recycle_probe.txt");
+        std::fs::write(&file, b"safe to delete").unwrap();
+        recycle(&file).unwrap();
+        assert!(!file.exists());
+    }
 
     #[tokio::test]
     #[ignore]

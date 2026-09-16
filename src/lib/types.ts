@@ -149,6 +149,13 @@ export interface ClientDownloadReportDto {
   cancelled: boolean;
 }
 
+/** What moving extra files to the Recycle Bin did. */
+export interface ClientRemoveReportDto {
+  removed: string[];
+  failures: { path: string; error: string }[];
+  bytes: number;
+}
+
 /** Full-client torrent details, read from the Gamania Games Manager's public download chain. */
 export interface FullClientInfoDto {
   productName: string;

@@ -128,17 +128,42 @@ function TreeLevel<T>({
   );
 }
 
-/** A file the manifest does not mention: path only, nothing to compare. */
-function ExtraRow({ path, label, indent = 12 }: { path: string; label?: string; indent?: number }) {
+/**
+ * A file the manifest does not mention: path only, nothing to compare. It can
+ * be picked for the Recycle Bin, and starts unpicked — these are as likely to
+ * be the player's own settings and screenshots as leftovers.
+ */
+function ExtraRow({
+  path,
+  label,
+  indent = 12,
+  checked,
+  onToggle,
+  disabled,
+}: {
+  path: string;
+  label?: string;
+  indent?: number;
+  checked: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
   return (
-    <div
+    <label
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px", paddingLeft: indent }}
-      className="flex h-[30px] items-center border-b border-[var(--tb-border)] pr-3 font-mono text-[11px] text-text-dim last:border-b-0"
+      className="flex h-[30px] cursor-pointer items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 font-mono text-[11px] text-text-dim last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        disabled={disabled}
+        className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
+      />
       <span title={path} className="truncate">
         {label ?? path}
       </span>
-    </div>
+    </label>
   );
 }
 
@@ -303,6 +328,11 @@ export function VerifyPanel({
   inFlight,
   filter,
   setFilter,
+  extraSelected,
+  setExtraSelected,
+  onRemoveExtra,
+  extraBusy,
+  extraNotice,
 }: {
   report: ClientScanReportDto | null;
   selected: Set<string>;
@@ -316,6 +346,15 @@ export function VerifyPanel({
   /** Owned by the window, which points it at the work when a repair starts. */
   filter: Filter;
   setFilter: (next: Filter) => void;
+  /** Extra files picked for the Recycle Bin. */
+  extraSelected: Set<string>;
+  setExtraSelected: (next: Set<string>) => void;
+  /** Ask to move the picked extra files; the window confirms first. */
+  onRemoveExtra: () => void;
+  /** A clean-up or another job is running. */
+  extraBusy: boolean;
+  /** What the last clean-up did, when there was one. */
+  extraNotice: string | null;
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
@@ -500,7 +539,37 @@ export function VerifyPanel({
 
       {filter === "extra" ? (
         <>
-          <p className="shrink-0 text-[11px] text-text-dim">{t("client.extra_hint")}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-text-dim">
+              {t("client.extra_hint")}
+            </p>
+            {extras.length > 0 && (
+              <button
+                onClick={() => {
+                  // Over what is shown: a search narrows what "all" means.
+                  const shown = extras.every((p) => extraSelected.has(p));
+                  const next = new Set(extraSelected);
+                  for (const p of extras) {
+                    if (shown) next.delete(p);
+                    else next.add(p);
+                  }
+                  setExtraSelected(next);
+                }}
+                disabled={extraBusy}
+                className="shrink-0 rounded-lg border border-[var(--tb-border)] px-2.5 py-1 text-[11px] font-semibold text-text-dim hover:bg-[var(--surface-hover)] disabled:opacity-50"
+              >
+                {t("client.select_all")}
+              </button>
+            )}
+            <button
+              onClick={onRemoveExtra}
+              disabled={extraBusy || extraSelected.size === 0}
+              className="shrink-0 rounded-lg border border-[rgba(239,68,68,0.4)] px-2.5 py-1 text-[11px] font-semibold text-red-400 transition-colors hover:bg-[rgba(239,68,68,0.1)] disabled:border-[var(--tb-border)] disabled:text-text-faint disabled:hover:bg-transparent"
+            >
+              {t("client.extra_remove", { count: String(extraSelected.size) })}
+            </button>
+          </div>
+          {extraNotice && <p className="shrink-0 text-[11px] text-green-500">{extraNotice}</p>}
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[var(--tb-border)] bg-[var(--tb-card)]">
             {view === "folder" ? (
               <TreeLevel
@@ -514,11 +583,32 @@ export function VerifyPanel({
                     path={path}
                     label={path.split("/").pop() ?? path}
                     indent={10 + (depth + 1) * 16}
+                    checked={extraSelected.has(path)}
+                    onToggle={() => {
+                      const next = new Set(extraSelected);
+                      if (next.has(path)) next.delete(path);
+                      else next.add(path);
+                      setExtraSelected(next);
+                    }}
+                    disabled={extraBusy}
                   />
                 )}
               />
             ) : (
-              extras.map((p) => <ExtraRow key={p} path={p} />)
+              extras.map((p) => (
+                <ExtraRow
+                  key={p}
+                  path={p}
+                  checked={extraSelected.has(p)}
+                  onToggle={() => {
+                    const next = new Set(extraSelected);
+                    if (next.has(p)) next.delete(p);
+                    else next.add(p);
+                    setExtraSelected(next);
+                  }}
+                  disabled={extraBusy}
+                />
+              ))
             )}
             {extras.length === 0 && (
               <p className="p-3 text-[11px] text-text-faint">{t("client.nothing_here")}</p>
