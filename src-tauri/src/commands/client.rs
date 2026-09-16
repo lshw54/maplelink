@@ -141,21 +141,17 @@ pub async fn open_client_manager_window(app: tauri::AppHandle) -> Result<(), Err
 /// Fetch the official manifest and remember it for the scan and download that
 /// follow, so all three always talk about the same published version.
 ///
-/// `source` is where to ask; `None` is the automatic order.
+/// Whichever source answered last time is asked first (see
+/// `game_download::fetch_product_info_learning`).
 #[tauri::command]
 pub async fn client_load_manifest(
-    source: Option<crate::services::game_download::ManifestSource>,
     jobs: tauri::State<'_, ClientJobs>,
     app: tauri::AppHandle,
 ) -> Result<ClientManifest, ErrorDto> {
     let handle = app.clone();
-    let manifest = client_manager::fetch_manifest(
-        &app_data_dir(&app)?,
-        source.unwrap_or_default(),
-        move |attempt| {
-            let _ = handle.emit(MANIFEST_ATTEMPT_EVENT, attempt);
-        },
-    )
+    let manifest = client_manager::fetch_manifest(&app_data_dir(&app)?, move |attempt| {
+        let _ = handle.emit(MANIFEST_ATTEMPT_EVENT, attempt);
+    })
     .await
     .map_err(net("CLIENT_MANIFEST_FAILED"))?;
     let shared = Arc::new(manifest.clone());

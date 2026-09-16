@@ -19,7 +19,6 @@ import type {
   GameDownloadDto,
   FullClientInfoDto,
   ClientManifestDto,
-  ClientManifestSource,
   ClientScanReportDto,
   ClientDownloadReportDto,
   ClientLocalVersionDto,
@@ -203,8 +202,7 @@ export const commands = {
   // Client manager (its own window): compare a local install and fetch back
   // whatever does not match the official manifest.
   openClientManagerWindow: () => invoke("open_client_manager_window"),
-  clientLoadManifest: (source: ClientManifestSource) =>
-    invoke<ClientManifestDto>("client_load_manifest", { source }),
+  clientLoadManifest: () => invoke<ClientManifestDto>("client_load_manifest"),
   clientScan: (dir: string, mode: "quick" | "full") =>
     invoke<ClientScanReportDto>("client_scan", { dir, mode }),
   clientDownload: (dir: string, paths: string[], concurrency: number) =>

@@ -841,12 +841,25 @@ pub async fn get_game_download_list(
         })
 }
 
+/// Where the manifest fetch keeps which source worked, shared with the client
+/// manager so both learn the same thing.
+fn manifest_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, ErrorDto> {
+    use tauri::Manager;
+    app.path().app_data_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("failed to get app data dir: {e}"),
+        category: ErrorCategory::Process,
+        details: None,
+    })
+}
+
 /// Full-client torrent details, read from the same public chain the Gamania
 /// Games Manager uses. Links only — MapleLink never downloads client files.
 #[tauri::command]
 pub async fn get_game_full_client_info(
+    app: tauri::AppHandle,
 ) -> Result<crate::services::game_download::FullClientInfo, ErrorDto> {
-    crate::services::game_download::fetch_full_client_info()
+    crate::services::game_download::fetch_full_client_info(&manifest_data_dir(&app)?)
         .await
         .map_err(|e| ErrorDto {
             code: "SYS_FULL_CLIENT_INFO_FAILED".to_string(),
@@ -862,14 +875,15 @@ pub async fn get_game_full_client_info(
 /// written is the `.torrent` the user chose a path for.
 #[tauri::command]
 pub async fn save_game_full_client_torrent(app: tauri::AppHandle) -> Result<bool, ErrorDto> {
-    let (info, bytes) = crate::services::game_download::fetch_full_client_torrent()
-        .await
-        .map_err(|e| ErrorDto {
-            code: "SYS_FULL_CLIENT_TORRENT_FAILED".to_string(),
-            message: e,
-            category: ErrorCategory::Network,
-            details: None,
-        })?;
+    let (info, bytes) =
+        crate::services::game_download::fetch_full_client_torrent(&manifest_data_dir(&app)?)
+            .await
+            .map_err(|e| ErrorDto {
+                code: "SYS_FULL_CLIENT_TORRENT_FAILED".to_string(),
+                message: e,
+                category: ErrorCategory::Network,
+                details: None,
+            })?;
 
     let default_name = format!("MapleStory_{}.torrent", info.version);
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();

@@ -105,8 +105,8 @@ export interface ClientProgressDto {
   active: ClientActiveFileDto[];
 }
 
-/** Where the official file list is asked for. */
-export type ClientManifestSource = "auto" | "beanfun" | "catalog";
+/** Where the official file list was asked for. */
+export type ClientManifestSource = "beanfun" | "catalog";
 
 /** One try at one source, sent as it starts. */
 export interface ClientManifestAttemptDto {
