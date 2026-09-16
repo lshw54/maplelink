@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
-import type { ClientCheckedFileDto, ClientIssueKind, ClientScanReportDto } from "../../lib/types";
+import type {
+  ClientCheckedFileDto,
+  ClientFileState,
+  ClientIssueKind,
+  ClientScanReportDto,
+} from "../../lib/types";
 import { allDirPaths, buildTree, type DirNode } from "./file-tree";
 
 export type Filter = "all" | "issues" | "ok" | "extra";
@@ -167,6 +172,13 @@ function Chip({
   );
 }
 
+/** How a row reads while a download is running, and after it. */
+const LIVE: Record<ClientFileState, { label: string; colour: string; mark: string }> = {
+  downloading: { label: "client.status_downloading", colour: "text-accent", mark: "↓" },
+  done: { label: "client.status_repaired", colour: "text-green-500", mark: "✓" },
+  failed: { label: "client.status_failed", colour: "text-red-400", mark: "!" },
+};
+
 function FileRow({
   file,
   checked,
@@ -174,6 +186,7 @@ function FileRow({
   onToggle,
   label,
   indent = 12,
+  state,
 }: {
   file: ClientCheckedFileDto;
   checked: boolean;
@@ -183,6 +196,8 @@ function FileRow({
   label?: string;
   /** Left padding in pixels, so a nested row lines up under its folder. */
   indent?: number;
+  /** What the running download has done with this file, if anything yet. */
+  state?: ClientFileState;
 }) {
   const { t } = useTranslation();
   const issue = file.kind !== null;
@@ -195,6 +210,9 @@ function FileRow({
         local: file.localSize === null ? "—" : formatBytes(file.localSize),
       })} ${t("client.issue_will_replace")}`
     : t("client.issue_why_ok");
+  // A file being fetched right now is no longer described by the scan that
+  // found it: what it is doing matters more than what was wrong with it.
+  const live = state ? LIVE[state] : null;
 
   return (
     <div
@@ -202,7 +220,9 @@ function FileRow({
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 30px", paddingLeft: indent }}
       className="flex h-[30px] items-center gap-2.5 border-b border-[var(--tb-border)] pr-3 last:border-b-0 hover:bg-[var(--surface-hover)]"
     >
-      {issue ? (
+      {live ? (
+        <span className={`w-3.5 shrink-0 text-center text-[11px] ${live.colour}`}>{live.mark}</span>
+      ) : issue ? (
         <input
           type="checkbox"
           checked={checked}
@@ -223,10 +243,10 @@ function FileRow({
       <span
         title={why}
         className={`w-24 shrink-0 cursor-help text-right text-[10px] font-semibold ${
-          issue ? "text-yellow-500" : "text-text-faint"
+          live ? live.colour : issue ? "text-yellow-500" : "text-text-faint"
         }`}
       >
-        {issue ? t(issueLabel(kind, outdated)) : t("client.status_ok")}
+        {live ? t(live.label) : issue ? t(issueLabel(kind, outdated)) : t("client.status_ok")}
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-[10px] text-text-faint">
         {formatBytes(file.expectedSize)}
@@ -241,12 +261,15 @@ export function VerifyPanel({
   selected,
   setSelected,
   outdated = false,
+  live,
 }: {
   report: ClientScanReportDto | null;
   selected: Set<string>;
   setSelected: (next: Set<string>) => void;
   /** The installed client is behind the official version, per the version marker. */
   outdated?: boolean;
+  /** What the running download has reached so far, path by path. */
+  live?: ReadonlyMap<string, ClientFileState>;
 }) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("all");
@@ -442,6 +465,7 @@ export function VerifyPanel({
                   indent={10 + (depth + 1) * 16}
                   checked={selected.has(f.path)}
                   outdated={outdated}
+                  state={live?.get(f.path)}
                   onToggle={() => {
                     const next = new Set(selected);
                     if (next.has(f.path)) next.delete(f.path);
@@ -458,6 +482,7 @@ export function VerifyPanel({
                 file={f}
                 checked={selected.has(f.path)}
                 outdated={outdated}
+                state={live?.get(f.path)}
                 onToggle={() => {
                   const next = new Set(selected);
                   if (next.has(f.path)) next.delete(f.path);

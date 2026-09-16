@@ -10,7 +10,9 @@ import { useInitialConfigSync, useThemeEffect } from "../../lib/hooks/use-app-ch
 import { VerifyPanel } from "./VerifyPanel";
 import { DownloadPanel } from "./DownloadPanel";
 import type {
+  ClientDownloadFileDto,
   ClientDownloadReportDto,
+  ClientFileState,
   ClientLocalVersionDto,
   ClientManifestDto,
   ClientProgressDto,
@@ -152,7 +154,6 @@ export function ClientManagerApp() {
   const [local, setLocal] = useState<ClientLocalVersionDto | null | undefined>(undefined);
   const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [direct, setDirect] = useState(true);
   const [autoCheck, setAutoCheck] = useState(false);
   // `undefined` until the stored answer is read, so the prompt cannot flash.
   const [askAutoCheck, setAskAutoCheck] = useState<boolean | undefined>(undefined);
@@ -161,6 +162,17 @@ export function ClientManagerApp() {
   // Bytes per second, measured between progress events rather than assumed.
   const [rate, setRate] = useState(0);
   const rateSample = useRef<{ at: number; bytes: number } | null>(null);
+  /**
+   * What each file is doing right now, for the list.
+   *
+   * Events arrive twice per file — 2,500 of them in a full install — so they
+   * are collected in a ref and handed to React on the progress tick instead.
+   * Rebuilding a 1,263-row list per event is what would make the window crawl
+   * exactly while it is busiest.
+   */
+  const liveFiles = useRef(new Map<string, ClientFileState>());
+  const liveDirty = useRef(false);
+  const [liveStates, setLiveStates] = useState<ReadonlyMap<string, ClientFileState>>(new Map());
 
   useEffect(() => {
     document.title = t("client.title");
@@ -186,6 +198,10 @@ export function ClientManagerApp() {
   useEffect(() => {
     function track(p: ClientProgressDto) {
       setProgress(p);
+      if (liveDirty.current) {
+        liveDirty.current = false;
+        setLiveStates(new Map(liveFiles.current));
+      }
       const now = performance.now();
       const last = rateSample.current;
       // Average over at least half a second, or the number jumps around.
@@ -199,9 +215,14 @@ export function ClientManagerApp() {
     }
     const scan = listen<ClientProgressDto>("client-scan-progress", (e) => track(e.payload));
     const down = listen<ClientProgressDto>("client-download-progress", (e) => track(e.payload));
+    const file = listen<ClientDownloadFileDto>("client-download-file", (e) => {
+      liveFiles.current.set(e.payload.path, e.payload.state);
+      liveDirty.current = true;
+    });
     return () => {
       scan.then((un) => un());
       down.then((un) => un());
+      file.then((un) => un());
     };
   }, []);
 
@@ -324,25 +345,33 @@ export function ClientManagerApp() {
     // `scanInto` has no dependencies of its own, so this still runs once.
   }, [scanInto]);
 
-  const downloadInto = useCallback(
-    async (target: string, paths: string[]) => {
-      setError(null);
-      setPaused(false);
-      setRate(0);
-      rateSample.current = null;
-      setProgress(null);
-      setPhase("downloading");
-      try {
-        const r = await commands.clientDownload(target, paths, direct);
-        setOutcome(r);
-        setPhase("done");
-      } catch (e) {
-        setError(errorMessage(e));
-        setPhase("scanned");
+  const downloadInto = useCallback(async (target: string, paths: string[]) => {
+    setError(null);
+    setPaused(false);
+    setRate(0);
+    rateSample.current = null;
+    setProgress(null);
+    liveFiles.current = new Map();
+    liveDirty.current = false;
+    setLiveStates(new Map());
+    setPhase("downloading");
+    try {
+      const r = await commands.clientDownload(target, paths);
+      setOutcome(r);
+      setPhase("done");
+    } catch (e) {
+      setError(errorMessage(e));
+      setPhase("scanned");
+    } finally {
+      // Whatever was mid-flight when the run ended is not still downloading —
+      // a cancelled file has no event of its own, so it is dropped here.
+      for (const [path, state] of liveFiles.current) {
+        if (state === "downloading") liveFiles.current.delete(path);
       }
-    },
-    [direct],
-  );
+      liveDirty.current = false;
+      setLiveStates(new Map(liveFiles.current));
+    }
+  }, []);
 
   const runDownload = useCallback(
     () => downloadInto(dir, [...selected]),
@@ -419,7 +448,11 @@ export function ClientManagerApp() {
       };
     }
     if (phase === "downloading") {
-      return { headline: t("client.downloading"), detail: counted, tone: "busy" };
+      return {
+        headline: t("client.downloading"),
+        detail: `${counted}${progress?.current ? ` · ${progress.current}` : ""}`,
+        tone: "busy",
+      };
     }
     if (outcome) {
       // A cancelled run stopped part-way; saying "done" would be a lie.
@@ -665,6 +698,7 @@ export function ClientManagerApp() {
             selected={selected}
             setSelected={setSelected}
             outdated={local != null && !local.matchesOfficial}
+            live={liveStates}
           />
         </>
       ) : (
@@ -723,19 +757,6 @@ export function ClientManagerApp() {
                         className="accent-[var(--accent)]"
                       />
                       <span className="font-semibold">{t("client.auto_check_toggle")}</span>
-                    </label>
-                    <label
-                      title={t("client.direct_hint")}
-                      className="flex cursor-pointer items-center gap-1.5 text-[11px]"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={direct}
-                        onChange={(e) => setDirect(e.target.checked)}
-                        disabled={busy}
-                        className="accent-[var(--accent)]"
-                      />
-                      <span className="font-semibold">{t("client.direct")}</span>
                     </label>
                   </div>
                 </div>

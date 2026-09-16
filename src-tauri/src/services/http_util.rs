@@ -12,6 +12,29 @@ use futures_util::StreamExt;
 pub const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
+/// An error with everything underneath it, joined into one line.
+///
+/// `reqwest::Error` prints only its own layer — `error sending request for url
+/// (https://...)` — and drops the cause that says whether the name did not
+/// resolve, the proxy refused the connection, or TLS failed. For a player
+/// running an accelerator that cause is the entire answer, so it is worth the
+/// longer message.
+pub fn with_causes(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let next = cause.to_string();
+        // hyper repeats its message through the chain; saying it twice helps
+        // nobody read it.
+        if !text.contains(&next) {
+            text.push_str(": ");
+            text.push_str(&next);
+        }
+        source = cause.source();
+    }
+    text
+}
+
 /// Read a response body, stopping at `limit` rather than at whatever the sender
 /// decides to send.
 ///

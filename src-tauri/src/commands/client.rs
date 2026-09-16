@@ -21,6 +21,10 @@ pub const CLIENT_WINDOW_LABEL: &str = "client_manager";
 
 const SCAN_PROGRESS_EVENT: &str = "client-scan-progress";
 const DOWNLOAD_PROGRESS_EVENT: &str = "client-download-progress";
+/// One file starting, landing or failing. Two of these per file is nothing
+/// next to the 400ms tick, and it is what lets the list move while the run is
+/// still going.
+const DOWNLOAD_FILE_EVENT: &str = "client-download-file";
 /// How often a running download reports itself. Often enough to look live,
 /// rarely enough that 1263 files do not flood the webview.
 const TICK: std::time::Duration = std::time::Duration::from_millis(400);
@@ -197,7 +201,6 @@ pub async fn client_scan(
 pub async fn client_download(
     dir: String,
     paths: Vec<String>,
-    direct: bool,
     app: tauri::AppHandle,
     jobs: tauri::State<'_, ClientJobs>,
 ) -> Result<DownloadReport, ErrorDto> {
@@ -227,9 +230,16 @@ pub async fn client_download(
         PathBuf::from(&dir),
         manifest,
         paths,
-        direct,
         guard.cancel.clone(),
         progress.clone(),
+        {
+            let handle = app.clone();
+            move |e| {
+                if let Err(e) = handle.emit(DOWNLOAD_FILE_EVENT, e) {
+                    tracing::warn!("client download: file emit failed: {e}");
+                }
+            }
+        },
     )
     .await
     .map_err(|e| err("CLIENT_DOWNLOAD_FAILED", e, ErrorCategory::Network));
@@ -240,7 +250,7 @@ pub async fn client_download(
 
     let report = report?;
     tracing::info!(
-        "client download into {dir} (direct={direct}): {} of {} written, {} failed, cancelled={}",
+        "client download into {dir}: {} of {} written, {} failed, cancelled={}",
         report.written,
         report.requested,
         report.failures.len(),

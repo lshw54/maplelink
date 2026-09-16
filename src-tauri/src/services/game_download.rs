@@ -232,11 +232,12 @@ pub async fn fetch_product_info_body() -> Result<(String, String), String> {
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
-    let resp = client
-        .get(PRODUCT_LIST_URL)
-        .send()
-        .await
-        .map_err(|e| format!("product list request failed: {e}"))?;
+    let resp = client.get(PRODUCT_LIST_URL).send().await.map_err(|e| {
+        format!(
+            "product list request failed: {}",
+            crate::services::http_util::with_causes(&e)
+        )
+    })?;
     if !resp.status().is_success() {
         return Err(format!("product list returned HTTP {}", resp.status()));
     }
@@ -245,11 +246,12 @@ pub async fn fetch_product_info_body() -> Result<(String, String), String> {
         .ok_or_else(|| "product list body unreadable".to_string())?;
     let info_url = product_info_url(&body)?;
 
-    let resp = client
-        .get(&info_url)
-        .send()
-        .await
-        .map_err(|e| format!("product info request failed: {e}"))?;
+    let resp = client.get(&info_url).send().await.map_err(|e| {
+        format!(
+            "product info request failed: {}",
+            crate::services::http_util::with_causes(&e)
+        )
+    })?;
     if !resp.status().is_success() {
         return Err(format!("product info returned HTTP {}", resp.status()));
     }

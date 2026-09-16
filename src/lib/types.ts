@@ -103,6 +103,15 @@ export interface ClientProgressDto {
   current: string;
 }
 
+/** How one file is doing during a download, as the backend reports it. */
+export type ClientFileState = "downloading" | "done" | "failed";
+
+export interface ClientDownloadFileDto {
+  path: string;
+  state: ClientFileState;
+  error: string | null;
+}
+
 export interface ClientDownloadReportDto {
   requested: number;
   written: number;

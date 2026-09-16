@@ -203,8 +203,8 @@ export const commands = {
   clientLoadManifest: () => invoke<ClientManifestDto>("client_load_manifest"),
   clientScan: (dir: string, mode: "quick" | "full") =>
     invoke<ClientScanReportDto>("client_scan", { dir, mode }),
-  clientDownload: (dir: string, paths: string[], direct: boolean) =>
-    invoke<ClientDownloadReportDto>("client_download", { dir, paths, direct }),
+  clientDownload: (dir: string, paths: string[]) =>
+    invoke<ClientDownloadReportDto>("client_download", { dir, paths }),
   clientCancel: () => invoke("client_cancel"),
   clientSetPaused: (paused: boolean) => invoke("client_set_paused", { paused }),
   prefGet: (key: string) => invoke<string | null>("pref_get", { key }),

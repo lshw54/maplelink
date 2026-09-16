@@ -23,6 +23,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use crate::services::http_util;
+
 /// How many files to fetch at once. beanfun's CDN is fine with this and it
 /// keeps a slow file from stalling the run, without looking like an attack.
 const DOWNLOAD_CONCURRENCY: usize = 6;
@@ -791,18 +793,66 @@ pub struct DownloadProgress {
     pub files_total: AtomicU64,
     pub bytes_done: AtomicU64,
     pub bytes_total: AtomicU64,
+    /// What is in flight right now, oldest first.
+    ///
+    /// Six files are fetched at once, so "the file being downloaded" is a
+    /// choice rather than a fact. The oldest is the one that has been on
+    /// screen longest and the one most likely to still be there next tick,
+    /// which is what keeps the line from flickering between six names.
+    active: std::sync::Mutex<Vec<String>>,
 }
 
 impl DownloadProgress {
+    fn begin(&self, path: &str) {
+        self.active
+            .lock()
+            .expect("download progress lock")
+            .push(path.to_string());
+    }
+
+    fn finish(&self, path: &str) {
+        let mut active = self.active.lock().expect("download progress lock");
+        if let Some(at) = active.iter().position(|p| p == path) {
+            active.remove(at);
+        }
+    }
+
     pub fn snapshot(&self) -> Progress {
+        let current = self
+            .active
+            .lock()
+            .expect("download progress lock")
+            .first()
+            .cloned()
+            .unwrap_or_default();
         Progress {
             done: self.files_done.load(Ordering::Relaxed) as usize,
             total: self.files_total.load(Ordering::Relaxed) as usize,
             bytes_done: self.bytes_done.load(Ordering::Relaxed),
             bytes_total: self.bytes_total.load(Ordering::Relaxed),
-            current: String::new(),
+            current,
         }
     }
+}
+
+/// Where one file has got to. The report at the end says the same thing, but a
+/// 67 GB run is an hour of a list that never moves.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FileState {
+    Downloading,
+    Done,
+    Failed,
+}
+
+/// One file changing state, sent as it happens.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEvent {
+    pub path: String,
+    pub state: FileState,
+    /// Why it failed, for the file that did.
+    pub error: Option<String>,
 }
 
 /// Fetch the named manifest paths into `dir`.
@@ -810,16 +860,21 @@ impl DownloadProgress {
 /// Each file is written beside its target and renamed over it only after its
 /// SHA-256 matches what beanfun published, so a failure anywhere leaves the
 /// existing file exactly as it was.
-/// `direct` bypasses the system proxy. Players running a game accelerator
-/// often reach beanfun's CDN faster without it, and the CDN is the same host
-/// either way — so this is a choice, not a default.
+///
+/// The transfer takes the same route as every other request this app makes:
+/// whatever proxy the machine is set to, which is how an accelerator gets to
+/// carry it. It used to be able to opt out of that with `no_proxy`, which is
+/// exactly the thing a player behind an accelerator must not do.
+///
+/// `on_file` is told about each file as it starts and as it lands, so the
+/// caller can move a list while the run is going rather than at the end of it.
 pub async fn download(
     dir: PathBuf,
     manifest: Arc<ClientManifest>,
     paths: Vec<String>,
-    direct: bool,
     cancel: Cancel,
     progress: Arc<DownloadProgress>,
+    on_file: impl Fn(FileEvent) + Send + Sync + 'static,
 ) -> Result<DownloadReport, String> {
     use futures_util::stream::StreamExt;
 
@@ -839,16 +894,13 @@ pub async fn download(
     progress
         .bytes_total
         .store(files.iter().map(|f| f.size).sum(), Ordering::Relaxed);
-    let mut builder = reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .user_agent(crate::services::http_util::USER_AGENT)
         // No overall timeout: a 186 MB file on a slow line is not a failure.
-        .connect_timeout(std::time::Duration::from_secs(20));
-    if direct {
-        builder = builder.no_proxy();
-    }
-    let client = builder
+        .connect_timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let on_file = Arc::new(on_file);
 
     let failures = Arc::new(tokio::sync::Mutex::new(Vec::new()));
     // Counted on success only. Deriving it from `total - failures` would call
@@ -865,10 +917,17 @@ pub async fn download(
             );
             let (failures, progress, written) =
                 (failures.clone(), progress.clone(), written.clone());
+            let on_file = on_file.clone();
             async move {
                 if !cancel.hold_async().await {
                     return;
                 }
+                progress.begin(&f.path);
+                on_file(FileEvent {
+                    path: f.path.clone(),
+                    state: FileState::Downloading,
+                    error: None,
+                });
                 // Bytes already counted for this file, so a retry or a failure
                 // can be rolled back out of the running total.
                 let counted = Arc::new(AtomicU64::new(0));
@@ -879,16 +938,29 @@ pub async fn download(
                     p.bytes_done.fetch_add(n, Ordering::Relaxed);
                 })
                 .await;
+                progress.finish(&f.path);
                 if result.is_ok() {
                     written.fetch_add(1, Ordering::Relaxed);
+                    on_file(FileEvent {
+                        path: f.path.clone(),
+                        state: FileState::Done,
+                        error: None,
+                    });
                 }
                 if let Err(e) = result {
                     // The file did not land, so its bytes are not progress.
                     progress
                         .bytes_done
                         .fetch_sub(counted.load(Ordering::Relaxed), Ordering::Relaxed);
+                    // A cancelled run did not fail this file, it stopped it, so
+                    // it is neither reported nor marked as a failure.
                     if !cancel.is_cancelled() {
                         tracing::warn!("client manager: {} failed: {e}", f.path);
+                        on_file(FileEvent {
+                            path: f.path.clone(),
+                            state: FileState::Failed,
+                            error: Some(e.clone()),
+                        });
                         failures.lock().await.push(DownloadFailure {
                             path: f.path.clone(),
                             error: e,
@@ -941,7 +1013,7 @@ async fn fetch_one(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("request failed: {e}"))?;
+        .map_err(|e| format!("request failed: {}", http_util::with_causes(&e)))?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -959,7 +1031,7 @@ async fn fetch_one(
         }
         match stream.next().await {
             None => break Ok(()),
-            Some(Err(e)) => break Err(format!("transfer failed: {e}")),
+            Some(Err(e)) => break Err(format!("transfer failed: {}", http_util::with_causes(&e))),
             Some(Ok(chunk)) => {
                 written += chunk.len() as u64;
                 if written > f.size {
@@ -1493,9 +1565,9 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             vec!["a.txt".to_string(), "sub/b.bin".to_string()],
-            false,
             cancel,
             Arc::new(DownloadProgress::default()),
+            |_| {},
         )
         .await
         .unwrap();
@@ -1514,9 +1586,9 @@ mod tests {
             dir.path().to_path_buf(),
             Arc::new(manifest()),
             vec!["not-in-manifest.dll".to_string()],
-            false,
             Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
+            |_| {},
         )
         .await
         .unwrap_err();
@@ -1609,9 +1681,9 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest.clone(),
             picked.clone(),
-            false,
             cancel.clone(),
             progress.clone(),
+            |_| {},
         )
         .await
         .unwrap();
@@ -1663,9 +1735,9 @@ mod live_tests {
             dir.path().to_path_buf(),
             manifest,
             vec![victim.path.clone()],
-            false,
             Arc::new(Control::default()),
             Arc::new(DownloadProgress::default()),
+            |_| {},
         )
         .await
         .unwrap();
