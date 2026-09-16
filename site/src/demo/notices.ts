@@ -24,6 +24,16 @@ export function noticeKind(n: Notice): "notice" | "update" {
 
 export const NOTICES: Notice[] = [
   {
+    id: "v0-6-1",
+    date: "2026-09",
+    kind: "update",
+    title: {
+      "zh-TW": "MapleLink v0.6.1：遊戲客戶端管理員支援加速器、修復進度即時顯示、可清理額外檔案。",
+      "zh-CN": "MapleLink v0.6.1：游戏客户端管理器支持加速器、修复进度实时显示、可清理额外文件。",
+      en: "MapleLink v0.6.1: the client manager works behind accelerators, shows repairs live, and cleans up extra files.",
+    },
+  },
+  {
     id: "v0-6-0",
     date: "2026-09",
     kind: "update",

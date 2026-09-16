@@ -51,6 +51,42 @@ MapleLink 目前与原版 Beanfun 维持双线并行开发，旨在为玩家提�
 <div className="timeline">
 
 <section className="tl-item">
+<div className="tl-meta"><time>2026-09-16</time><span className="tl-tag">正式版</span></div>
+
+## MapleLink v0.6.1 {#v0-6-1}
+
+**新功能**
+
+- 游戏客户端管理器可以在加速器下使用：官方清单直接向 beanfun 以 HTTPS 获取，连接按照 Windows 系统代理
+- 清单来源可选自动、beanfun 或 HiNet 目录，自动模式会记住可用的来源；新增「测试来源」
+- 修复时每个文件各有进度条，清单实时更新，完成的文件自动取消勾选
+- 可以设置同时下载的文件数
+- 窗口顶部显示官方版本、本机客户端、磁盘空间与网络状态
+- 额外文件可以勾选后移至回收站
+
+**更安全**
+
+- 只接受下载地址为 beanfun 官方 CDN（HTTPS）的清单，被改过的清单副本会被拒绝
+- 清理额外文件时不会跟随链接，也不会移走官方清单上的文件
+
+**修正**
+
+- 单个文件连接中断时自动重试，不再导致整次修复失败
+- 深色主题下的下拉菜单看不清楚
+- 设置页的下拉菜单被卡片截断
+- 新手引导的「跳过」点不到
+- 错误信息显示 [object Object]，改为显示实际原因
+- 次要文字的颜色对比不足，看不清楚
+
+**其他**
+
+- 官方网站的游戏客户端页面与界面演示同步更新
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.1">GitHub Releases：v0.6.1</a></p>
+
+</section>
+
+<section className="tl-item">
 <div className="tl-meta"><time>2026-09-11</time><span className="tl-tag">正式版</span></div>
 
 ## MapleLink v0.6.0 {#v0-6-0}

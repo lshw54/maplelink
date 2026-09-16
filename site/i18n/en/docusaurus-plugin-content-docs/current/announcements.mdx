@@ -51,6 +51,42 @@ What changed in each version is listed below; the full history and downloads are
 <div className="timeline">
 
 <section className="tl-item">
+<div className="tl-meta"><time>2026-09-16</time><span className="tl-tag">Stable</span></div>
+
+## MapleLink v0.6.1 {#v0-6-1}
+
+**New**
+
+- The game client manager works behind accelerators: the official manifest comes straight from beanfun over HTTPS, and connections follow the Windows system proxy
+- Choose where the manifest comes from — Automatic, beanfun or the HiNet catalog; Automatic remembers the source that works, and Test sources compares both
+- Repairs show a progress bar per file, the list updates live, and finished files are unticked
+- Set how many files download at once
+- The window header shows the official version, the installed client, disk space and network status
+- Extra files can be picked and moved to the Recycle Bin
+
+**Safer**
+
+- Only a manifest whose download address is beanfun's official CDN over HTTPS is accepted; an edited copy is refused
+- Cleaning up extra files never follows a link and never moves a file listed in the official manifest
+
+**Fixed**
+
+- A dropped connection on one file is retried instead of failing the whole repair
+- Dropdown lists were unreadable on the dark theme
+- A settings dropdown was cut off by its card
+- The onboarding Skip button could not be clicked
+- Error messages said [object Object] instead of what went wrong
+- Secondary text lacked contrast and was hard to read
+
+**Other**
+
+- The website's game client page and UI demo are up to date
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.1">GitHub Releases: v0.6.1</a></p>
+
+</section>
+
+<section className="tl-item">
 <div className="tl-meta"><time>2026-09-11</time><span className="tl-tag">Stable</span></div>
 
 ## MapleLink v0.6.0 {#v0-6-0}
