@@ -689,36 +689,20 @@ export function ClientManagerApp() {
         </div>
       )}
 
-      {/* Which game and which version, then the four things a player checks
-          before and during a repair: the install, the disk, the route, the CDN. */}
-      <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-[20px] leading-none font-bold tracking-tight">
-              {manifest?.productName ?? "…"}
-            </h1>
-            <span className="text-[13px] leading-none font-semibold text-text-dim">
-              {manifest?.fullVersion ?? manifest?.version ?? ""}
-            </span>
-          </div>
-          {manifest && (
-            <p className="mt-1.5 text-[11px] leading-none text-text-faint">
-              {[
-                manifest.publishDate && t("client.published", { date: manifest.publishDate }),
-                exeDate && t("client.exe_dated", { date: exeDate }),
-                t("client.stats", {
-                  count: String(manifest.fileCount),
-                  size: formatBytes(manifest.totalBytes),
-                }),
-              ]
-                .filter(Boolean)
-                .join("  ·  ")}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="grid shrink-0 grid-cols-2 gap-2.5 px-6 pb-4 min-[860px]:grid-cols-4">
+      {/* Four tiles and nothing above them. The game and its version used to
+          sit over these as a title with a line of dates, and once the tiles
+          existed that only said the same things twice. */}
+      <div className="grid shrink-0 grid-cols-2 gap-2.5 px-6 pt-1 pb-4 min-[860px]:grid-cols-4">
+        <StatTile
+          caption={manifest?.productName ?? t("client.official_version")}
+          value={manifest?.fullVersion ?? manifest?.version ?? "…"}
+          sub={[
+            manifest?.publishDate && t("client.published", { date: manifest.publishDate }),
+            exeDate && t("client.exe_dated", { date: exeDate }),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        />
         <StatTile
           caption={t("client.stat_local")}
           value={
@@ -727,7 +711,7 @@ export function ClientManagerApp() {
               : local === null
                 ? t("client.local_none")
                 : local.matchesOfficial
-                  ? (manifest?.fullVersion ?? manifest?.version ?? "")
+                  ? t("client.up_to_date")
                   : t("client.update_available")
           }
           valueClass={
@@ -738,14 +722,21 @@ export function ClientManagerApp() {
                 : "text-yellow-500"
           }
           sub={
-            local == null
-              ? ""
-              : local.matchesOfficial
-                ? t("client.up_to_date")
-                : t("client.local_candidates", {
-                    candidates:
-                      local.candidates.map((v) => `V${v}`).join(" / ") || String(local.marker),
-                  })
+            // The version marker says which build this is; the file check says
+            // whether the files agree with it. Two different questions.
+            local && !local.matchesOfficial
+              ? t("client.local_candidates", {
+                  candidates:
+                    local.candidates.map((v) => `V${v}`).join(" / ") || String(local.marker),
+                })
+              : phase === "scanning"
+                ? t("client.scanning")
+                : report && !report.cancelled
+                  ? t("client.local_files_ok", {
+                      ok: String(report.files.length - report.issueCount),
+                      total: String(report.totalFiles),
+                    })
+                  : t("client.local_not_checked")
           }
         />
         <StatTile
@@ -764,57 +755,48 @@ export function ClientManagerApp() {
                 : ""
           }
         />
+        {/* Where the downloads come out and how fast the CDN answers along that
+            route: one question, so one tile. */}
         <StatTile
           caption={t("client.stat_network")}
-          title={t("client.net_hint")}
+          title={net?.error ?? t("client.net_hint")}
           value={
-            net === undefined
-              ? t("client.net_testing")
-              : net.country
-                ? (regionName(net.country, language) ?? net.country)
-                : t("client.net_region_unknown")
-          }
-          valueClass={net === undefined ? "text-text-faint" : "text-[var(--text)]"}
-          sub={
-            net === undefined
-              ? ""
-              : net.proxy
-                ? t("client.net_via_proxy", { proxy: net.proxy })
-                : net.pac
-                  ? t("client.net_pac")
-                  : t("client.net_no_proxy")
-          }
-        />
-        <StatTile
-          caption={t("client.stat_latency")}
-          title={net?.error ?? t("client.latency_hint")}
-          value={
-            net === undefined || netTesting
-              ? t("client.net_testing")
-              : net.latencyMs !== null
-                ? `${net.latencyMs} ms`
-                : t("client.net_unreachable")
-          }
-          valueClass={
-            net === undefined || netTesting
-              ? "text-text-faint"
-              : net.latencyMs !== null
-                ? latencyTone(net.latencyMs)
-                : "text-red-400"
-          }
-          sub={
-            // While files are moving, the speed is the number that matters.
-            phase === "downloading" && rate > 0 ? (
-              t("client.rate", { rate: formatBytes(rate) })
+            net === undefined || netTesting ? (
+              t("client.net_testing")
             ) : (
+              <>
+                {net.country
+                  ? (regionName(net.country, language) ?? net.country)
+                  : t("client.net_region_unknown")}
+                <span
+                  className={net.latencyMs !== null ? latencyTone(net.latencyMs) : "text-red-400"}
+                >
+                  {" · "}
+                  {net.latencyMs !== null ? `${net.latencyMs} ms` : t("client.net_unreachable")}
+                </span>
+              </>
+            )
+          }
+          valueClass={net === undefined || netTesting ? "text-text-faint" : "text-[var(--text)]"}
+          sub={
+            <>
+              <span className="min-w-0 truncate">
+                {net === undefined
+                  ? ""
+                  : net.proxy
+                    ? t("client.net_via_proxy", { proxy: net.proxy })
+                    : net.pac
+                      ? t("client.net_pac")
+                      : t("client.net_no_proxy")}
+              </span>
               <button
                 onClick={() => void retestNetwork()}
                 disabled={net === undefined || netTesting}
-                className="font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
+                className="ml-2 shrink-0 font-semibold text-text-dim underline decoration-dotted underline-offset-2 hover:text-accent disabled:no-underline disabled:opacity-50"
               >
                 {t("client.net_retest")}
               </button>
-            )
+            </>
           }
         />
       </div>
