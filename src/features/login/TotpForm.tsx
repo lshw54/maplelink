@@ -34,8 +34,14 @@ export function TotpForm({ onBack }: TotpFormProps) {
   function handleInput(idx: number, value: string) {
     const cleaned = value.replace(/[^0-9]/g, "");
     if (!cleaned) return;
+    // The newest character wins: a box that already held a digit reports both.
+    putDigit(idx, cleaned[cleaned.length - 1] ?? "");
+  }
+
+  /** Put `digit` in box `idx`, replacing what was there, and move on. */
+  function putDigit(idx: number, digit: string) {
     const next = [...digits];
-    next[idx] = cleaned[0] ?? "";
+    next[idx] = digit;
     setDigits(next);
     if (idx < 5) {
       inputRefs.current[idx + 1]?.focus();
@@ -57,6 +63,25 @@ export function TotpForm({ onBack }: TotpFormProps) {
   }
 
   function handleKeyDown(idx: number, e: KeyboardEvent<HTMLInputElement>) {
+    // A digit always replaces the box's digit. Left to the input, a box that
+    // already held one refused it (maxLength 1) unless its text happened to be
+    // selected — so correcting a typo worked for the first box, which was, and
+    // not for the next, which focus had just moved to.
+    if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      putDigit(idx, e.key);
+      return;
+    }
+    if (e.key === "ArrowLeft" && idx > 0) {
+      e.preventDefault();
+      inputRefs.current[idx - 1]?.focus();
+      return;
+    }
+    if (e.key === "ArrowRight" && idx < 5) {
+      e.preventDefault();
+      inputRefs.current[idx + 1]?.focus();
+      return;
+    }
     if (e.key === "Backspace") {
       e.preventDefault();
       const next = [...digits];
@@ -151,6 +176,7 @@ export function TotpForm({ onBack }: TotpFormProps) {
               value={d}
               onChange={(e) => handleInput(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
+              onFocus={(e) => e.target.select()}
               onPaste={i === 0 ? handlePaste : undefined}
               disabled={totp.isPending}
               className="h-12 w-10 rounded-[10px] border-[1.5px] border-border bg-[var(--surface)] text-center font-mono text-[22px] font-extrabold text-accent caret-accent transition-all outline-none focus:border-accent focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring),0_0_12px_rgba(var(--accent-rgb),0.1)] disabled:opacity-50"

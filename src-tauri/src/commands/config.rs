@@ -208,6 +208,14 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "otpAutoInput" | "otp_auto_input" => {
             config.otp_auto_input = parse_bool(value)?;
         }
+        "enterAction" | "enter_action" => {
+            config.enter_action =
+                crate::models::config::parse_enter_action(value).ok_or_else(|| {
+                    ConfigError::ParseError {
+                        reason: format!("expected ask, copy or otp, got: {value}"),
+                    }
+                })?;
+        }
         "defaultLoginView" | "default_login_view" => {
             config.default_login_view = match value.to_lowercase().as_str() {
                 "normal" => DefaultLoginView::Normal,

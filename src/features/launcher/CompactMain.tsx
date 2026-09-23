@@ -4,6 +4,7 @@ import { commands } from "../../lib/tauri";
 import { useTranslation } from "../../lib/i18n";
 import { useOtp } from "../../lib/hooks/use-otp";
 import { AccountGrid } from "./AccountGrid";
+import { EnterActionPrompt } from "./EnterActionPrompt";
 import { BeansPopupMenu, MorePopupMenu, OtpMoreMenu } from "./PopupMenus";
 import { ConnectionDot, DownloadProgressBar } from "../shared/StatusBar";
 import type { SessionDto, GameAccountDto, ClassicCheckDto } from "../../lib/types";
@@ -297,6 +298,11 @@ export function CompactMain(p: CompactMainProps) {
       </div>
 
       <DownloadProgressBar />
+      <EnterActionPrompt
+        isOpen={otp.enterPrompt}
+        onChoose={(c) => void otp.answerEnterPrompt(c)}
+        onClose={otp.closeEnterPrompt}
+      />
     </div>
   );
 }

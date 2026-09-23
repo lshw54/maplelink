@@ -138,8 +138,11 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
     document.addEventListener("mouseup", onUp);
   }
 
-  // Enter key → quick-copy selected account ID
+  // Enter key → quick-copy selected account ID, when that is what the player
+  // chose Enter to do. The OTP and the first-time question are useOtp's.
+  const enterAction = useConfigStore((s) => s.config?.enterAction ?? "ask");
   useEffect(() => {
+    if (enterAction !== "copy") return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Enter" && selectedAccountId) {
         navigator.clipboard.writeText(selectedAccountId);
@@ -149,7 +152,7 @@ export function AccountGrid({ selectedAccountId, onSelectAccount, compact }: Acc
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedAccountId]);
+  }, [selectedAccountId, enterAction]);
 
   return (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "gap-1" : "gap-2"}`}>

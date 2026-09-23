@@ -3,6 +3,7 @@ import { CopyGlyph } from "../../components/CopyIcon";
 import { useTranslation } from "../../lib/i18n";
 import { useOtp } from "../../lib/hooks/use-otp";
 import { OtpMoreMenu } from "./PopupMenus";
+import { EnterActionPrompt } from "./EnterActionPrompt";
 
 interface OtpPanelProps {
   selectedAccountId: string | null;
@@ -11,8 +12,19 @@ interface OtpPanelProps {
 
 export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
   const { t } = useTranslation();
-  const { credentials, copied, autoInput, setAutoInput, busy, getOtp, copyOtp, copyCredentials } =
-    useOtp(selectedAccountId, onOtpFetched);
+  const {
+    credentials,
+    copied,
+    autoInput,
+    setAutoInput,
+    busy,
+    getOtp,
+    copyOtp,
+    copyCredentials,
+    enterPrompt,
+    answerEnterPrompt,
+    closeEnterPrompt,
+  } = useOtp(selectedAccountId, onOtpFetched);
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (
@@ -119,6 +131,11 @@ export function OtpPanel({ selectedAccountId, onOtpFetched }: OtpPanelProps) {
           )}
         </div>
       </div>
+      <EnterActionPrompt
+        isOpen={enterPrompt}
+        onChoose={(c) => void answerEnterPrompt(c)}
+        onClose={closeEnterPrompt}
+      />
     </div>
   );
 }

@@ -187,6 +187,7 @@ pub(crate) fn keep_on_screen(window: &tauri::Window) {
 pub async fn resize_window(
     page: String,
     announcement_bar: Option<bool>,
+    update_bar: Option<bool>,
     window: tauri::Window,
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<(), ErrorDto> {
@@ -195,11 +196,16 @@ pub async fn resize_window(
     // frontend. It can be closed for good once read, hence the flag — omitted
     // means shown.
     const ANNOUNCEMENT_BAR: f64 = 28.0;
-    let bar = if announcement_bar.unwrap_or(true) {
+    // The "update available" strip is the same height and counted the same
+    // way. Omitted means hidden: it only shows once an update was found.
+    let mut bar = if announcement_bar.unwrap_or(true) {
         ANNOUNCEMENT_BAR
     } else {
         0.0
     };
+    if update_bar.unwrap_or(false) {
+        bar += ANNOUNCEMENT_BAR;
+    }
     // Compact UI: the launcher is a single narrow column, the toolbox an icon
     // rail, the login page loses its vertical slack. Read here rather than
     // passed in so every caller of resize_window(page) gets the right size.
@@ -217,7 +223,13 @@ pub async fn resize_window(
         "login-qr" if compact => (350.0, 545.0 + bar),
         "login-qr" => (350.0, 650.0 + bar),
         "login-enlarged" => (540.0, 780.0 + bar),
-        "main" if compact => (340.0, 340.0 + bar),
+        // Four account rows whole under the regular/Classic switch.
+        "main" if compact => (340.0, 352.0 + bar),
+        // A session with five or more game accounts: tall enough that the
+        // fifth row shows whole above the OTP card. The frontend picks this
+        // from the account count; outside compact it is the ordinary size.
+        "main-tall" if compact => (340.0, 388.0 + bar),
+        "main-tall" => (760.0, 530.0 + bar),
         "main" => (760.0, 530.0 + bar),
         "toolbox" if compact => (620.0, 450.0 + bar),
         "toolbox" => (750.0, 490.0 + bar),

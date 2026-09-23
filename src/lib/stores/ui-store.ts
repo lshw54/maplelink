@@ -2,11 +2,45 @@ import { create } from "zustand";
 import { commands } from "../tauri";
 import type { ClassicAccountDto, GameCredentialsDto } from "../types";
 import { useConfigStore } from "./config-store";
+import { useAuthStore } from "./auth-store";
 import { ANNOUNCEMENT_ID } from "../announcement";
 
 /** The announcement banner is chrome the backend sizes pages around. */
 export function announcementBarShown(): boolean {
   return useConfigStore.getState().config?.announcementDismissedId !== ANNOUNCEMENT_ID;
+}
+
+/** Whether the "update available" strip is on screen. App owns it. */
+let updateBar = false;
+export function setUpdateBarShown(shown: boolean): void {
+  updateBar = shown;
+}
+
+/**
+ * Size the window for `page`, counting whichever banners are on screen.
+ *
+ * Every resize goes through here. Callers that left a flag out used to get the
+ * backend's default for it, so the same page came out 28px taller or shorter
+ * depending on which path sized it last — which is how the compact launcher
+ * could open one account row short on the first login and fine on the next.
+ */
+export function resizeWindow(page: string): Promise<unknown> {
+  return commands.resizeWindow(mainVariant(page), announcementBarShown(), updateBar);
+}
+
+/** The compact launcher shows whole rows for up to five game accounts. */
+const TALL_MAIN_ACCOUNTS = 5;
+
+/**
+ * The main page grows only for a session that needs it: one with five or more
+ * game accounts gets the taller window, so the fifth row is not cut in half
+ * above the OTP card. Everyone else keeps the smaller one.
+ */
+function mainVariant(page: string): string {
+  if (page !== "main") return page;
+  const { sessions, activeSessionId } = useAuthStore.getState();
+  const count = activeSessionId ? (sessions.get(activeSessionId)?.gameAccounts.length ?? 0) : 0;
+  return count >= TALL_MAIN_ACCOUNTS ? "main-tall" : page;
 }
 
 type Page = "login" | "main" | "toolbox" | "web_launch";
@@ -98,14 +132,14 @@ export const useUiStore = create<UiState>((set, get) => ({
     // Remember a non-overlay page so goBack() returns to it from toolbox/web_launch.
     const prev = current !== "toolbox" && current !== "web_launch" ? current : get().previousPage;
     set({ currentPage: page, previousPage: prev });
-    commands.resizeWindow(page, announcementBarShown()).catch((e) => {
+    resizeWindow(page).catch((e) => {
       commands.logFrontendError("warn", "ui-store", `resize failed for ${page}: ${e}`);
     });
   },
   goBack: () => {
     const prev = get().previousPage;
     set({ currentPage: prev });
-    commands.resizeWindow(prev, announcementBarShown()).catch((e) => {
+    resizeWindow(prev).catch((e) => {
       commands.logFrontendError("warn", "ui-store", `resize failed for ${prev}: ${e}`);
     });
   },
