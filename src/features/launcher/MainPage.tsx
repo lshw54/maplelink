@@ -82,12 +82,12 @@ export function MainPage() {
   // this same session — no re-login, so the regular session stays alive.
   const [classicGame, setClassicGame] = useState(false);
   const [classicCheck, setClassicCheck] = useState<ClassicCheckDto | null>(null);
-  // HK only: one beanfun login covers both servers there, so this session can
-  // open Classic as-is. TW keeps them on separate logins — reusing a TW session
-  // just lands on another sign-in form, so offering the switch would promise
-  // something it can't deliver. TW players start Classic from the login page,
-  // which signs in on the classic side.
-  const canClassic = session?.region === "HK";
+  // Both regions get the switch. HK: one beanfun login covers both servers, so
+  // this session opens Classic as-is. TW keeps them on separate logins —
+  // reusing a TW session just lands on another sign-in form — so there it opens
+  // the classic portal's own GamaPass sign-in, the same as the login page's
+  // TW button, without making the player log out to get to it.
+  const canClassic = session?.region === "HK" || session?.region === "TW";
   const showClassic = classicGame && canClassic;
   const ngmReady = !!classicCheck && classicCheck.ngmRegistered && classicCheck.ngmExeExists;
 
@@ -215,11 +215,13 @@ export function MainPage() {
   );
 
   async function handlePlayClick() {
-    // Classic reuses THIS session (its cookies) — no re-login, so the regular
-    // session isn't kicked. The app-level overlay shows the launch progress.
+    // HK Classic reuses THIS session (its cookies) — no re-login, so the regular
+    // session isn't kicked. TW passes no session: the portal signs in on the
+    // classic side. The app-level overlay shows the launch progress.
     if (showClassic) {
       useUiStore.setState({ classicStatus: "launching" });
-      commands.openClassicLogin(activeSessionId ?? "").catch(() => {
+      const classicSession = session?.region === "HK" ? (activeSessionId ?? "") : "";
+      commands.openClassicLogin(classicSession).catch(() => {
         useUiStore.setState({ classicStatus: "failed" });
       });
       return;
@@ -495,6 +497,11 @@ export function MainPage() {
             {showClassic && session?.region === "HK" && (
               <p className="-mt-1 max-w-[210px] text-center text-[10px] leading-snug text-text-faint">
                 {t("login.classic_no_cn")}
+              </p>
+            )}
+            {showClassic && session?.region === "TW" && (
+              <p className="-mt-1 max-w-[210px] text-center text-[10px] leading-snug text-text-faint">
+                {t("launcher.classic_tw_separate")}
               </p>
             )}
 

@@ -463,6 +463,24 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         </div>
       </div>
 
+      {/* Classic shortcut. TW Classic signs in separately on its own portal,
+          so a QR login would not carry over — this opens that portal's GamaPass
+          sign-in directly, without detouring through 🍁 (which switches to HK). */}
+      {!enlarged && (
+        <button
+          type="button"
+          onClick={() => {
+            useUiStore.setState({ classicStatus: "launching" });
+            commands.openClassicLogin("").catch(() => {
+              useUiStore.setState({ classicStatus: "failed" });
+            });
+          }}
+          className={`w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent ${compact ? "mt-2.5" : "mt-4"}`}
+        >
+          🍁 {t("login.qr.classic_gamepass")}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => {
@@ -472,7 +490,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           }
           onBack();
         }}
-        className={`w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent ${compact ? "mt-2.5" : "mt-4"}`}
+        className={`w-full rounded-lg border border-border bg-transparent px-3.5 py-2 text-[12px] font-semibold text-text-dim transition-colors hover:border-accent hover:text-accent ${enlarged ? (compact ? "mt-2.5" : "mt-4") : "mt-2"}`}
       >
         {t("login.back_normal")}
       </button>
