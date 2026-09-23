@@ -49,6 +49,11 @@ pub struct AppConfig {
     /// login window (default: true).
     #[serde(default = "default_true")]
     pub web_launch_auto_paste: bool,
+    /// Web-launch: keep the interception on across restarts. Off by default —
+    /// every start then turns it off, so forgetting it never leaves the
+    /// official launch routed through MapleLink.
+    #[serde(default)]
+    pub web_launch_keep_on: bool,
     /// What to do when the window is closed (default: ask each time).
     #[serde(default)]
     pub close_behavior: CloseBehavior,
@@ -163,6 +168,7 @@ impl Default for AppConfig {
             auto_launch_game: false,
             web_launch_auto_launch: true,
             web_launch_auto_paste: true,
+            web_launch_keep_on: false,
             close_behavior: CloseBehavior::Ask,
             hide_account_names: false,
             beanfun_rename_dismissed: false,

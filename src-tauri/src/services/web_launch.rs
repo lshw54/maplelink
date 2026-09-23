@@ -195,6 +195,47 @@ pub fn is_registered() -> bool {
         .unwrap_or(false)
 }
 
+/// Every start of MapleLink begins with the interception off.
+///
+/// The switch used to outlive the app: a player who turned it on, closed
+/// MapleLink and forgot found the official Start Game still routed through a
+/// helper script, and the page, coming back, did not say why. Starting from
+/// off means forgetting costs nothing — the normal launch is back — and the
+/// page always shows the state it is really in.
+///
+/// Only a value that is ours is touched. `unregister` deletes `PATH` outright
+/// when there is no backup, which on an install we never registered would take
+/// out beanfun's own value, so anything else is left exactly as found. The
+/// Gamania Games Manager path registers MapleLink directly for each launch it
+/// needs, so it is put back too and re-registered when next used.
+#[cfg(target_os = "windows")]
+pub fn reset_on_startup() {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(GAMANIA_SUBKEY) else {
+        return;
+    };
+    let current = key.get_value::<String, _>(PATH_VALUE).unwrap_or_default();
+    let has_backup = key.get_value::<String, _>(BACKUP_VALUE).is_ok();
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ours = has_backup
+        || current.to_ascii_lowercase().ends_with(HELPER_BAT)
+        || (!exe.is_empty() && current.eq_ignore_ascii_case(&exe));
+    if !ours {
+        return;
+    }
+    match unregister() {
+        Ok(()) => tracing::info!("web-launch interception turned off at startup (was {current})"),
+        Err(e) => tracing::warn!("web-launch interception could not be turned off at startup: {e}"),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn reset_on_startup() {}
+
 #[cfg(not(target_os = "windows"))]
 pub fn register() -> std::io::Result<()> {
     Ok(())

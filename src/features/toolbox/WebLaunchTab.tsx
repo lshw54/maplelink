@@ -137,8 +137,12 @@ export function WebLaunchTab() {
   const gamePath = useConfigStore((s) => s.config?.gamePath ?? "");
   const autoLaunch = useConfigStore((s) => s.config?.webLaunchAutoLaunch ?? true);
   const autoPaste = useConfigStore((s) => s.config?.webLaunchAutoPaste ?? true);
+  const keepOn = useConfigStore((s) => s.config?.webLaunchKeepOn ?? false);
 
-  function setPref(key: "webLaunchAutoLaunch" | "webLaunchAutoPaste", next: boolean) {
+  function setPref(
+    key: "webLaunchAutoLaunch" | "webLaunchAutoPaste" | "webLaunchKeepOn",
+    next: boolean,
+  ) {
     setConfig.mutate({ key, value: next });
   }
   const [status, setStatus] = useState<WebLaunchStatus | null>(null);
@@ -263,6 +267,7 @@ export function WebLaunchTab() {
           </span>
           <span className="text-[11px] leading-relaxed text-text-dim">
             {enabled ? t("web_launch.enable_on_hint") : t("web_launch.enable_off_hint")}
+            {!keepOn && ` ${t("web_launch.resets_on_start")}`}
           </span>
         </div>
         <button
@@ -301,6 +306,12 @@ export function WebLaunchTab() {
             hint={t("web_launch.auto_paste_hint")}
             checked={autoPaste}
             onChange={(next) => setPref("webLaunchAutoPaste", next)}
+          />
+          <PrefToggle
+            title={t("web_launch.keep_on")}
+            hint={t("web_launch.keep_on_hint")}
+            checked={keepOn}
+            onChange={(next) => setPref("webLaunchKeepOn", next)}
           />
         </div>
       </div>

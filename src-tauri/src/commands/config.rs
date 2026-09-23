@@ -172,6 +172,9 @@ fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<
         "webLaunchAutoPaste" | "web_launch_auto_paste" => {
             config.web_launch_auto_paste = parse_bool(value)?;
         }
+        "webLaunchKeepOn" | "web_launch_keep_on" => {
+            config.web_launch_keep_on = parse_bool(value)?;
+        }
         "closeBehavior" | "close_behavior" => {
             config.close_behavior = match value.to_lowercase().as_str() {
                 "quit" => crate::models::config::CloseBehavior::Quit,
