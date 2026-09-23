@@ -223,6 +223,7 @@ export interface AppConfigDto {
   autoLaunchGame: boolean;
   webLaunchAutoLaunch: boolean;
   webLaunchAutoPaste: boolean;
+  webLaunchKeepOn: boolean;
   closeBehavior: "ask" | "quit" | "tray";
   hideAccountNames: boolean;
   beanfunRenameDismissed: boolean;

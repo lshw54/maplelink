@@ -168,6 +168,10 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
             config.web_launch_auto_paste =
                 parse_bool(v, "web_launch_auto_paste", defaults.web_launch_auto_paste);
         }
+        if let Some(v) = game.get("web_launch_keep_on") {
+            config.web_launch_keep_on =
+                parse_bool(v, "web_launch_keep_on", defaults.web_launch_keep_on);
+        }
     }
 
     // --- [appearance] ---
@@ -285,6 +289,10 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     out.push_str(&format!(
         "web_launch_auto_paste = {}\n",
         config.web_launch_auto_paste
+    ));
+    out.push_str(&format!(
+        "web_launch_keep_on = {}\n",
+        config.web_launch_keep_on
     ));
     out.push('\n');
 
@@ -605,6 +613,7 @@ x = not_a_number
             auto_launch_game: false,
             web_launch_auto_launch: false,
             web_launch_auto_paste: true,
+            web_launch_keep_on: true,
             close_behavior: crate::models::config::CloseBehavior::Tray,
             hide_account_names: true,
             beanfun_rename_dismissed: true,

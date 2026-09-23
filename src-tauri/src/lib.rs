@@ -439,6 +439,15 @@ pub fn run() {
 
             tracing::info!("config loaded from {}", config_path.display());
 
+            // The web-launch interception starts off every time unless the
+            // player chose to keep it, so forgetting it costs nothing — the
+            // official launch is back. Here rather than at the top of run(),
+            // which the headless intercept path passes through on its way to
+            // the game.
+            if !config.web_launch_keep_on {
+                services::web_launch::reset_on_startup();
+            }
+
             // Captured now (before `config` moves into AppState below) so the
             // main window can be repositioned once it exists — see the
             // restore step near the end of setup().

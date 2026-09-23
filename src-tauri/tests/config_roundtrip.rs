@@ -109,6 +109,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
                 auto_launch_game: false,
                 web_launch_auto_launch: true,
                 web_launch_auto_paste: true,
+                web_launch_keep_on: false,
                 close_behavior: maplelink_lib::models::config::CloseBehavior::Tray,
                 hide_account_names: true,
                 beanfun_rename_dismissed: true,
