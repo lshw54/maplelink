@@ -21,7 +21,7 @@ export interface CompactMainProps {
   region: string;
   remainPoint: number;
   onRemainPoint: (pts: number) => void;
-  // Regular ↔ Classic switch (HK sessions only)
+  // Regular ↔ Classic switch
   canClassic: boolean;
   classicGame: boolean;
   onClassicGame: (on: boolean) => void;
