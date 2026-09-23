@@ -11,6 +11,8 @@ export interface ErrorToastState {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, "id">) => string;
   removeToast: (id: string) => void;
+  /** Drop every toast of one category, e.g. auth errors once signed in again. */
+  clearCategory: (category: string) => void;
 }
 
 let nextId = 0;
@@ -27,5 +29,9 @@ export const useErrorToastStore = create<ErrorToastState>((set) => ({
   removeToast: (id) =>
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
+    })),
+  clearCategory: (category) =>
+    set((state) => ({
+      toasts: state.toasts.filter((t) => t.category !== category),
     })),
 }));

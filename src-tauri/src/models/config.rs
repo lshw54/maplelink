@@ -81,6 +81,11 @@ pub struct AppConfig {
     /// remounted. Default on, which is what it always defaulted to.
     #[serde(default = "default_true")]
     pub otp_auto_input: bool,
+    /// What Enter does with a game account selected: `"copy"` its ID, fetch
+    /// its `"otp"` as if "Get OTP" had been clicked, or `"ask"` the first time
+    /// and remember the answer. Default `"ask"`.
+    #[serde(default = "default_enter_action")]
+    pub enter_action: String,
     /// Café / shared-PC mode: closing the app wipes all local data (saved
     /// accounts, display overrides, config, logs, and the webview session) so the
     /// next user starts clean. Default: false. Because the wipe removes
@@ -113,6 +118,16 @@ pub struct AppConfig {
     /// UI accent colour as `#rrggbb`. Empty = the built-in maple orange.
     #[serde(default)]
     pub accent_color: String,
+}
+
+fn default_enter_action() -> String {
+    "ask".to_string()
+}
+
+/// The values `enter_action` takes; anything else reads as the default.
+pub fn parse_enter_action(v: &str) -> Option<String> {
+    let v = v.trim().to_lowercase();
+    matches!(v.as_str(), "ask" | "copy" | "otp").then_some(v)
 }
 
 fn default_true() -> bool {
@@ -155,6 +170,7 @@ impl Default for AppConfig {
             webview_via_proxy: false,
             webview_proxy_auto_applied: false,
             otp_auto_input: true,
+            enter_action: default_enter_action(),
             cafe_mode: false,
             classic_ngm_path: String::new(),
             default_login_view: DefaultLoginView::Normal,

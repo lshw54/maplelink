@@ -126,6 +126,10 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = general.get("otp_auto_input") {
             config.otp_auto_input = parse_bool(v, "otp_auto_input", defaults.otp_auto_input);
         }
+        if let Some(v) = general.get("enter_action") {
+            config.enter_action = crate::models::config::parse_enter_action(v)
+                .unwrap_or_else(|| defaults.enter_action.clone());
+        }
         if let Some(v) = general.get("webview_proxy_auto_applied") {
             config.webview_proxy_auto_applied = parse_bool(
                 v,
@@ -257,6 +261,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
         config.webview_proxy_auto_applied
     ));
     out.push_str(&format!("otp_auto_input = {}\n", config.otp_auto_input));
+    out.push_str(&format!("enter_action = {}\n", config.enter_action));
     out.push_str(&format!(
         "default_login_view = {}\n",
         default_login_view_to_str(&config.default_login_view)
@@ -609,6 +614,7 @@ x = not_a_number
             webview_via_proxy: false,
             webview_proxy_auto_applied: false,
             otp_auto_input: true,
+            enter_action: "otp".into(),
             default_login_view: DefaultLoginView::Qr,
             github_hosts: false,
             compact_ui: true,

@@ -5,7 +5,7 @@ import { useAuthStore } from "../../lib/stores/auth-store";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { finishLogin } from "../../lib/hooks/use-auth";
-import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
+import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { StatusBar } from "../shared/StatusBar";
@@ -38,18 +38,19 @@ export function LoginPage() {
     // redundant resize while the window is coming up.
     if (!compact || classicSizedRef.current === classicMode) return;
     classicSizedRef.current = classicMode;
-    commands
-      .resizeWindow(classicMode ? "login-classic" : "login", announcementBarShown())
-      .catch(() => {});
+    resizeWindow(classicMode ? "login-classic" : "login").catch(() => {});
   }, [compact, classicMode]);
   const [view, setViewLocal] = useState<LoginView>(() => {
-    if (persistedView) return persistedView as LoginView;
-    // First mount this session — fall back to the user's configured default.
     // Matches NormalLoginForm's showQr gate: TW only, and not in classic mode
     // (Classic has no QR login either).
     const cfg = useConfigStore.getState().config;
     const classic = useUiStore.getState().classicMode;
-    return cfg?.region === "TW" && !classic && cfg?.defaultLoginView === "qr" ? "qr" : "normal";
+    const qrAllowed = cfg?.region === "TW" && !classic;
+    if (persistedView) {
+      return persistedView === "qr" && !qrAllowed ? "normal" : (persistedView as LoginView);
+    }
+    // First mount this session — fall back to the user's configured default.
+    return qrAllowed && cfg?.defaultLoginView === "qr" ? "qr" : "normal";
   });
   const setView = (v: LoginView) => {
     setViewLocal(v);

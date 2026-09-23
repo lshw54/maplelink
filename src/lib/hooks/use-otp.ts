@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n";
 import { useConfigStore } from "../stores/config-store";
 import { useSetConfig } from "./use-config";
@@ -7,6 +7,7 @@ import { useAuthStore } from "../stores/auth-store";
 import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
 import { commands } from "../tauri";
+import { useOverlayOpen } from "./use-overlay";
 import type { ErrorDto, GameCredentialsDto } from "../types";
 
 /**
@@ -55,10 +56,12 @@ export function useOtp(
         commands.logout(sessionId).catch(() => {});
         useAuthStore.getState().removeSession(sessionId);
       }
+      // Not critical: it would otherwise stay up until clicked away, still
+      // saying "expired" long after the player has signed in again.
       addToast({
         message: t("errors.AUTH_SESSION_EXPIRED"),
         category: "authentication",
-        critical: true,
+        critical: false,
       });
     } else {
       addToast({ message: msg, category: "authentication", critical: false });
@@ -146,13 +149,63 @@ ${data.otp}`);
     if (ok) setTimeout(() => setCopied(false), 1500);
   }
 
+  // Enter with an account selected does what the player chose: fetch its OTP
+  // (the same as clicking "Get OTP", auto-input included) or copy its ID.
+  // Until they have chosen, the first Enter asks. Copying is AccountGrid's —
+  // it shows its own "copied" mark on the row — so only the other two are
+  // handled here. Not while typing somewhere, not under a modal, and not
+  // again while the last fetch is still going.
+  const enterAction = useConfigStore((s) => s.config?.enterAction ?? "ask");
+  const [enterPrompt, setEnterPrompt] = useState(false);
+  const overlayOpen = useOverlayOpen();
+  const busy = credentialsMutation.isPending || pasting;
+  const getOtpRef = useRef(getOtp);
+  useEffect(() => {
+    getOtpRef.current = getOtp;
+  });
+  useEffect(() => {
+    if (enterAction === "copy" || !selectedAccountId || overlayOpen || busy) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Enter" || e.repeat || e.isComposing) return;
+      // A clicked account row keeps focus, and it is a button — that one is
+      // the whole point; any other control keeps its own Enter.
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, select, [contenteditable]")) return;
+      const control = el?.closest("button, [role=button], a");
+      if (control && !control.hasAttribute("data-acct-idx")) return;
+      e.preventDefault();
+      if (enterAction === "otp") void getOtpRef.current();
+      else setEnterPrompt(true);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [enterAction, selectedAccountId, overlayOpen, busy]);
+
+  /** Remember the answer, then do what was asked for this press too. */
+  async function answerEnterPrompt(choice: "copy" | "otp") {
+    setEnterPrompt(false);
+    setConfig.mutate({ key: "enterAction", value: choice });
+    if (choice === "otp") {
+      void getOtp();
+      return;
+    }
+    if (!selectedAccountId) return;
+    const ok = await commands.copyToClipboard(selectedAccountId).catch(() => false);
+    if (ok) {
+      addToast({ message: t("launcher.context.copied"), category: "success", critical: false });
+    }
+  }
+
   return {
+    enterPrompt,
+    answerEnterPrompt,
+    closeEnterPrompt: () => setEnterPrompt(false),
     credentials,
     copied,
     autoInput,
     setAutoInput,
     /** Fetch is in flight (network or auto-paste). */
-    busy: credentialsMutation.isPending || pasting,
+    busy,
     getOtp,
     copyOtp,
     copyCredentials,

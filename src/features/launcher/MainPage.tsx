@@ -6,7 +6,7 @@ import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
 import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
-import { useUiStore } from "../../lib/stores/ui-store";
+import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
@@ -117,12 +117,17 @@ export function MainPage() {
   // The resize from setPage("main") on login can be dropped while the login→main
   // view is still swapping (window stays at the login size until the next page
   // change). Re-assert the main window size once this page has actually mounted.
+  // Again whenever the account count can change the size: switching session
+  // tabs, or the list arriving after the page is up.
+  const accountCount = useAuthStore((s) =>
+    s.activeSessionId ? (s.sessions.get(s.activeSessionId)?.gameAccounts.length ?? 0) : 0,
+  );
   useEffect(() => {
     const id = setTimeout(() => {
-      commands.resizeWindow("main").catch(() => {});
+      resizeWindow("main").catch(() => {});
     }, 60);
     return () => clearTimeout(id);
-  }, []);
+  }, [activeSessionId, accountCount]);
 
   // Fetch remain points on mount + auto-detect game path if empty
   useEffect(() => {

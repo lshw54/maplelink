@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
-import { useUiStore, announcementBarShown } from "../../lib/stores/ui-store";
+import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
@@ -128,6 +128,17 @@ export function SettingsTab() {
             </RowButton>
           )}
         </Row>
+        <Row label={t("settings.enter_action")} hint={t("settings.enter_action_desc")}>
+          <Segmented
+            options={[
+              { value: "ask", label: t("settings.enter_action_ask") },
+              { value: "copy", label: t("settings.enter_action_copy") },
+              { value: "otp", label: t("settings.enter_action_otp") },
+            ]}
+            value={config?.enterAction ?? "ask"}
+            onChange={(v) => setConfig.mutate({ key: "enterAction", value: v })}
+          />
+        </Row>
       </Section>
 
       {/* Appearance */}
@@ -194,7 +205,7 @@ export function SettingsTab() {
                 .mutateAsync({ key: "compactUi", value: String(!config.compactUi) })
                 .catch(() => {});
               // This page is open right now — take the new size at once.
-              commands.resizeWindow("toolbox", announcementBarShown()).catch(() => {});
+              resizeWindow("toolbox").catch(() => {});
             }}
           />
         </Row>

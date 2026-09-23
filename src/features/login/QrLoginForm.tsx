@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CopyGlyph } from "../../components/CopyIcon";
 import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
-import { useUiStore } from "../../lib/stores/ui-store";
+import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { finishLogin } from "../../lib/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -129,8 +129,8 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
           );
           const confirmedSession = result.session ? { ...result.session, sessionId } : null;
           if (confirmedSession) {
-            // Reset window size if enlarged
-            commands.resizeWindow("login").catch(() => {});
+            // No resize here: finishLogin moves to the main page, which sizes
+            // the window itself. Asking for the login size as well raced it.
             await finishLogin(queryClient, confirmedSession);
           }
         } else if (result.status === "expired") {
@@ -209,9 +209,14 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   // it — so it is asked for the right height on the way in rather than left to
   // whatever the previous page needed, and given back on the way out.
   useEffect(() => {
-    commands.resizeWindow("login-qr").catch(() => {});
+    resizeWindow("login-qr").catch(() => {});
     return () => {
-      commands.resizeWindow("login").catch(() => {});
+      // Only when going back to the form. Leaving the login page altogether —
+      // for the toolbox, or the main page after a scan — unmounts this view
+      // too, and the page being entered has already asked for its own size.
+      if (useUiStore.getState().currentPage === "login") {
+        resizeWindow("login").catch(() => {});
+      }
     };
   }, []);
 
@@ -365,10 +370,10 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
               onClick={() => {
                 if (qrData?.qrImageUrl) {
                   if (!enlarged) {
-                    commands.resizeWindow("login-enlarged").catch(() => {});
+                    resizeWindow("login-enlarged").catch(() => {});
                     setEnlarged(true);
                   } else {
-                    commands.resizeWindow("login-qr").catch(() => {});
+                    resizeWindow("login-qr").catch(() => {});
                     setEnlarged(false);
                   }
                 }
@@ -485,7 +490,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
         type="button"
         onClick={() => {
           if (enlarged) {
-            commands.resizeWindow("login").catch(() => {});
+            resizeWindow("login").catch(() => {});
             setEnlarged(false);
           }
           onBack();

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "./lib/i18n";
 import { commands } from "./lib/tauri";
-import { useUiStore } from "./lib/stores/ui-store";
+import { useUiStore, resizeWindow, setUpdateBarShown } from "./lib/stores/ui-store";
 import { useUpdateStore } from "./lib/stores/update-store";
 import { useSetConfig, writeConfig } from "./lib/hooks/use-config";
 import { Titlebar } from "./features/shared/Titlebar";
@@ -50,7 +50,7 @@ function PageRouter() {
 function useTextScaleCompensation() {
   useEffect(() => {
     const page = useUiStore.getState().currentPage;
-    commands.resizeWindow(page).catch(() => {});
+    resizeWindow(page).catch(() => {});
   }, []);
 }
 
@@ -110,8 +110,10 @@ export function App() {
   // so this loses nothing. A new announcement id brings the banner back.
   const bannerHidden = useConfigStore((s) => s.config?.announcementDismissedId) === ANNOUNCEMENT_ID;
   const hideAnnouncementBanner = () => {
+    // The store takes the new id before this returns, so the resize below
+    // already sizes the page without the banner.
     writeConfig("announcementDismissedId", ANNOUNCEMENT_ID).catch(() => {});
-    commands.resizeWindow(useUiStore.getState().currentPage, false).catch(() => {});
+    resizeWindow(useUiStore.getState().currentPage).catch(() => {});
   };
   const [announcementForced, setAnnouncementForced] = useState(false);
   // Enlarge the window while the wide notice is open; restore to the page size.
@@ -121,7 +123,7 @@ export function App() {
   };
   const closeAnnouncementWindow = () => {
     setAnnouncementOpen(false);
-    commands.resizeWindow(useUiStore.getState().currentPage).catch(() => {});
+    resizeWindow(useUiStore.getState().currentPage).catch(() => {});
   };
   // First-run guide. Queued rather than shown outright: the announcement is a
   // mandatory read, and stacking two overlays would bury one of them.
@@ -217,24 +219,19 @@ export function App() {
     };
   }, []);
 
-  // Adjust window height when update banner appears or disappears
-  const bannerHeight = 28;
+  // The update strip is chrome like the announcement banner: the page sizes
+  // count it. It used to add or take 28px off whatever size the window had,
+  // which on mount took 28px off a window that never had the strip, and was
+  // undone by the next page's absolute size while the strip stayed up.
+  const firstBannerRun = useRef(true);
   useEffect(() => {
-    const timer = setTimeout(async () => {
-      try {
-        const { getCurrentWindow, PhysicalSize } = await import("@tauri-apps/api/window");
-        const win = getCurrentWindow();
-        const size = await win.innerSize(); // physical pixels
-        const scaleFactor = await win.scaleFactor();
-        // bannerHeight is in CSS px; convert to physical px
-        const physicalBannerH = Math.round(bannerHeight * scaleFactor);
-        const newH = showBanner ? size.height + physicalBannerH : size.height - physicalBannerH;
-        await win.setSize(new PhysicalSize(size.width, newH));
-      } catch {
-        /* non-critical */
-      }
-    }, 50);
-    return () => clearTimeout(timer);
+    setUpdateBarShown(!!showBanner);
+    if (firstBannerRun.current) {
+      firstBannerRun.current = false;
+      if (!showBanner) return;
+    }
+    if (useUiStore.getState().announcementOpen) return;
+    resizeWindow(useUiStore.getState().currentPage).catch(() => {});
   }, [showBanner]);
 
   // Global listener for download progress events (works even when UpdateDialog is closed)

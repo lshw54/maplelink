@@ -53,6 +53,8 @@ export async function finishLogin(queryClient: QueryClient, session: SessionDto)
   // classic portal launch is fired below. Either server can then be played
   // from this single login.
   const classic = useUiStore.getState().classicMode;
+  // Signed in again: whatever said the last session expired no longer holds.
+  useErrorToastStore.getState().clearCategory("authentication");
 
   useAuthStore.getState().addSession(session);
   let accountCount = -1;
@@ -83,11 +85,14 @@ export async function finishLogin(queryClient: QueryClient, session: SessionDto)
   }
   await queryClient.invalidateQueries({ queryKey: ["gameAccounts"] });
   await queryClient.invalidateQueries({ queryKey: ["accountLimit"] });
-  // Leave the login page clean for the next session: no "adding" flag, the
-  // normal view, and no QR code held over from a scan that just completed.
+  // Leave the login page clean for the next session: no "adding" flag, no QR
+  // code held over from a scan that just completed, and the view the player
+  // signed in with — QR stays QR. The in-between views (TOTP, verification,
+  // the GamaPass wait) all came from the form, so they go back to it.
+  const lastView = useUiStore.getState().loginView;
   useUiStore.setState({
     addingSession: false,
-    loginView: "normal",
+    loginView: lastView === "qr" ? "qr" : "normal",
     qrSessionId: null,
     qrData: null,
     qrIssuedAt: null,

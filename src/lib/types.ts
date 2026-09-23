@@ -231,6 +231,8 @@ export interface AppConfigDto {
   announcementDismissedId: string;
   webviewViaProxy: boolean;
   otpAutoInput: boolean;
+  /** What Enter does on a selected game account; "ask" until chosen. */
+  enterAction: "ask" | "copy" | "otp";
   defaultLoginView: "normal" | "qr";
   githubHosts: boolean;
   compactUi: boolean;

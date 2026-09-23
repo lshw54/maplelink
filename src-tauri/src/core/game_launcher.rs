@@ -268,6 +268,7 @@ mod tests {
                         webview_via_proxy: false,
                         webview_proxy_auto_applied: false,
                         otp_auto_input: true,
+                        enter_action: "ask".into(),
                         default_login_view: crate::models::config::DefaultLoginView::Normal,
                         github_hosts: true,
                         compact_ui: false,
