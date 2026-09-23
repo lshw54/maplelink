@@ -513,6 +513,7 @@
   "client.issue_why_size": "大小與官方清單不符（官方 {{expected}}，本機 {{local}}）。",
   "client.issue_why_hash": "大小相同但內容與官方清單不符。",
   "client.issue_why_unreadable": "無法讀取本機檔案，可能正被佔用或權限不足。",
+  "client.issue_why_outdated": "這是較早小版本更新的官方主程式，修復時會下載目前版本。",
   "client.issue_why_ok": "與官方清單相符，不會改動。",
   "client.issue_will_replace": "修復時會以官方檔案覆寫。",
   "client.selected": "已選 {{count}} 個，共 {{size}}",

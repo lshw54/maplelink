@@ -2,6 +2,7 @@
 
 pub mod account_storage;
 pub mod announcement_service;
+pub mod authenticode;
 pub mod autopaste_service;
 pub mod beanfun_service;
 pub mod bencode;

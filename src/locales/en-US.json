@@ -513,6 +513,7 @@
   "client.issue_why_size": "The size does not match the manifest ({{expected}} official, {{local}} here).",
   "client.issue_why_hash": "Same size, but the contents do not match the manifest.",
   "client.issue_why_unreadable": "The local file could not be read; it may be in use or locked down.",
+  "client.issue_why_outdated": "An official executable from an earlier minor update; the repair fetches the current one.",
   "client.issue_why_ok": "Matches the manifest, and will be left alone.",
   "client.issue_will_replace": "Repair overwrites it with the official file.",
   "client.selected": "{{count}} selected, {{size}}",
