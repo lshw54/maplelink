@@ -51,6 +51,42 @@ MapleLink 目前與原版 Beanfun 維持雙線並行開發，旨在為玩家提�
 <div className="timeline">
 
 <section className="tl-item">
+<div className="tl-meta"><time>2026-09-23</time><span className="tl-tag">正式版</span></div>
+
+## MapleLink v0.6.2 {#v0-6-2}
+
+**新功能**
+
+- 台灣帳號登入後，主畫面也能切換正式服／懷舊服；選懷舊服會開啟懷舊服自己的 GamaPass 登入，不必先登出
+- QR 登入畫面新增「懷舊服 · 以 GamaPass 登入」捷徑
+- 新設定「Enter 鍵」：選取遊戲帳號後按 Enter 可複製帳號或取得 OTP；第一次按會詢問並記住選擇
+- 網頁開機攔截新增「記住開啟狀態」，習慣用官網開機的玩家可保留上次的選擇
+
+**改進**
+
+- 遊戲客戶端管理員可以把主程式修復到最新的小版本（例如 V282.4），不會再還原成大版本的初始版
+- 較早小版本的主程式會標示為「版本過舊」，不再當成損壞
+- 網頁開機攔截預設在每次開啟 MapleLink 時自動關閉，忘記關掉也不會影響官方正常開機
+- 精簡啟動器有 5 個或以上遊戲帳號時自動加高，完整顯示 5 個帳號
+
+**更安全**
+
+- 最新主程式來自官方更新伺服器，寫入前必須通過 NEXON 的數位簽章驗證，未簽章或簽章不符的檔案一律拒絕
+
+**修正**
+
+- 第一次開啟程式登入後視窗偏小，最後一個帳號被截斷
+- 未登入時從 QR 登入畫面開啟工具箱，設定頁被遮擋
+- 出現更新提示時，視窗高度計算錯誤
+- 「登入階段已過期」的提示不會自動消失
+- 以 QR 登入後登出，會退回一般登入畫面
+- 兩步驟驗證輸入錯誤後，無法直接覆蓋修改後面的數字
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.2">GitHub Releases：v0.6.2</a></p>
+
+</section>
+
+<section className="tl-item">
 <div className="tl-meta"><time>2026-09-16</time><span className="tl-tag">正式版</span></div>
 
 ## MapleLink v0.6.1 {#v0-6-1}

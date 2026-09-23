@@ -24,6 +24,16 @@ export function noticeKind(n: Notice): "notice" | "update" {
 
 export const NOTICES: Notice[] = [
   {
+    id: "v0-6-2",
+    date: "2026-09",
+    kind: "update",
+    title: {
+      "zh-TW": "MapleLink v0.6.2：客戶端管理員可修復到最新小版本、台灣懷舊服快捷登入、Enter 鍵取得 OTP。",
+      "zh-CN": "MapleLink v0.6.2：客户端管理器可修复到最新小版本、台湾怀旧服快捷登录、Enter 键获取 OTP。",
+      en: "MapleLink v0.6.2: the client manager repairs to the latest minor update, TW Classic sign-in shortcuts, and Enter for the OTP.",
+    },
+  },
+  {
     id: "v0-6-1",
     date: "2026-09",
     kind: "update",

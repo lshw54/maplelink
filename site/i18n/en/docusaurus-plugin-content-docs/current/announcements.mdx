@@ -51,6 +51,42 @@ What changed in each version is listed below; the full history and downloads are
 <div className="timeline">
 
 <section className="tl-item">
+<div className="tl-meta"><time>2026-09-23</time><span className="tl-tag">Stable</span></div>
+
+## MapleLink v0.6.2 {#v0-6-2}
+
+**New**
+
+- TW players can switch between the regular server and Classic on the main page after signing in; Classic opens its own GamaPass sign-in, no need to log out first
+- The QR login screen has a "Classic · Sign in with GamaPass" shortcut
+- New "Enter key" setting: with a game account selected, Enter copies the account or gets its OTP; the first press asks and remembers
+- Web-launch interception has a "Remember when on" option for players who prefer launching from the website
+
+**Improved**
+
+- The game client manager repairs the game executable to the latest minor update (such as V282.4) instead of putting back the major version's first build
+- An executable from an earlier minor update is shown as out of date, not damaged
+- Web-launch interception now turns itself off every time MapleLink starts, so forgetting it never affects the official launch
+- The compact launcher grows to show five accounts in full when there are five or more
+
+**Safer**
+
+- The latest executable comes from the official update server and must carry a valid NEXON signature before it is written; anything unsigned or signed by someone else is refused
+
+**Fixed**
+
+- The window opened slightly too small after the first sign-in, cutting off the last account
+- Opening the toolbox from the QR login screen before signing in left the settings page cramped
+- The window height was wrong while the update banner was showing
+- The "session expired" notice never went away on its own
+- Logging out after a QR sign-in went back to the password form
+- A mistyped two-factor digit could not be typed over once focus had moved on
+
+<p className="tl-links"><a href="https://github.com/lshw54/maplelink/releases/tag/v0.6.2">GitHub Releases: v0.6.2</a></p>
+
+</section>
+
+<section className="tl-item">
 <div className="tl-meta"><time>2026-09-16</time><span className="tl-tag">Stable</span></div>
 
 ## MapleLink v0.6.1 {#v0-6-1}
