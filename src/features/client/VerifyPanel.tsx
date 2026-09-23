@@ -37,6 +37,8 @@ function issueLabel(kind: ClientIssueKind, outdated: boolean): string {
       return "client.issue_missing";
     case "unreadable":
       return "client.issue_unreadable";
+    case "outdated":
+      return "client.issue_outdated";
     default:
       return outdated ? "client.issue_outdated" : "client.issue_damaged";
   }
@@ -47,6 +49,7 @@ const KIND_DETAIL: Record<ClientIssueKind, string> = {
   sizeMismatch: "client.issue_why_size",
   hashMismatch: "client.issue_why_hash",
   unreadable: "client.issue_why_unreadable",
+  outdated: "client.issue_why_outdated",
 };
 
 function FolderRow<T>({

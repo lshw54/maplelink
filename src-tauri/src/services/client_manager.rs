@@ -83,16 +83,23 @@ pub struct ClientManifest {
     pub folder_name: String,
     pub exe_name: String,
     /// Size of `ExePatch.dat` for this version, when the patch CDN answers.
-    /// The manifest ships the base executable; the game's own updater replaces
-    /// it with this build, so an install carrying it is current, not damaged.
+    /// The manifest ships the base executable of the major version; every
+    /// minor update (V282.1, V282.4, ...) only replaces `ExePatch.dat`, which
+    /// is the whole current executable. When it answers, the executable's
+    /// entry is pointed at it (see [`use_exe_patch`]).
     pub exe_patch_size: Option<u64>,
+    /// Where the executable comes from instead of the manifest's CDN, when
+    /// the patch CDN answered.
+    #[serde(skip)]
+    pub exe_patch_url: Option<String>,
     /// When that build was published. beanfun replaces `ExePatch.dat` in place
     /// for a minor update without changing the version number, so this date
     /// marks which minor build the CDN is serving.
     pub exe_patch_date: Option<String>,
     /// The full version including the minor part, e.g. `"V282.2"`. `version`
-    /// only ever carries the major (`"V282"`); the minor shows up in the names
-    /// on beanfun's own download page and nowhere else public.
+    /// used to carry only the major (`"V282"`), with the minor showing up only
+    /// in the names on beanfun's download page; since V282.4 the manifest
+    /// states it too, so the higher of the two wins.
     pub full_version: Option<String>,
     /// RFC 3339 time the cached copy was fetched, when this manifest came from
     /// the cache instead of the network. `None` means it is fresh.
@@ -136,9 +143,18 @@ fn flexible_u64<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
 const EXE_PATCH_URL: &str =
     "http://tw.cdnpatch.maplestory.beanfun.com/maplestory/patch/patchdir/{:05}/ExePatch.dat";
 
-/// `"V282"` -> `282`, so the patch CDN's zero-padded folder can be built.
+/// `"V282"` or `"V282.4"` -> `282`, so the patch CDN's zero-padded folder can
+/// be built. The patch CDN and the WZ marker both key on the major alone.
 fn version_number(version: &str) -> Option<u32> {
-    version.trim().trim_start_matches(['V', 'v']).parse().ok()
+    let v = version.trim().trim_start_matches(['V', 'v']);
+    let major = match v.split_once('.') {
+        Some((major, minor)) => {
+            minor.parse::<u32>().ok()?;
+            major
+        }
+        None => v,
+    };
+    major.parse().ok()
 }
 
 pub fn exe_patch_url(version: &str) -> Option<String> {
@@ -227,19 +243,61 @@ pub async fn fetch_manifest(
         probe_exe_patch(&manifest.version),
         crate::services::game_download::fetch_download_list()
     );
-    manifest.exe_patch_size = size;
+    if let (Some(size), Some(url)) = (size, exe_patch_url(&manifest.version)) {
+        use_exe_patch(&mut manifest, url, size);
+    }
     manifest.exe_patch_date = date;
-    manifest.full_version = match download_list {
-        Ok(items) => {
-            let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
-            minor_version(&names, &manifest.version)
-        }
+    let names: Vec<&str> = match &download_list {
+        Ok(items) => items.iter().map(|i| i.name.as_str()).collect(),
         Err(e) => {
             tracing::info!("client manager: download list unavailable for minor version: {e}");
-            None
+            Vec::new()
         }
     };
+    manifest.full_version = minor_version(&names, &manifest.version);
     Ok(manifest)
+}
+
+/// Who signs the game's executable. `ExePatch.dat` comes over plain HTTP with
+/// no published hash, so this signature is what vouches for it.
+const EXE_PATCH_SIGNER: &str = "NEXON Korea Corporation";
+
+/// Make the executable's entry mean the current build rather than the base one.
+///
+/// The manifest's own `MapleStory.exe` is the major version's first build, and
+/// its version string moving (`"V282"` to `"V282.4"`) does not change that
+/// file. The minor builds only ever land in `ExePatch.dat`, so a folder is
+/// current when it carries that, and a repair fetches that. There is no hash
+/// for it; the size is checked here and the signature on download.
+fn use_exe_patch(manifest: &mut ClientManifest, url: String, size: u64) {
+    let Some(exe) = manifest
+        .files
+        .iter_mut()
+        .find(|f| f.path == manifest.exe_name)
+    else {
+        return;
+    };
+    manifest.total_bytes = manifest.total_bytes - exe.size + size;
+    exe.size = size;
+    exe.sha256.clear();
+    manifest.exe_patch_size = Some(size);
+    manifest.exe_patch_url = Some(url);
+}
+
+impl ClientManifest {
+    /// Whether `path` is fetched from the patch CDN instead of the manifest's.
+    fn fetches_exe_patch(&self, path: &str) -> bool {
+        self.exe_patch_url.is_some() && path == self.exe_name
+    }
+}
+
+/// Whether `path` carries a valid signature from the game's publisher.
+fn signed_by_publisher(path: &Path) -> Result<(), String> {
+    let signer = crate::services::authenticode::verified_signer(path)?;
+    match signer == EXE_PATCH_SIGNER {
+        true => Ok(()),
+        false => Err(format!("signed by {signer}, not {EXE_PATCH_SIGNER}")),
+    }
 }
 
 /// Size and publish date of this version's `ExePatch.dat`. Best effort: a scan
@@ -328,6 +386,7 @@ fn parse_manifest(body: &str) -> Result<ClientManifest, String> {
         folder_name,
         exe_name,
         exe_patch_size: None,
+        exe_patch_url: None,
         exe_patch_date: None,
         full_version: None,
         cached_at: None,
@@ -388,6 +447,9 @@ pub enum IssueKind {
     SizeMismatch,
     HashMismatch,
     Unreadable,
+    /// A genuine executable from an earlier minor build: signed by the
+    /// publisher, just not the one `ExePatch.dat` serves now.
+    Outdated,
 }
 
 /// Every file the scan looked at, whatever the verdict. The UI lists the
@@ -537,12 +599,15 @@ fn scan_blocking(
             return Ok(report);
         }
         let target = safe_join(dir, &f.path)?;
-        // The executable legitimately differs from the manifest once the game
-        // has patched itself, so it is measured against that build as well.
-        let self_patched = (f.path == manifest.exe_name)
-            .then_some(manifest.exe_patch_size)
-            .flatten();
-        let (kind, needs_hash) = inspect_metadata(&target, f, mode, self_patched);
+        let (mut kind, needs_hash) = inspect_metadata(&target, f, mode);
+        // An older minor build of the executable is not damage, and saying
+        // so tells the player the repair is an update.
+        if kind == Some(IssueKind::SizeMismatch)
+            && manifest.fetches_exe_patch(&f.path)
+            && signed_by_publisher(&target).is_ok()
+        {
+            kind = Some(IssueKind::Outdated);
+        }
         if needs_hash {
             pending.push(i);
         }
@@ -673,23 +738,13 @@ fn hash_workers(dir: &Path) -> usize {
 
 /// What the filesystem alone can say. The second element asks for a hash: the
 /// file is the right size, so only its contents are still in question.
-fn inspect_metadata(
-    target: &Path,
-    f: &ManifestFile,
-    mode: ScanMode,
-    self_patched_size: Option<u64>,
-) -> (Option<IssueKind>, bool) {
+fn inspect_metadata(target: &Path, f: &ManifestFile, mode: ScanMode) -> (Option<IssueKind>, bool) {
     let meta = match std::fs::metadata(target) {
         Ok(m) => m,
         Err(_) => return (Some(IssueKind::Missing), false),
     };
     if !meta.is_file() {
         return (Some(IssueKind::Missing), false);
-    }
-    // Matching the build the game patches itself to is correct, and there is no
-    // published hash for it, so the check ends here.
-    if Some(meta.len()) == self_patched_size {
-        return (None, false);
     }
     if meta.len() != f.size {
         return (Some(IssueKind::SizeMismatch), false);
@@ -1310,7 +1365,11 @@ async fn fetch_one(
         })?;
     }
 
-    let url = format!("{}{}/{}", manifest.base_url, manifest.folder_name, f.path);
+    let from_patch = manifest.fetches_exe_patch(&f.path);
+    let url = match (&manifest.exe_patch_url, from_patch) {
+        (Some(url), true) => url.clone(),
+        _ => format!("{}{}/{}", manifest.base_url, manifest.folder_name, f.path),
+    };
     let resp = client.get(&url).send().await.map_err(|e| {
         FetchError::transient(format!("request failed: {}", http_util::with_causes(&e)))
     })?;
@@ -1383,6 +1442,19 @@ async fn fetch_one(
         }
         Ok(())
     });
+    // No hash vouches for the executable from the patch CDN, so its signature
+    // has to before it may replace the player's.
+    let verdict = match (verdict, from_patch) {
+        (Ok(()), true) => {
+            let checked = part.clone();
+            tokio::task::spawn_blocking(move || signed_by_publisher(&checked))
+                .await
+                .map_err(|e| format!("signature check did not finish: {e}"))
+                .and_then(|r| r)
+                .map_err(|e| FetchError::permanent(format!("ExePatch refused: {e}")))
+        }
+        (verdict, _) => verdict,
+    };
 
     match verdict {
         Ok(()) => {
@@ -1481,14 +1553,18 @@ pub async fn network_status(manifest: &ClientManifest) -> NetworkStatus {
 
 /// Pull the full version out of beanfun's download-page item names.
 ///
-/// The manifest only ever states the major (`"V282"`), but the download page
-/// lists entries like `【官方載點】V282.2 手動更新`. Only minors belonging to
-/// the published major count, and the highest one wins.
+/// The manifest used to state only the major (`"V282"`), while the download
+/// page lists entries like `【官方載點】V282.2 手動更新`. Since V282.4 the
+/// manifest may say `"V282.4"` itself, so its own minor counts as one more
+/// name. Only minors belonging to the published major count, and the highest
+/// one wins.
 fn minor_version(names: &[&str], version: &str) -> Option<String> {
     let major = version_number(version)?;
     let pattern = regex::Regex::new(r"[Vv]?(\d+)\.(\d+)").ok()?;
     let best = names
         .iter()
+        .copied()
+        .chain(std::iter::once(version))
         .flat_map(|name| pattern.captures_iter(name))
         .filter_map(|c| {
             let found: u32 = c.get(1)?.as_str().parse().ok()?;
@@ -1999,6 +2075,11 @@ mod tests {
         // Nothing to find, and an unparsable version, both come back empty.
         assert_eq!(minor_version(&["完整程式"], "V282"), None);
         assert_eq!(minor_version(&names, "L.250508.1_2"), None);
+        // Since V282.4 the manifest names the minor itself, and it counts even
+        // when the download page lags behind or cannot be reached.
+        assert_eq!(minor_version(&names, "V282.4").as_deref(), Some("V282.4"));
+        assert_eq!(minor_version(&[], "V282.4").as_deref(), Some("V282.4"));
+        assert_eq!(minor_version(&later, "V282.4").as_deref(), Some("V282.10"));
     }
 
     #[test]
@@ -2049,16 +2130,19 @@ mod tests {
     fn the_patch_cdn_folder_comes_from_the_manifest_version() {
         assert_eq!(version_number("V282"), Some(282));
         assert_eq!(version_number(" v7 "), Some(7));
+        assert_eq!(version_number("V282.4"), Some(282));
+        assert_eq!(version_number("V282.x"), None);
         assert_eq!(version_number("L.250508.1_2"), None);
         assert_eq!(
             exe_patch_url("V282").unwrap(),
             "http://tw.cdnpatch.maplestory.beanfun.com/maplestory/patch/patchdir/00282/ExePatch.dat"
         );
+        assert_eq!(exe_patch_url("V282.4"), exe_patch_url("V282"));
         assert!(exe_patch_url("nonsense").is_none());
     }
 
-    /// The manifest ships the base executable; the game replaces it with the
-    /// ExePatch build. An install carrying that build is current, not damaged.
+    /// The manifest ships the base executable; the minor builds only land in
+    /// ExePatch. An install carrying that build is current, not damaged.
     #[tokio::test]
     async fn an_executable_matching_the_self_patched_build_is_not_an_issue() {
         let dir = sample_dir();
@@ -2083,7 +2167,11 @@ mod tests {
             .any(|f| f.path == "a.txt" && f.is_issue()));
 
         // With it, the same folder is clean.
-        m.exe_patch_size = Some(b"patched build".len() as u64);
+        use_exe_patch(
+            &mut m,
+            "http://127.0.0.1:9/ExePatch.dat".to_string(),
+            b"patched build".len() as u64,
+        );
         let aware = scan(
             dir.path().to_path_buf(),
             Arc::new(m),
@@ -2223,6 +2311,47 @@ mod tests {
         assert_eq!(hits.load(Ordering::Relaxed), 1);
     }
 
+    /// The executable comes from the patch CDN, over plain HTTP and with no
+    /// hash, so a copy the publisher did not sign never replaces the player's.
+    #[tokio::test]
+    async fn an_unsigned_exe_patch_is_refused_and_the_old_one_kept() {
+        let (patch, hits) = serve_script(vec![Some(
+            "HTTP/1.1 200 OK
+Content-Length: 7
+
+MZfake!",
+        )]);
+        let dir = sample_dir();
+        let mut m = manifest();
+        // The manifest's own CDN is nowhere: the file must come from `patch`.
+        m.base_url = "http://127.0.0.1:9/".to_string();
+        m.exe_name = "a.txt".to_string();
+        use_exe_patch(&mut m, format!("{patch}ExePatch.dat"), 7);
+        assert_eq!(m.total_bytes, 7 + 3);
+
+        let report = download(
+            dir.path().to_path_buf(),
+            Arc::new(m),
+            vec!["a.txt".to_string()],
+            0,
+            Arc::new(Control::default()),
+            Arc::new(DownloadProgress::default()),
+            |_| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.written, 0);
+        assert!(
+            report.failures[0].error.contains("ExePatch refused"),
+            "{}",
+            report.failures[0].error
+        );
+        // Refused for what it is, not for the route, so it is not asked again.
+        assert_eq!(hits.load(Ordering::Relaxed), 1);
+        assert_eq!(std::fs::read(dir.path().join("a.txt")).unwrap(), b"hello");
+    }
+
     #[tokio::test]
     async fn downloading_a_file_the_manifest_does_not_list_is_refused() {
         let dir = TempDir::new("mldl");
@@ -2323,6 +2452,10 @@ mod live_tests {
             "manifest: {} {} — {} files, {} bytes",
             manifest.product_name, manifest.version, manifest.file_count, manifest.total_bytes
         );
+        eprintln!(
+            "full version {:?}, ExePatch {:?} bytes published {:?}",
+            manifest.full_version, manifest.exe_patch_size, manifest.exe_patch_date
+        );
 
         // Two of the smallest files, so the test is quick but real.
         let mut small: Vec<&ManifestFile> = manifest.files.iter().collect();
@@ -2380,6 +2513,50 @@ mod live_tests {
         .unwrap();
         assert_eq!(after.ok_files, 2);
         assert!(after.extra_files.is_empty(), "{:?}", after.extra_files);
+    }
+
+    /// The whole update path against beanfun: the current executable comes
+    /// from ExePatch, lands, and carries the publisher's signature.
+    #[tokio::test]
+    #[ignore]
+    async fn live_client_fetches_the_current_executable_from_exe_patch() {
+        let cache = TempDir::new("live_exe_patch_cache");
+        let manifest = Arc::new(fetch_manifest(cache.path(), |_| {}).await.unwrap());
+        let url = manifest
+            .exe_patch_url
+            .clone()
+            .expect("patch CDN should answer");
+        let exe = manifest.exe_name.clone();
+        eprintln!(
+            "{} from {url}, {:?} bytes",
+            manifest.version, manifest.exe_patch_size
+        );
+
+        let dir = TempDir::new("mlexepatch");
+        let report = download(
+            dir.path().to_path_buf(),
+            manifest.clone(),
+            vec![exe.clone()],
+            0,
+            Arc::new(Control::default()),
+            Arc::new(DownloadProgress::default()),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.written, 1, "{:?}", report.failures);
+        signed_by_publisher(&dir.path().join(&exe)).unwrap();
+
+        let after = scan(
+            dir.path().to_path_buf(),
+            manifest,
+            ScanMode::Full,
+            Arc::new(Control::default()),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(after.files.iter().any(|f| f.path == exe && !f.is_issue()));
     }
 
     #[tokio::test]

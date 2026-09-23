@@ -74,7 +74,12 @@ export interface ClientLocalVersionDto {
   candidates: number[];
 }
 
-export type ClientIssueKind = "missing" | "sizeMismatch" | "hashMismatch" | "unreadable";
+export type ClientIssueKind =
+  | "missing"
+  | "sizeMismatch"
+  | "hashMismatch"
+  | "unreadable"
+  | "outdated";
 
 /** One file the scan looked at. `kind` is null when it matches the manifest. */
 export interface ClientCheckedFileDto {
