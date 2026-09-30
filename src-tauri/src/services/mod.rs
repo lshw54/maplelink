@@ -23,6 +23,7 @@ pub mod github_hosts;
 pub mod http_util;
 pub mod local_proxy;
 pub mod log_service;
+pub mod login_locator;
 pub mod lr_service;
 pub mod network_service;
 pub mod prefs;
