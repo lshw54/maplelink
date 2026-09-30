@@ -37,8 +37,7 @@ pub async fn set_config(
 ) -> Result<(), ErrorDto> {
     {
         let mut config = state.config.write().await;
-        apply_config_field(&mut config, &key, &value).map_err(to_dto)?;
-        config_service::save_config(&state.config_path, &config)
+        apply_and_persist(&mut config, &state.config_path, &key, &value)
             .await
             .map_err(to_dto)?;
     }
@@ -50,6 +49,29 @@ pub async fn set_config(
     let _ = app.emit("config-changed", &key);
 
     tracing::info!("config updated: {key} = {value}");
+    Ok(())
+}
+
+/// Apply `key = value` to a copy of `live`, persist the copy, and only then
+/// let `live` take it.
+///
+/// Changing the live config first meant a failed write left the backend on
+/// the new value while the frontend, told the write failed, went back to the
+/// old one — and every later command, the login included, ran against a
+/// region the form was not showing.
+async fn apply_and_persist(
+    live: &mut AppConfig,
+    path: &std::path::Path,
+    key: &str,
+    value: &str,
+) -> Result<(), ConfigError> {
+    let mut updated = live.clone();
+    apply_config_field(&mut updated, key, value)?;
+    if let Err(e) = config_service::save_config(path, &updated).await {
+        tracing::warn!("config not updated: {key} = {value} failed to persist: {e:?}");
+        return Err(e);
+    }
+    *live = updated;
     Ok(())
 }
 
@@ -294,4 +316,63 @@ fn parse_optional_u32(value: &str) -> Result<Option<u32>, ConfigError> {
         .map_err(|_| ConfigError::ParseError {
             reason: format!("expected unsigned integer, got: {value}"),
         })
+}
+
+#[cfg(test)]
+mod apply_and_persist_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "maplelink_set_config_{name}_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn a_persisted_change_lands_in_the_live_config() {
+        let dir = temp_dir("ok");
+        let mut live = AppConfig {
+            region: Region::HK,
+            ..Default::default()
+        };
+        apply_and_persist(&mut live, &dir.join("config.ini"), "region", "TW")
+            .await
+            .expect("write succeeds");
+        assert_eq!(live.region, Region::TW);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_failed_write_leaves_the_live_config_alone() {
+        // The config path is a directory, so the write cannot succeed.
+        let dir = temp_dir("fail");
+        let mut live = AppConfig {
+            region: Region::HK,
+            ..Default::default()
+        };
+        let result = apply_and_persist(&mut live, &dir, "region", "TW").await;
+        assert!(result.is_err());
+        assert_eq!(
+            live.region,
+            Region::HK,
+            "live config must not change when the write fails"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_bad_value_changes_nothing_and_writes_nothing() {
+        let dir = temp_dir("bad");
+        let path = dir.join("config.ini");
+        let mut live = AppConfig::default();
+        let result = apply_and_persist(&mut live, &path, "region", "JP").await;
+        assert!(result.is_err());
+        assert_eq!(live, AppConfig::default());
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
