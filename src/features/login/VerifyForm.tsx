@@ -3,6 +3,7 @@ import { useTranslation } from "../../lib/i18n";
 import { commands } from "../../lib/tauri";
 import { errorMessage } from "../../lib/errors";
 import { useAuthStore } from "../../lib/stores/auth-store";
+import { useConfigStore } from "../../lib/stores/config-store";
 import { useLogin } from "../../lib/hooks/use-auth";
 import type { AdvanceCheckState } from "../../lib/types";
 
@@ -75,7 +76,7 @@ export function VerifyForm({
     const acct = useAuthStore.getState().pendingCredentials?.account;
     if (acct) {
       commands
-        .getSavedAccountDetail(acct)
+        .getSavedAccountDetail(acct, useConfigStore.getState().config?.region ?? "TW")
         .then((d) => {
           if (d?.verifyInfo) setAuthInfo(d.verifyInfo);
         })

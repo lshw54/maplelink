@@ -105,6 +105,12 @@ export function NormalLoginForm({
   }
 
   // Auto-fill from last saved account on mount and when region changes.
+  //
+  // Every lookup names `region` outright. Flipping the flag updates the store
+  // first and sends set_config after, so this effect's requests can reach the
+  // backend before the flip does; asked for "the configured region" they would
+  // answer for the old one and put the other region's accounts under the new
+  // flag. Signing one of those in then fails (the account belongs elsewhere).
   const prevRegionRef = useRef(region);
   useEffect(() => {
     const regionChanged = prevRegionRef.current !== region;
@@ -122,8 +128,8 @@ export function NormalLoginForm({
     async function loadSaved() {
       try {
         const [accounts, last] = await Promise.all([
-          commands.getSavedAccounts(),
-          commands.getLastSavedAccount(),
+          commands.getSavedAccounts(region),
+          commands.getLastSavedAccount(region),
         ]);
         if (cancelled) return;
         setSavedAccounts(accounts);
@@ -189,7 +195,7 @@ export function NormalLoginForm({
       // Fetch the specific account's saved password from the backend.
       if (saved.hasPassword) {
         commands
-          .getSavedAccountDetail(saved.account)
+          .getSavedAccountDetail(saved.account, saved.region)
           .then((detail) => {
             if (detail && detail.password) {
               setPassword(detail.password);

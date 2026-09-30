@@ -465,15 +465,35 @@ pub struct SavedAccountDto {
     pub remember_password: bool,
 }
 
-/// Return saved accounts for the current region.
+/// The region a saved-account lookup is for: the one the login form says it
+/// is showing, or the configured one when the caller passed none.
+///
+/// The form passes its own region because it reloads the dropdown the moment
+/// the region flag flips, while the `set_config` that carries the flip to the
+/// backend is still in flight. Both go over the IPC as separate requests and
+/// nothing orders them, so a lookup that read the backend's region could see
+/// the old one and fill an HK-flagged form with TW accounts (or the reverse);
+/// picking one of those then signs the wrong account into the flagged region.
+fn saved_account_region(
+    explicit: Option<String>,
+    configured: &crate::models::session::Region,
+) -> String {
+    match explicit.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) => r.to_uppercase(),
+        None => format!("{configured:?}"),
+    }
+}
+
+/// Return saved accounts for `region` (the login form's), or the configured
+/// region when none is given.
 ///
 /// Used by the login form to populate the account dropdown and auto-fill.
 #[tauri::command]
 pub async fn get_saved_accounts(
+    region: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<SavedAccountDto>, ErrorDto> {
-    let region = state.config.read().await.region.clone();
-    let region_str = format!("{region:?}");
+    let region_str = saved_account_region(region, &state.config.read().await.region);
 
     let accounts = state.saved_accounts.read().await;
     let dtos = crate::services::account_storage::get_accounts_for_region(&accounts, &region_str)
@@ -510,16 +530,17 @@ pub async fn get_all_saved_accounts(
     Ok(dtos)
 }
 
-/// Return the last used account for the current region, including the
-/// saved password if available.
+/// Return the last used account for `region` (the login form's, or the
+/// configured one when none is given), including the saved password if
+/// available.
 ///
 /// Used on app launch to auto-fill the login form.
 #[tauri::command]
 pub async fn get_last_saved_account(
+    region: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<LastSavedAccountDto>, ErrorDto> {
-    let region = state.config.read().await.region.clone();
-    let region_str = format!("{region:?}");
+    let region_str = saved_account_region(region, &state.config.read().await.region);
 
     let accounts = state.saved_accounts.read().await;
     let picked = crate::services::account_storage::get_last_account(&accounts, &region_str);
@@ -552,16 +573,17 @@ pub struct LastSavedAccountDto {
     pub verify_info: Option<String>,
 }
 
-/// Return a specific saved account's details (including password) by account ID.
+/// Return a specific saved account's details (including password) by account
+/// ID, in `region` (the login form's, or the configured one when none is given).
 ///
 /// Used when the user selects a different account from the dropdown.
 #[tauri::command]
 pub async fn get_saved_account_detail(
     account: String,
+    region: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<LastSavedAccountDto>, ErrorDto> {
-    let region = state.config.read().await.region.clone();
-    let region_str = format!("{region:?}");
+    let region_str = saved_account_region(region, &state.config.read().await.region);
 
     let accounts = state.saved_accounts.read().await;
     let result = crate::services::account_storage::get_account(&accounts, &region_str, &account)
@@ -835,4 +857,22 @@ pub async fn submit_login_token(
         step.unwrap_or_else(|| "login".to_string()),
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod saved_account_region_tests {
+    use super::saved_account_region;
+    use crate::models::session::Region;
+
+    #[test]
+    fn uses_the_form_region_over_the_configured_one() {
+        assert_eq!(saved_account_region(Some("HK".into()), &Region::TW), "HK");
+        assert_eq!(saved_account_region(Some(" tw ".into()), &Region::HK), "TW");
+    }
+
+    #[test]
+    fn falls_back_to_the_configured_region() {
+        assert_eq!(saved_account_region(None, &Region::TW), "TW");
+        assert_eq!(saved_account_region(Some(String::new()), &Region::HK), "HK");
+    }
 }

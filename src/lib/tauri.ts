@@ -71,11 +71,15 @@ export const commands = {
   logout: (sessionId: string) => invoke("logout", { sessionId }),
 
   // Saved accounts (global — no sessionId)
-  getSavedAccounts: () => invoke<SavedAccountDto[]>("get_saved_accounts"),
+  // The login form passes the region it is showing: its reload races the
+  // set_config that carries a region flip to the backend, so a lookup left to
+  // the backend's region can answer for the old one.
+  getSavedAccounts: (region: string) => invoke<SavedAccountDto[]>("get_saved_accounts", { region }),
   getAllSavedAccounts: () => invoke<SavedAccountDto[]>("get_all_saved_accounts"),
-  getLastSavedAccount: () => invoke<LastSavedAccountDto | null>("get_last_saved_account"),
-  getSavedAccountDetail: (account: string) =>
-    invoke<LastSavedAccountDto | null>("get_saved_account_detail", { account }),
+  getLastSavedAccount: (region: string) =>
+    invoke<LastSavedAccountDto | null>("get_last_saved_account", { region }),
+  getSavedAccountDetail: (account: string, region: string) =>
+    invoke<LastSavedAccountDto | null>("get_saved_account_detail", { account, region }),
   deleteSavedAccount: (account: string, region?: string) =>
     invoke<boolean>("delete_saved_account", { account, region }),
   saveVerifyInfo: (account: string, verifyInfo: string) =>
