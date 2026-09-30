@@ -82,6 +82,10 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  /** Whether a webhook is set up (toolbox → login), so the send button shows. */
+  const [webhookOn, setWebhookOn] = useState(false);
+  const [webhookState, setWebhookState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [webhookError, setWebhookError] = useState("");
   const [enlarged, setEnlarged] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
@@ -90,6 +94,26 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
   /** Milliseconds left on the current code, or null when there isn't one. */
   const [remaining, setRemaining] = useState<number | null>(null);
   const sessionIdRef = useRef<string | null>(useUiStore.getState().qrSessionId);
+
+  useEffect(() => {
+    commands
+      .prefGet("qr_webhook_url")
+      .then((v) => setWebhookOn(!!v && v.trim().length > 0))
+      .catch(() => {});
+  }, []);
+
+  /** Post the deeplink to the phone; the login itself never waits on this. */
+  async function sendToPhone(deeplink: string) {
+    setWebhookState("sending");
+    setWebhookError("");
+    try {
+      await commands.sendQrWebhook(deeplink);
+      setWebhookState("sent");
+    } catch (err) {
+      setWebhookError(errorMessage(err));
+      setWebhookState("failed");
+    }
+  }
 
   function stopPolling() {
     if (intervalRef.current) {
@@ -181,6 +205,15 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
       useUiStore.setState({ qrSessionId: sessionId, qrData: data, qrIssuedAt: Date.now() });
 
       startPolling(sessionId, data);
+      // A fresh code, so a fresh link for the phone. Read the pref again rather
+      // than the mount-time flag: the toolbox may have been set up meanwhile.
+      if (data.deeplink) {
+        const url = await commands.prefGet("qr_webhook_url").catch(() => null);
+        if (url && url.trim()) {
+          setWebhookOn(true);
+          void sendToPhone(data.deeplink);
+        }
+      }
     } catch (err) {
       setError(errorMessage(err));
       setStatus("error");
@@ -194,6 +227,7 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
     // Cleared, not just replaced: if the new code never arrives, the old one
     // must not sit there next to an error message looking scannable.
     setQrData(null);
+    setWebhookState("idle");
     useUiStore.setState({ qrSessionId: null, qrData: null, qrIssuedAt: null });
     startedRef.current = false;
     startQr();
@@ -439,6 +473,40 @@ export function QrLoginForm({ onBack }: QrLoginFormProps) {
                   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
                 {linkCopied ? t("common.copied") : t("login.qr.copy_deeplink")}
+              </button>
+            )}
+            {qrData?.deeplink && webhookOn && (
+              <button
+                type="button"
+                disabled={webhookState === "sending"}
+                onClick={() => qrData?.deeplink && sendToPhone(qrData.deeplink)}
+                title={webhookState === "failed" ? webhookError : t("login.qr.send_to_phone")}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors disabled:opacity-60 ${
+                  webhookState === "sent"
+                    ? "text-green-400"
+                    : webhookState === "failed"
+                      ? "text-[var(--danger)]"
+                      : "text-text-dim hover:bg-[var(--surface-hover)] hover:text-accent"
+                }`}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="7" y="2" width="10" height="20" rx="2" />
+                  <line x1="11" y1="18" x2="13" y2="18" />
+                </svg>
+                {webhookState === "sent"
+                  ? t("login.qr.sent_to_phone")
+                  : webhookState === "failed"
+                    ? t("login.qr.send_failed")
+                    : t("login.qr.send_to_phone")}
               </button>
             )}
           </div>

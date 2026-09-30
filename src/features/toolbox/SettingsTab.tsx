@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
+import { errorMessage } from "../../lib/errors";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
 import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccent, isHexColor } from "../../lib/accent";
@@ -35,12 +36,48 @@ const DEFAULT_LOGIN_VIEWS: { value: DefaultLoginView; labelKey: string }[] = [
   { value: "qr", labelKey: "settings.default_login_view.qr" },
 ];
 
+const WEBHOOK_INPUT =
+  "w-full rounded-lg border border-border bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--text)] placeholder:text-[11px] placeholder:text-text-dim focus:border-[rgba(var(--accent-rgb),0.4)] focus:bg-[var(--surface-hover)] focus:shadow-[0_0_0_3px_var(--input-focus-ring)] focus:outline-none";
+
 export function SettingsTab() {
   const { t } = useTranslation();
   const config = useConfigStore((s) => s.config);
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
+
+  // QR login link push (toolbox → login). Kept in the prefs store, not the
+  // config: the URL is a secret and has no place in an exported backup.
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookChatId, setWebhookChatId] = useState("");
+  const [webhookTest, setWebhookTest] = useState<"idle" | "sending" | "ok" | "failed">("idle");
+  const [webhookTestError, setWebhookTestError] = useState("");
+  const webhookIsTelegram = /^https?:\/\/api\.telegram\.org\//i.test(webhookUrl.trim());
+  useEffect(() => {
+    commands
+      .prefGet("qr_webhook_url")
+      .then((v) => setWebhookUrl(v ?? ""))
+      .catch(() => {});
+    commands
+      .prefGet("qr_webhook_chat_id")
+      .then((v) => setWebhookChatId(v ?? ""))
+      .catch(() => {});
+  }, []);
+  function saveWebhook(key: "qr_webhook_url" | "qr_webhook_chat_id", value: string) {
+    setWebhookTest("idle");
+    commands.prefSet(key, value.trim()).catch(() => {});
+  }
+  async function handleWebhookTest() {
+    setWebhookTest("sending");
+    setWebhookTestError("");
+    try {
+      await commands.sendQrWebhook("");
+      setWebhookTest("ok");
+    } catch (err) {
+      setWebhookTestError(errorMessage(err));
+      setWebhookTest("failed");
+    }
+  }
 
   // Auto-detect game path from registry if not set
   useEffect(() => {
@@ -264,6 +301,44 @@ export function SettingsTab() {
               onChange={handleDefaultLoginViewChange}
             />
           </Row>
+          <Row label={t("settings.qr_webhook")} hint={t("settings.qr_webhook_desc")} />
+          <div className="flex flex-col gap-2 px-3.5 pb-3">
+            <input
+              type="text"
+              value={webhookUrl}
+              placeholder={t("settings.qr_webhook_url_placeholder")}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              onBlur={() => saveWebhook("qr_webhook_url", webhookUrl)}
+              spellCheck={false}
+              className={WEBHOOK_INPUT}
+            />
+            {webhookIsTelegram && (
+              <input
+                type="text"
+                value={webhookChatId}
+                placeholder={t("settings.qr_webhook_chat_id")}
+                onChange={(e) => setWebhookChatId(e.target.value)}
+                onBlur={() => saveWebhook("qr_webhook_chat_id", webhookChatId)}
+                spellCheck={false}
+                className={WEBHOOK_INPUT}
+              />
+            )}
+            {webhookUrl.trim() && (
+              <div className="flex items-center gap-2">
+                <RowButton onClick={handleWebhookTest}>{t("settings.qr_webhook_test")}</RowButton>
+                {webhookTest === "ok" && (
+                  <span className="text-[11px] text-green-400">
+                    {t("settings.qr_webhook_test_ok")}
+                  </span>
+                )}
+                {webhookTest === "failed" && (
+                  <span className="text-[11px] text-[var(--danger)]" title={webhookTestError}>
+                    {t("settings.qr_webhook_test_failed")}: {webhookTestError}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </Section>
       )}
     </div>

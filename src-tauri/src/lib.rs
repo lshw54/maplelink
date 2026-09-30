@@ -270,6 +270,7 @@ pub fn run() {
             commands::auth::refresh_advance_check_captcha,
             commands::auth::logout,
             commands::auth::get_saved_accounts,
+            commands::auth::send_qr_webhook,
             commands::auth::get_all_saved_accounts,
             commands::auth::get_last_saved_account,
             commands::auth::get_saved_account_detail,

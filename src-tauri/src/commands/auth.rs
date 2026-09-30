@@ -859,6 +859,45 @@ pub async fn submit_login_token(
     Ok(())
 }
 
+/// Post the QR-login deeplink to the player's webhook, or a test message when
+/// `deeplink` is empty. The endpoint and Telegram chat id come from the prefs
+/// store (see [`crate::services::qr_webhook`]).
+#[tauri::command]
+pub async fn send_qr_webhook(
+    deeplink: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), ErrorDto> {
+    use crate::services::qr_webhook::{self, PREF_CHAT_ID, PREF_URL};
+    use tauri::Manager;
+
+    let dir = app.path().app_data_dir().map_err(|e| ErrorDto {
+        code: "SYS_PATH_ERROR".to_string(),
+        message: format!("Failed to get app data dir: {e}"),
+        category: crate::models::error::ErrorCategory::Process,
+        details: None,
+    })?;
+    let url = crate::services::prefs::get(&dir, PREF_URL).unwrap_or_default();
+    let chat_id = crate::services::prefs::get(&dir, PREF_CHAT_ID).unwrap_or_default();
+    let language = state.config.read().await.language.clone();
+    let text = if deeplink.trim().is_empty() {
+        qr_webhook::test_message(language)
+    } else {
+        qr_webhook::login_message(language, &qr_webhook::bounce_url(&deeplink))
+    };
+    qr_webhook::send(&state.http_client, &url, &chat_id, &text)
+        .await
+        .map_err(|e| {
+            tracing::warn!("qr webhook: {e}");
+            ErrorDto {
+                code: "NET_QR_WEBHOOK".to_string(),
+                message: e.to_string(),
+                category: crate::models::error::ErrorCategory::Network,
+                details: None,
+            }
+        })
+}
+
 #[cfg(test)]
 mod saved_account_region_tests {
     use super::saved_account_region;

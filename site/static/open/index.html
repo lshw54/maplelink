@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>MapleLink — 開啟 beanfun App</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #e11d48; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: #fff; color: #111; }
+    @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+    main { max-width: 360px; padding: 32px 24px; text-align: center; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    p { font-size: 14px; line-height: 1.5; margin: 0 0 20px; opacity: .8; }
+    a.btn { display: inline-block; padding: 12px 24px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; font-size: 15px; }
+    .muted { font-size: 12px; opacity: .6; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>用 beanfun App 確認登入</h1>
+    <p id="msg">正在開啟 beanfun App…<br /><span lang="en">Opening the beanfun app…</span></p>
+    <a id="open" class="btn" href="#">開啟 beanfun App / Open app</a>
+    <p class="muted">如果沒有自動開啟，請按上面的按鈕。手機需要先安裝並登入 beanfun App。<br /><span lang="en">If nothing happens, tap the button. The beanfun app must be installed and signed in on this phone.</span></p>
+  </main>
+  <script>
+    (function () {
+      // The deeplink travels in the fragment, so it never reaches the server
+      // hosting this page. MapleLink form-encodes it (spaces as "+").
+      var raw = location.hash.replace(/^#/, "");
+      var link = "";
+      try { link = decodeURIComponent(raw.replace(/\+/g, "%20")); } catch (e) { link = ""; }
+      var btn = document.getElementById("open");
+      if (!/^gameplapp:\/\//i.test(link)) {
+        document.getElementById("msg").innerHTML =
+          "這個連結不完整，請在 MapleLink 重新產生 QR Code 再送一次。<br /><span lang=\"en\">This link is incomplete. Issue a new QR code in MapleLink and send it again.</span>";
+        btn.style.display = "none";
+        return;
+      }
+      btn.href = link;
+      // Straight away, then again after a beat: some browsers ignore the first
+      // custom-scheme navigation while the page is still loading.
+      location.replace(link);
+      setTimeout(function () { location.href = link; }, 600);
+    })();
+  </script>
+</body>
+</html>

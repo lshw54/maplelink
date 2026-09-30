@@ -48,6 +48,8 @@ export const commands = {
   openRecaptchaWindow: (step: "check" | "login") => invoke("open_recaptcha_window", { step }),
   closeRecaptchaWindow: () => invoke("close_recaptcha_window"),
   qrLoginStart: (sessionId: string) => invoke<QrCodeData>("qr_login_start", { sessionId }),
+  /** Post the QR deeplink to the player's webhook; an empty deeplink sends a test message. */
+  sendQrWebhook: (deeplink: string) => invoke("send_qr_webhook", { deeplink }),
   qrLoginPoll: (sessionId: string, sessionKey: string, verificationToken: string) =>
     invoke<QrPollResult>("qr_login_poll", { sessionId, sessionKey, verificationToken }),
   totpVerify: (sessionId: string, code: string) =>
