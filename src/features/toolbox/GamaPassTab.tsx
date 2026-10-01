@@ -52,7 +52,7 @@ export function GamaPassTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Section title={t("settings.passkey_source")} hint={t("settings.passkey_source_desc")}>
+      <Section title={t("toolbox.tabs.gamapass")} hint={t("settings.passkey_source_desc")}>
         <Row label={t("settings.passkey_source")}>
           <Segmented
             options={[
