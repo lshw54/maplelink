@@ -94,6 +94,7 @@
   "settings.game_path": "游戏路径",
   "settings.passkey_source": "GamaPass Passkey 来源",
   "settings.passkey_source_desc": "由谁响应 GamaPass 的 Passkey。Windows 是浏览器内置的提示（Windows Hello、手机、实体密钥）；选择密码管理器会下载它的浏览器扩展，在 GamaPass 窗口内直接接管。下一次打开 GamaPass 时生效。",
+  "settings.passkey_source_others": "1Password、Proton Pass、NordPass 开发中。",
   "settings.passkey_source_windows": "Windows",
   "settings.passkey_installed": "已安装",
   "settings.passkey_not_installed": "未安装",

@@ -51,14 +51,20 @@ export function ToolboxPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               title={t(tab.labelKey)}
-              className={`mx-1.5 my-0.5 flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[9px] font-semibold tracking-[0.3px] transition-all hover:bg-[var(--surface)] hover:text-[var(--text)] ${
+              className={`mx-1.5 my-0.5 flex flex-col items-center gap-0.5 rounded-lg px-0.5 py-1.5 text-[9px] font-semibold tracking-[0.3px] transition-all hover:bg-[var(--surface)] hover:text-[var(--text)] ${
                 activeTab === tab.key
                   ? "bg-[rgba(var(--accent-rgb),0.1)] text-accent shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb),0.25)]"
                   : "text-text-dim"
               }`}
             >
               <span className="text-[15px] leading-none">{tab.icon}</span>
-              <span className="w-full truncate text-center leading-tight">{t(tab.labelKey)}</span>
+              <span
+                className={`w-full truncate text-center leading-tight tracking-normal ${
+                  t(tab.labelKey).length > 5 ? "text-[8px]" : ""
+                }`}
+              >
+                {t(tab.labelKey)}
+              </span>
             </button>
           ) : (
             <button
