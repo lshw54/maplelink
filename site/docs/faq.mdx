@@ -111,6 +111,18 @@ TW 一般帳密登入需要通過 reCAPTCHA。
 程式會開啟一個小視窗讓你完成驗證，完成後自動繼續。若視窗沒有出現，可以改用 QR Code 或 GamaPass 登入。
 
 </details>
+### GamaPass 每次登入都要 Passkey {#passkey}
+
+GamaPass 在每次登入時都要求重新驗證（它的 OAuth 請求帶 `prompt=login`），所以 Passkey 每次都會再問一次，瀏覽器和 MapleLink 都一樣。Windows 的提示需要 Windows Hello（已設定 PIN）、藍牙連接的手機或實體金鑰。
+
+<details>
+<summary>改用密碼管理器回應</summary>
+
+如果 Passkey 存在 Bitwarden，到工具箱的 **GamaPass** 分頁把來源改為 Bitwarden。程式會下載 Bitwarden 的瀏覽器擴充功能，之後 GamaPass 的 Passkey 由它在 GamaPass 視窗內回應，和在瀏覽器裏一樣：第一次先按「開啟並登入」登入保管庫；保管庫鎖定時會彈出 Bitwarden 的解鎖視窗；確認視窗裏的「Use your device or hardware key」可改回 Windows 提示。改回 Windows 隨時可以，下次開啟 GamaPass 生效。
+
+1Password、Proton Pass、NordPass 仍在開發中。擴充功能更新後需要重新登入一次保管庫。
+
+</details>
 ## 遊戲啟動
 
 ### 按「開始遊戲」沒有反應

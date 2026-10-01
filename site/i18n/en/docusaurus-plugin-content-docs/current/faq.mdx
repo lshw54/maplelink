@@ -109,6 +109,18 @@ Regular TW password sign-in requires a reCAPTCHA.
 The app opens a small window for you to complete it and continues on its own afterwards. If the window never appears, sign in with a QR code or GamaPass instead.
 
 </details>
+### GamaPass asks for the passkey on every login {#passkey}
+
+GamaPass requires fresh authentication on each login (its OAuth request carries `prompt=login`), so the passkey is asked for every time, in a browser and in MapleLink alike. The Windows prompt needs Windows Hello (a PIN set up), a phone over Bluetooth, or a security key.
+
+<details>
+<summary>Let a password manager answer instead</summary>
+
+If the passkey lives in Bitwarden, open the toolbox's **GamaPass** tab and set the source to Bitwarden. The app downloads the Bitwarden browser extension, and from then on it answers GamaPass passkeys inside the GamaPass window, as in a browser: press "Open and sign in" once to sign in to the vault; a locked vault pops Bitwarden's own unlock window; "Use your device or hardware key" in the confirmation falls back to the Windows prompt. Switching back to Windows is always possible and applies to the next GamaPass window.
+
+1Password, Proton Pass and NordPass are in development. After the extension updates, sign in to the vault once more.
+
+</details>
 ## Starting the game
 
 ### Nothing happens when I press PLAY
