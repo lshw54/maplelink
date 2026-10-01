@@ -45,7 +45,8 @@ export default function DemoSessions() {
   const [busy, setBusy] = useState(false);
   const nextId = useRef(2);
 
-  const session = sessions[active];
+  // Never undefined: a stale `active` after a close must not crash the page.
+  const session = sessions[active] ?? sessions[0] ?? first;
   const canSubmit = account.trim() !== "" && password.trim() !== "" && !busy;
 
   function submit(e: FormEvent) {
@@ -64,11 +65,9 @@ export default function DemoSessions() {
           { initial: name.charAt(0).toUpperCase(), name: t("練功號", "练功号", "Leveller") },
         ],
       };
-      setSessions((list) => {
-        const updated = [...list, next];
-        setActive(updated.length - 1);
-        return updated;
-      });
+      const updated = [...sessions, next];
+      setSessions(updated);
+      setActive(updated.length - 1);
       setAdding(false);
       setBusy(false);
       setAccount("");
@@ -77,8 +76,9 @@ export default function DemoSessions() {
   }
   function close(i: number) {
     const updated = sessions.filter((_, j) => j !== i);
+    if (updated.length === 0) return;
     setSessions(updated);
-    if (active >= updated.length) setActive(updated.length - 1);
+    setActive(Math.min(active > i ? active - 1 : active, updated.length - 1));
   }
   function reset() {
     setSessions([first]);
