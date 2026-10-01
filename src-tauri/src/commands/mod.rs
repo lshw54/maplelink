@@ -7,5 +7,6 @@ pub mod browser;
 pub mod client;
 pub mod config;
 pub mod launcher;
+pub mod passkey;
 pub mod system;
 pub mod update;

@@ -49,7 +49,7 @@ pub async fn open_gamepass_login_window(
             details: None,
         });
     }
-    let incognito = config.gamepass_incognito;
+    let mut incognito = config.gamepass_incognito;
     drop(config);
 
     // Create a new session for this GamePass login flow
@@ -66,10 +66,37 @@ pub async fn open_gamepass_login_window(
         details: None,
     })?;
 
+    // A password manager answering the passkey needs its extension loaded,
+    // which needs the persistent, extension-enabled profile: the manager's
+    // vault state lives in it.
+    let manager = crate::services::passkey_manager::PasskeySource::parse(
+        crate::services::prefs::get(&data_dir, crate::services::passkey_manager::PREF_SOURCE)
+            .as_deref(),
+    )
+    .manager()
+    .filter(|m| {
+        let installed = crate::services::passkey_manager::status(&data_dir, *m).is_some();
+        if !installed {
+            tracing::warn!(
+                "GamePass: {} is selected but not installed; using the Windows prompt",
+                m.display_name()
+            );
+        }
+        installed
+    });
+    if manager.is_some() {
+        incognito = false;
+    }
+
     // Navigate to bflogin/default.aspx — the server will redirect to
     // login.beanfun.com/Login/Index?pSKey={skey} automatically.
     // This way the WebView2 has the same session cookies as the skey request.
     let start_url = "https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0";
+    tracing::info!(
+        passkey_source = manager.map_or("windows", |m| m.key()),
+        incognito,
+        "GamePass: window setup"
+    );
 
     // Pass session_id to the init script so it can invoke gamepass_webview_done with it
     let init_script = format!(
@@ -189,6 +216,7 @@ pub async fn open_gamepass_login_window(
         session_id
     );
 
+    let browser_args = crate::services::webview_util::browser_args(&app).await;
     let mut builder = WebviewWindowBuilder::new(
         &app,
         label,
@@ -202,12 +230,20 @@ pub async fn open_gamepass_login_window(
     .center()
     .visible(true)
     .user_agent(WEBVIEW_USER_AGENT)
-    .additional_browser_args(&crate::services::webview_util::browser_args(&app).await)
+    .additional_browser_args(&browser_args)
     .initialization_script(&init_script)
     .devtools(true);
+    // Extensions are added by `gamepass_extensions::ensure_loaded` below,
+    // never through wry's `extensions_path`: that re-adds on every window
+    // and broke the extension's pages and service worker.
+    if manager.is_some() {
+        builder = builder.browser_extensions_enabled(true);
+    }
 
-    // In normal mode, persist WebView2 data so "remember me" works.
-    // In incognito mode, use a unique temp directory per session.
+    // Three profiles: a throwaway one per login in incognito mode, the plain
+    // persistent one so "remember me" works, and the extension-enabled one
+    // when a password manager answers the passkey (its own folder, because
+    // WebView2 environment options are fixed per folder per process).
     let webview_data_dir = if incognito {
         let temp = std::env::temp_dir()
             .join("MapleLink")
@@ -215,8 +251,10 @@ pub async fn open_gamepass_login_window(
             .join(format!("{}", std::process::id()));
         let _ = std::fs::create_dir_all(&temp);
         temp
+    } else if manager.is_some() {
+        crate::services::gamepass_extensions::profile_dir(&data_dir)
     } else {
-        data_dir
+        data_dir.clone()
     };
     builder = builder.data_directory(webview_data_dir.clone());
 
@@ -237,8 +275,40 @@ pub async fn open_gamepass_login_window(
     // Let OAuth popups open as real popup windows (with window.opener) so
     // Google/Facebook/Apple sign-in can postMessage + close back to the opener.
     // Navigating the main window instead breaks that final step.
-    if let Err(e) = crate::services::cookie_native::register_native_popup_handler(&window) {
+    let host = manager.map(|_| {
+        crate::services::gamepass_extensions::ExtensionHost::new(
+            app.clone(),
+            webview_data_dir.clone(),
+            browser_args.clone(),
+            label,
+        )
+    });
+    if let Err(e) = crate::services::cookie_native::register_native_popup_handler(
+        &window,
+        host.as_ref().map(|h| h.opener()),
+    ) {
         tracing::warn!("GamePass: failed to register native popup handler: {e}");
+    }
+    if let Some(m) = manager {
+        let mut dirs = vec![m.install_dir(&data_dir)];
+        match crate::services::passkey_manager::helper::ensure_written(&data_dir) {
+            Ok(helper) => dirs.push(helper),
+            Err(e) => tracing::warn!("GamePass extensions: helper: {e}"),
+        }
+        if let Err(e) =
+            crate::services::gamepass_extensions::ensure_loaded(&window, &webview_data_dir, dirs)
+        {
+            tracing::warn!("GamePass extensions: ensure_loaded failed: {e}");
+        }
+        crate::services::gamepass_extensions::log_credentials_override(&window);
+        // Keep the manager awake for the whole login: a hidden page of its
+        // own is the only thing WebView2 honours for that.
+        let keepalive_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = trigger_helper(keepalive_app, m, true, "gamepass-login").await {
+                tracing::warn!("GamePass extensions: keepalive: {e}");
+            }
+        });
     }
 
     // Backend completion poll (the robust path). The injected JS tries to reach
@@ -254,7 +324,10 @@ pub async fn open_gamepass_login_window(
         for _ in 0..600 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if poll_app.get_webview_window("gamepass-login").is_none() {
-                return; // window closed (finalized elsewhere or user cancelled)
+                // Window closed (finalized elsewhere or user cancelled): the
+                // extension's own windows have nothing left to do.
+                crate::services::gamepass_extensions::close_all(&poll_app);
+                return;
             }
             let st = poll_app.state::<AppState>();
             match try_finalize_gamepass(&poll_app, st.inner(), &poll_sid, "", "").await {
@@ -389,6 +462,7 @@ pub async fn try_finalize_gamepass(
     if let Some(win) = app.get_webview_window("gamepass-login") {
         let _ = win.destroy();
     }
+    crate::services::gamepass_extensions::close_all(app);
 
     tracing::info!("=== GamePass finalized (session installed) ===");
     Ok(true)
@@ -422,4 +496,101 @@ fn inject_cookies_into_jar(
         let cookie_str = format!("{}={}; Domain={}; Path={}", name, value, domain, path_str);
         jar.add_cookie_str(&cookie_str, jar_url);
     }
+}
+
+/// Ask MapleLink's helper extension to open `manager`'s vault page, visible
+/// (for signing in) or hidden (to keep the manager's service worker alive
+/// while GamaPass is open).
+///
+/// WebView2 refuses to render an extension page the host navigates to, so a
+/// hidden loader window on the extension-enabled profile loads the manager
+/// and the helper, then navigates to the helper's sentinel URL; the helper
+/// opens the page as a popup, which lands in a hosted MapleLink window like
+/// any other extension page.
+async fn trigger_helper(
+    app: tauri::AppHandle,
+    manager: crate::services::passkey_manager::Manager,
+    hidden: bool,
+    owner_label: &str,
+) -> Result<(), String> {
+    use crate::services::{gamepass_extensions, passkey_manager};
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir: {e}"))?;
+    if passkey_manager::status(&data_dir, manager).is_none() {
+        return Err(format!("{} is not installed", manager.display_name()));
+    }
+    let helper_dir = passkey_manager::helper::ensure_written(&data_dir)?;
+    let profile = gamepass_extensions::profile_dir(&data_dir);
+    let browser_args = crate::services::webview_util::browser_args(&app).await;
+
+    let label = if hidden {
+        "gamepass-keepalive-loader"
+    } else {
+        "gamepass-manager-loader"
+    };
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.destroy();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let loader = tauri::WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::External("about:blank".parse().expect("about:blank parses")),
+    )
+    .title(manager.display_name())
+    .inner_size(10.0, 10.0)
+    .visible(false)
+    .skip_taskbar(true)
+    .data_directory(profile.clone())
+    .browser_extensions_enabled(true)
+    .additional_browser_args(&browser_args)
+    .build()
+    .map_err(|e| format!("open loader: {e}"))?;
+
+    // The loader goes away after the hand-off, so the hosted window's owner
+    // is the caller's window (or none), never the loader.
+    let host = gamepass_extensions::ExtensionHost::new(
+        app.clone(),
+        profile.clone(),
+        browser_args,
+        owner_label,
+    );
+    if let Err(e) =
+        crate::services::cookie_native::register_native_popup_handler(&loader, Some(host.opener()))
+    {
+        tracing::warn!("GamePass extensions: popup handler on {label}: {e}");
+    }
+    gamepass_extensions::ensure_loaded(
+        &loader,
+        &profile,
+        vec![manager.install_dir(&data_dir), helper_dir],
+    )?;
+    let sentinel = if hidden {
+        passkey_manager::helper::keepalive_url(manager)
+    } else {
+        passkey_manager::helper::sentinel_url(manager)
+    };
+    let url: url::Url = sentinel.parse().map_err(|e| format!("sentinel url: {e}"))?;
+    loader.navigate(url).map_err(|e| format!("navigate: {e}"))?;
+    tracing::info!(
+        "GamePass extensions: asked the helper to open {} ({})",
+        manager.display_name(),
+        if hidden { "keepalive" } else { "vault" }
+    );
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+        let _ = loader.destroy();
+    });
+    Ok(())
+}
+
+/// Open `manager`'s vault page so the player can sign in or unlock.
+pub async fn open_passkey_manager_window(
+    app: tauri::AppHandle,
+    manager: crate::services::passkey_manager::Manager,
+) -> Result<(), String> {
+    trigger_helper(app, manager, false, "").await
 }

@@ -331,12 +331,20 @@ where
 /// `Handled = false`, which reverts the block and lets WebView2 open its default
 /// popup in the SAME profile/session — so the opener + `postMessage` + `close`
 /// all work and the login can complete.
+/// Called with the URL when a `chrome-extension://` page asks to open; the
+/// caller shows it in a window of its own instead of a WebView2 popup.
+pub type ExtensionPageOpener = Arc<dyn Fn(String) + Send + Sync>;
+
 #[cfg(target_os = "windows")]
-pub fn register_native_popup_handler(webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn register_native_popup_handler(
+    webview_window: &tauri::WebviewWindow,
+    extension_pages: Option<ExtensionPageOpener>,
+) -> Result<(), String> {
     use std::sync::Mutex;
 
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let tx = Arc::new(Mutex::new(Some(tx)));
+    let owner = webview_window.label().to_string();
 
     let result = webview_window.with_webview(move |wv| {
         use webview2_com::Microsoft::Web::WebView2::Win32::*;
@@ -357,10 +365,24 @@ pub fn register_native_popup_handler(webview_window: &tauri::WebviewWindow) -> R
                         if !uri.is_null() {
                             windows_core::imp::CoTaskMemFree(uri.as_ptr() as _);
                         }
+                        if url.starts_with("chrome-extension://") {
+                            if let Some(open) = &extension_pages {
+                                // Extension UI (a password manager's unlock or
+                                // passkey prompt) goes into our own window.
+                                args.SetHandled(true)?;
+                                tracing::info!(
+                                    "NewWindowRequested on {owner} → hosting extension page: {url}"
+                                );
+                                open(url);
+                                return Ok(());
+                            }
+                        }
                         // Revert wry's block → WebView2 opens a real popup with an
                         // opener, in the same session.
                         args.SetHandled(false)?;
-                        tracing::info!("NewWindowRequested → allowing native popup: {url}");
+                        tracing::info!(
+                            "NewWindowRequested on {owner} → allowing native popup: {url}"
+                        );
                     }
                     Ok(())
                 },
@@ -389,8 +411,55 @@ pub fn register_native_popup_handler(webview_window: &tauri::WebviewWindow) -> R
     }
 }
 
+/// Close `window` when its page calls `window.close()` (an extension's
+/// passkey prompt does so once answered). wry destroys the webview's own
+/// HWND for that event, which leaves the Tauri window open and blank.
+#[cfg(target_os = "windows")]
+pub fn close_window_when_page_asks(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let handle = window.clone();
+    let result = window.with_webview(move |wv| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use webview2_com::WindowCloseRequestedEventHandler;
+        unsafe {
+            let core: ICoreWebView2 = match wv.controller().CoreWebView2() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("close handler: CoreWebView2: {e}");
+                    return;
+                }
+            };
+            let target = handle.clone();
+            let handler = WindowCloseRequestedEventHandler::create(Box::new(
+                move |_sender, _args| -> windows_core::Result<()> {
+                    let w = target.clone();
+                    // Not on the WebView2 thread: destroying the window from
+                    // inside its own event handler re-enters wry.
+                    tauri::async_runtime::spawn(async move {
+                        tracing::info!("close handler: page asked to close {}", w.label());
+                        let _ = w.destroy();
+                    });
+                    Ok(())
+                },
+            ));
+            let mut token: i64 = 0;
+            if let Err(e) = core.add_WindowCloseRequested(&handler, &mut token) {
+                tracing::warn!("close handler: add_WindowCloseRequested: {e}");
+            }
+        }
+    });
+    result.map_err(|_| "with_webview failed for close handler".to_string())
+}
+
 #[cfg(not(target_os = "windows"))]
-pub fn register_native_popup_handler(_webview_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn close_window_when_page_asks(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn register_native_popup_handler(
+    _webview_window: &tauri::WebviewWindow,
+    _extension_pages: Option<ExtensionPageOpener>,
+) -> Result<(), String> {
     Ok(())
 }
 

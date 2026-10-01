@@ -196,6 +196,19 @@ export interface ClassicAccountDto {
   label: string;
 }
 
+/** One password manager the GamaPass passkey source can use. */
+export interface PasskeyManagerStatusDto {
+  key: string;
+  name: string;
+  installed: { id: string; version: string; installedAt: string } | null;
+}
+
+/** Where GamaPass passkeys are answered, plus the managers' install state. */
+export interface PasskeySettingsDto {
+  source: string;
+  managers: PasskeyManagerStatusDto[];
+}
+
 export interface ClassicCheckDto {
   ngmRegistered: boolean;
   ngmExe: string | null;

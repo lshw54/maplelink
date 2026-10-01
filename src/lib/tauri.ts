@@ -27,6 +27,7 @@ import type {
   ClientSourceTestsDto,
   BeanfunRenameCheck,
   ClassicCheckDto,
+  PasskeySettingsDto,
   BrowserBookmark,
   BrowserConnectionInfo,
   BrowserNavState,
@@ -249,6 +250,16 @@ export const commands = {
   // MapleStory Classic (懷舊服) — open the portal for a logged-in session
   openClassicLogin: (sessionId: string) => invoke("open_classic_login", { sessionId }),
   classicSelfCheck: () => invoke<ClassicCheckDto>("classic_self_check"),
+
+  // GamaPass passkey source (toolbox → login)
+  passkeySettingsGet: () => invoke<PasskeySettingsDto>("passkey_settings_get"),
+  passkeySourceSet: (source: string) =>
+    invoke<PasskeySettingsDto>("passkey_source_set", { source }),
+  passkeyManagerInstall: (manager: string) =>
+    invoke<PasskeySettingsDto>("passkey_manager_install", { manager }),
+  passkeyManagerRemove: (manager: string) =>
+    invoke<PasskeySettingsDto>("passkey_manager_remove", { manager }),
+  passkeyManagerOpen: (manager: string) => invoke("passkey_manager_open", { manager }),
   classicPickAccount: (value: string) => invoke("classic_pick_account", { value }),
 } as const;
 
