@@ -33,6 +33,7 @@ export default function UiToolbox({
       icon: "👤",
       label: () => t("帳號管理", "账号管理", "Account Manager"),
     },
+    { key: "gamapass", icon: "🔑", label: () => "GamaPass" },
     { key: "settings", icon: "⚙", label: () => t("設定", "设置", "Settings") },
     { key: "advanced", icon: "🔧", label: () => t("進階", "高级", "Advanced") },
     { key: "about", icon: "ℹ", label: () => t("關於", "关于", "About") },

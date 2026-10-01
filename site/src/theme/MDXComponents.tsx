@@ -15,6 +15,7 @@ import DemoLoginError from "../demo/DemoLoginError";
 import DemoNodeErrors from "../demo/DemoNodeErrors";
 import DemoClientEntry from "../demo/DemoClientEntry";
 import DemoClientManager from "../demo/DemoClientManager";
+import DemoGamaPass from "../demo/DemoGamaPass";
 
 /** Components the MDX pages can use without importing them. */
 export default {
@@ -35,4 +36,5 @@ export default {
   DemoNodeErrors,
   DemoClientEntry,
   DemoClientManager,
+  DemoGamaPass,
 };
