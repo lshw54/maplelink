@@ -145,6 +145,7 @@
   "settings.auto_kill_patcher": "阻止遊戲自動更新",
   "settings.auto_kill_patcher_desc": "啟動遊戲時自動關閉 Patcher.exe，防止遊戲強制更新。",
   "toolbox.tabs.tools": "工具",
+  "toolbox.tabs.gamapass": "GamaPass",
   "toolbox.tabs.account_manager": "帳號管理",
   "toolbox.tabs.settings": "設定",
   "toolbox.tabs.advanced": "進階",

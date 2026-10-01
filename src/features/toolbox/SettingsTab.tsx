@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
-import { errorMessage } from "../../lib/errors";
-import type { PasskeySettingsDto } from "../../lib/types";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
 import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccent, isHexColor } from "../../lib/accent";
@@ -43,40 +41,6 @@ export function SettingsTab() {
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
-
-  // GamaPass passkey source. Choosing a manager that is not installed yet
-  // downloads it first; the choice takes effect on the next GamaPass window.
-  const [passkey, setPasskey] = useState<PasskeySettingsDto | null>(null);
-  const [passkeyBusy, setPasskeyBusy] = useState<string | null>(null);
-  const [passkeyError, setPasskeyError] = useState("");
-  useEffect(() => {
-    commands
-      .passkeySettingsGet()
-      .then(setPasskey)
-      .catch(() => {});
-  }, []);
-  async function runPasskey(busy: string, action: () => Promise<PasskeySettingsDto>) {
-    setPasskeyBusy(busy);
-    setPasskeyError("");
-    try {
-      setPasskey(await action());
-    } catch (err) {
-      setPasskeyError(errorMessage(err));
-    } finally {
-      setPasskeyBusy(null);
-    }
-  }
-  function choosePasskeySource(source: string) {
-    const manager = passkey?.managers.find((m) => m.key === source);
-    if (manager && !manager.installed) {
-      void runPasskey(`install:${source}`, async () => {
-        await commands.passkeyManagerInstall(source);
-        return commands.passkeySourceSet(source);
-      });
-      return;
-    }
-    void runPasskey(`source:${source}`, () => commands.passkeySourceSet(source));
-  }
 
   // Auto-detect game path from registry if not set
   useEffect(() => {
@@ -300,62 +264,6 @@ export function SettingsTab() {
               onChange={handleDefaultLoginViewChange}
             />
           </Row>
-          <Row label={t("settings.passkey_source")} hint={t("settings.passkey_source_desc")}>
-            <Segmented
-              options={[
-                { value: "windows", label: t("settings.passkey_source_windows") },
-                ...(passkey?.managers ?? []).map((m) => ({ value: m.key, label: m.name })),
-              ]}
-              value={
-                passkeyBusy?.startsWith("install:")
-                  ? passkeyBusy.slice(8)
-                  : (passkey?.source ?? "windows")
-              }
-              onChange={choosePasskeySource}
-            />
-          </Row>
-          {passkey?.managers.map((m) => (
-            <div
-              key={m.key}
-              className="flex items-center justify-between gap-3 px-3.5 pb-2.5 text-[11px]"
-            >
-              <span className="text-text-dim">
-                {m.name}
-                {m.installed
-                  ? ` ${m.installed.version} · ${t("settings.passkey_installed")}`
-                  : ` · ${passkeyBusy === `install:${m.key}` ? t("settings.passkey_installing") : t("settings.passkey_not_installed")}`}
-              </span>
-              {m.installed && (
-                <span className="flex shrink-0 items-center gap-2">
-                  <RowButton
-                    onClick={() =>
-                      commands
-                        .passkeyManagerOpen(m.key)
-                        .catch((e) => setPasskeyError(errorMessage(e)))
-                    }
-                  >
-                    {t("settings.passkey_open")}
-                  </RowButton>
-                  <RowButton
-                    danger
-                    onClick={() =>
-                      runPasskey(`remove:${m.key}`, () => commands.passkeyManagerRemove(m.key))
-                    }
-                  >
-                    {t("settings.passkey_remove")}
-                  </RowButton>
-                </span>
-              )}
-            </div>
-          ))}
-          {passkey?.source !== "windows" && passkey && (
-            <div className="px-3.5 pb-3 text-[10.5px] leading-snug text-text-faint">
-              {t("settings.passkey_manager_hint")}
-            </div>
-          )}
-          {passkeyError && (
-            <div className="px-3.5 pb-3 text-[11px] text-[var(--danger)]">{passkeyError}</div>
-          )}
         </Section>
       )}
     </div>

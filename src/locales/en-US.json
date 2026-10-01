@@ -145,6 +145,7 @@
   "settings.auto_kill_patcher": "Block Game Auto-Update",
   "settings.auto_kill_patcher_desc": "Automatically kill Patcher.exe when launching the game to prevent forced updates.",
   "toolbox.tabs.tools": "Tools",
+  "toolbox.tabs.gamapass": "GamaPass",
   "toolbox.tabs.account_manager": "Account Manager",
   "toolbox.tabs.settings": "Settings",
   "toolbox.tabs.advanced": "Advanced",

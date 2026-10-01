@@ -4,17 +4,26 @@ import { useUiStore } from "../../lib/stores/ui-store";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { ToolsTab } from "./ToolsTab";
 import { AccountManagerTab } from "./AccountManagerTab";
+import { GamaPassTab } from "./GamaPassTab";
 import { SettingsTab } from "./SettingsTab";
 import { AdvancedTab } from "./AdvancedTab";
 import { AboutTab } from "./AboutTab";
 import { AnnouncementsTab } from "./AnnouncementsTab";
 
-type ToolboxTab = "tools" | "account_manager" | "settings" | "advanced" | "announcements" | "about";
+type ToolboxTab =
+  | "tools"
+  | "account_manager"
+  | "gamapass"
+  | "settings"
+  | "advanced"
+  | "announcements"
+  | "about";
 
 const TABS: { key: ToolboxTab; labelKey: string; icon: string }[] = [
   { key: "tools", labelKey: "toolbox.tabs.tools", icon: "🛠" },
   { key: "announcements", labelKey: "toolbox.tabs.announcements", icon: "📢" },
   { key: "account_manager", labelKey: "toolbox.tabs.account_manager", icon: "👤" },
+  { key: "gamapass", labelKey: "toolbox.tabs.gamapass", icon: "🔑" },
   { key: "settings", labelKey: "toolbox.tabs.settings", icon: "⚙" },
   { key: "advanced", labelKey: "toolbox.tabs.advanced", icon: "🔧" },
   { key: "about", labelKey: "toolbox.tabs.about", icon: "ℹ" },
@@ -87,6 +96,7 @@ export function ToolboxPage() {
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "tools" && <ToolsTab />}
         {activeTab === "account_manager" && <AccountManagerTab />}
+        {activeTab === "gamapass" && <GamaPassTab />}
         {activeTab === "settings" && <SettingsTab />}
         {activeTab === "advanced" && <AdvancedTab />}
         {activeTab === "announcements" && <AnnouncementsTab />}
