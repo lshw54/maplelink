@@ -30,7 +30,19 @@ pub fn auto_paste_credentials(_account_id: &str, _otp: &str, _is_hk: bool) -> bo
 
 #[cfg(any(target_os = "windows", test))]
 mod sequence {
-    use crate::services::login_locator::{locate_account_field, Frame, Point, Size};
+    /// A point in client coordinates, physical pixels.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Point {
+        pub x: i32,
+        pub y: i32,
+    }
+
+    /// A size in physical pixels.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Size {
+        pub width: i32,
+        pub height: i32,
+    }
 
     // Virtual key codes
     pub const VK_BACK: u32 = 0x08;
@@ -54,12 +66,58 @@ mod sequence {
     /// because nothing about it depends on the version — only on how fast the
     /// machine gets round to the message queue.
     pub const FOCUS_SETTLE_MS: u64 = 100;
-    /// Pause after ESC so the dismissed notice is gone before the screenshot
-    /// and the click.
+    /// Pause after ESC so the dismissed notice is gone before the click.
     pub const ESCAPE_SETTLE_MS: u64 = 100;
     /// Pause after `clear_field` so the field has a frame or two to empty
     /// before characters start arriving.
     pub const CLEAR_SETTLE_MS: u64 = 60;
+
+    /// Where the account box sits on the login screen, as fractions of the
+    /// login screen's size (WPF `MainWindow.xaml.cs` L2206-2207).
+    const CLICK_X_RATIO: f64 = 0.5;
+    const CLICK_Y_RATIO: f64 = 0.4;
+
+    /// The resolutions the client offers for its window. The login screen is
+    /// drawn at exactly one of these, anchored top-left; see
+    /// [`login_screen_size`].
+    const LOGIN_SCREEN_PRESETS: &[Size] = &[
+        Size {
+            width: 3840,
+            height: 2160,
+        },
+        Size {
+            width: 2732,
+            height: 1536,
+        },
+        Size {
+            width: 2560,
+            height: 1440,
+        },
+        Size {
+            width: 1920,
+            height: 1080,
+        },
+        Size {
+            width: 1600,
+            height: 900,
+        },
+        Size {
+            width: 1366,
+            height: 768,
+        },
+        Size {
+            width: 1280,
+            height: 720,
+        },
+        Size {
+            width: 1024,
+            height: 768,
+        },
+        Size {
+            width: 800,
+            height: 600,
+        },
+    ];
 
     /// The Win32 calls the paste sequence needs, behind a trait so the
     /// sequence can be exercised without a game window.
@@ -70,47 +128,60 @@ mod sequence {
         fn send_char(&mut self, ch: char);
         /// Client-area size of the game window; `None` when unavailable.
         fn client_size(&mut self) -> Option<Size>;
-        /// Screenshot the client area for the account-field locator. `None`
-        /// means the capture is unavailable and the ratio fallback is used.
-        fn capture_client(&mut self, size: Size) -> Option<Frame>;
         /// Left-click at `point` (client coordinates) and let it settle.
         fn click(&mut self, point: Point);
         fn sleep_ms(&mut self, ms: u64);
     }
 
-    /// Where the account-field click point came from; logged so future
-    /// reports can be diagnosed from the log.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum ClickSource {
-        Screenshot,
-        RatioFallback,
-    }
-
-    impl ClickSource {
-        pub fn as_str(self) -> &'static str {
-            match self {
-                ClickSource::Screenshot => "screenshot",
-                ClickSource::RatioFallback => "ratio-fallback",
-            }
+    /// Size of the login screen inside a client of `size`.
+    ///
+    /// With the game's 擴展UI模式 (extended UI mode) the client can grow past
+    /// the chosen resolution; the extra space goes to the right and the
+    /// bottom while the login screen stays at the chosen resolution,
+    /// anchored top-left. A reporter's 1920 × 1080 client had become
+    /// 1920 × 1238, so the account box sat at `0.4 × 1080 = 432` while the
+    /// ratio on the raw height gave `0.4 × 1238 = 495`, 63 px too low. A
+    /// `WM_LBUTTONDOWN` that misses does not move focus; after a logout focus
+    /// is on the password box, so the account went there, TAB moved to the
+    /// account box, and the OTP was typed into it.
+    ///
+    /// The client only offers the resolutions in [`LOGIN_SCREEN_PRESETS`], so:
+    ///
+    /// - A client that *is* one of them is unstretched and the login screen
+    ///   fills it — the original behaviour.
+    /// - Any other size means extended-UI mode stretched the client, and the
+    ///   login screen is the largest preset that fits inside it (by area).
+    ///   Aspect ratio is deliberately not used: a diagonal drag can land on
+    ///   16:9 again (2200 × 1238 is 1.777) and still be a stretched
+    ///   1920 × 1080.
+    /// - A client smaller than every preset is returned as-is.
+    ///
+    /// Known blind spot: a client stretched until a *larger* preset fits
+    /// exactly inside it (a 1920 × 1080 player dragging to ≥ 2560 × 1440) is
+    /// attributed to that larger preset. Nothing in the client size
+    /// distinguishes the two cases.
+    pub fn login_screen_size(size: Size) -> Size {
+        if size.width <= 0 || size.height <= 0 {
+            return size;
         }
+        if LOGIN_SCREEN_PRESETS.contains(&size) {
+            return size;
+        }
+        LOGIN_SCREEN_PRESETS
+            .iter()
+            .copied()
+            .filter(|preset| preset.width <= size.width && preset.height <= size.height)
+            .max_by_key(|preset| i64::from(preset.width) * i64::from(preset.height))
+            .unwrap_or(size)
     }
 
-    /// The legacy click point, `(0.5 × width, 0.4 × height)`, inherited from
-    /// the WPF Beanfun. Only correct for the layout it was tuned on; kept as
-    /// the fallback when the screenshot yields nothing.
-    pub fn ratio_click_point(size: Size) -> Point {
+    /// Where to click for the account field: the WPF ratios applied to the
+    /// login screen's size, not the raw client size.
+    pub fn compute_click_point(size: Size) -> Point {
+        let screen = login_screen_size(size);
         Point {
-            x: size.width / 2,
-            y: (size.height as f64 * 0.40) as i32,
-        }
-    }
-
-    /// Pick the account-field click point: the located field when the frame
-    /// shows the login panel, otherwise the ratio fallback.
-    pub fn resolve_click_point(size: Size, frame: Option<&Frame>) -> (Point, ClickSource) {
-        match frame.and_then(locate_account_field) {
-            Some(point) => (point, ClickSource::Screenshot),
-            None => (ratio_click_point(size), ClickSource::RatioFallback),
+            x: (screen.width as f64 * CLICK_X_RATIO) as i32,
+            y: (screen.height as f64 * CLICK_Y_RATIO) as i32,
         }
     }
 
@@ -145,28 +216,21 @@ mod sequence {
     /// - TAB to the password field → 100ms (see FOCUS_SETTLE_MS)
     /// - Characters carry no per-character delay: PostMessage queues them and
     ///   the game reads them in order.
-    ///
-    /// The login panel's position and scale depend on the player's window /
-    /// extended-UI settings, so a fixed fraction of the client area can miss
-    /// the account box. A miss leaves focus wherever it was (after a logout:
-    /// the password box) and the OTP ends up in the wrong field. The account
-    /// box is therefore located from a screenshot
-    /// ([`crate::services::login_locator`]); only if that fails is the ratio
-    /// used.
     pub fn run_paste_sequence<D: PasteDriver>(driver: &mut D, account_id: &str, otp: &str) {
         // 按 ESC 關閉提示框 + 點擊帳號欄 (matches original T9 flow)
         driver.send_key(VK_ESCAPE);
         driver.sleep_ms(ESCAPE_SETTLE_MS);
 
         if let Some(size) = driver.client_size() {
-            let frame = driver.capture_client(size);
-            let (point, source) = resolve_click_point(size, frame.as_ref());
+            let screen = login_screen_size(size);
+            let point = compute_click_point(size);
             tracing::info!(
                 client_width = size.width,
                 client_height = size.height,
+                login_width = screen.width,
+                login_height = screen.height,
                 click_x = point.x,
                 click_y = point.y,
-                source = source.as_str(),
                 "auto-paste: clicking account field"
             );
             driver.click(point);
@@ -201,8 +265,7 @@ mod win32 {
         PostMessageW, SetCursorPos, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
 
-    use super::sequence::{run_paste_sequence, PasteDriver};
-    use crate::services::login_locator::{capture_screen_region, Frame, Point, Size};
+    use super::sequence::{run_paste_sequence, PasteDriver, Point, Size};
 
     extern "system" {
         fn AttachThreadInput(id_attach: u32, id_attach_to: u32, f_attach: i32) -> i32;
@@ -308,17 +371,6 @@ mod win32 {
             })
         }
 
-        /// `GetClientRect` and `ClientToScreen` from this per-monitor
-        /// DPI-aware process give physical pixels, and so does the screen
-        /// DC, so the frame lines up with the click coordinates.
-        fn capture_client(&mut self, size: Size) -> Option<Frame> {
-            let frame = capture_screen_region(client_origin(self.hwnd), size);
-            if frame.is_none() {
-                tracing::warn!("auto-paste: client-area capture failed, using ratio fallback");
-            }
-            frame
-        }
-
         /// Move the cursor over the point (the game reads the cursor
         /// position, not only the message), post `WM_LBUTTONDOWN`, let the
         /// game process it, then put the cursor back.
@@ -382,33 +434,27 @@ mod win32 {
 #[cfg(test)]
 mod tests {
     use super::sequence::*;
-    use crate::services::login_locator::test_support::synth;
-    use crate::services::login_locator::{ButtonRect, Frame, Point, Size};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Call {
         Key(u32),
         Char(char),
         ClientSize,
-        Capture(Size),
         Click(Point),
         Sleep(u64),
     }
 
-    /// Records every call and hands back a planted frame (or `None`, which
-    /// exercises the ratio fallback).
+    /// Records every call and reports a fixed client size.
     struct RecordingDriver {
         calls: Vec<Call>,
         size: Size,
-        frame: Option<Frame>,
     }
 
     impl RecordingDriver {
-        fn new(size: Size, frame: Option<Frame>) -> Self {
+        fn new(size: Size) -> Self {
             Self {
                 calls: Vec::new(),
                 size,
-                frame,
             }
         }
 
@@ -434,10 +480,6 @@ mod tests {
             self.calls.push(Call::ClientSize);
             Some(self.size)
         }
-        fn capture_client(&mut self, size: Size) -> Option<Frame> {
-            self.calls.push(Call::Capture(size));
-            self.frame.clone()
-        }
         fn click(&mut self, point: Point) {
             self.calls.push(Call::Click(point));
         }
@@ -446,88 +488,85 @@ mod tests {
         }
     }
 
-    const SIZE: Size = Size {
-        width: 800,
-        height: 600,
-    };
-
-    /// A login panel with its 「登入」 button, laid out so the located point
-    /// does not coincide with the ratio click.
-    fn panel_frame() -> Frame {
-        synth(
-            SIZE,
-            (90, 180, 60),
-            Some(ButtonRect {
-                left: 250,
-                top: 150,
-                width: 300,
-                height: 250,
-            }),
-            Some(ButtonRect {
-                left: 270,
-                top: 300,
-                width: 260,
-                height: 45,
-            }),
-        )
-    }
-
-    /// Button centre x = 270 + 130 = 400; account row = 300 − 0.29 × 260 ≈ 225.
-    const LOCATED: Point = Point { x: 400, y: 225 };
-
-    #[test]
-    fn ratio_click_point_matches_legacy_fraction() {
-        assert_eq!(ratio_click_point(SIZE), Point { x: 400, y: 240 });
+    fn size(width: i32, height: i32) -> Size {
+        Size { width, height }
     }
 
     #[test]
-    fn resolve_click_point_prefers_the_screenshot() {
-        let frame = panel_frame();
+    fn every_preset_keeps_the_original_ratio_point() {
+        for (w, h) in [
+            (3840, 2160),
+            (2732, 1536),
+            (2560, 1440),
+            (1920, 1080),
+            (1600, 900),
+            (1366, 768),
+            (1280, 720),
+            (1024, 768),
+            (800, 600),
+        ] {
+            let s = size(w, h);
+            assert_eq!(login_screen_size(s), s);
+            assert_eq!(
+                compute_click_point(s),
+                Point {
+                    x: (w as f64 * 0.5) as i32,
+                    y: (h as f64 * 0.4) as i32
+                },
+                "{w}x{h}"
+            );
+        }
+    }
+
+    #[test]
+    fn stretched_1920x1080_clients_click_the_1920x1080_login_screen() {
+        // The reporter's extended-UI client, plus sideways and diagonal
+        // drags — including one that lands back on 16:9.
+        for (w, h) in [(1920, 1238), (2200, 1080), (2200, 1238), (2400, 1300)] {
+            let s = size(w, h);
+            assert_eq!(login_screen_size(s), size(1920, 1080), "{w}x{h}");
+            assert_eq!(compute_click_point(s), Point { x: 960, y: 432 }, "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn a_stretched_1366x768_client_clicks_the_1366x768_login_screen() {
+        assert_eq!(login_screen_size(size(1400, 926)), size(1366, 768));
         assert_eq!(
-            resolve_click_point(SIZE, Some(&frame)),
-            (LOCATED, ClickSource::Screenshot)
-        );
-        assert_ne!(
-            LOCATED,
-            ratio_click_point(SIZE),
-            "test must not coincide with the ratio"
+            compute_click_point(size(1400, 926)),
+            Point { x: 683, y: 307 }
         );
     }
 
     #[test]
-    fn resolve_click_point_falls_back_without_a_frame_or_a_panel() {
-        let expected = (ratio_click_point(SIZE), ClickSource::RatioFallback);
-        assert_eq!(resolve_click_point(SIZE, None), expected);
-        let scenery_only = synth(SIZE, (90, 180, 60), None, None);
-        assert_eq!(resolve_click_point(SIZE, Some(&scenery_only)), expected);
+    fn clients_smaller_than_every_preset_are_used_as_they_are() {
+        assert_eq!(login_screen_size(size(700, 500)), size(700, 500));
+        assert_eq!(
+            compute_click_point(size(700, 500)),
+            Point { x: 350, y: 200 }
+        );
+        assert_eq!(login_screen_size(size(0, 0)), size(0, 0));
+        assert_eq!(compute_click_point(size(0, 0)), Point { x: 0, y: 0 });
     }
 
     #[test]
-    fn paste_sequence_clicks_the_located_account_field() {
-        let mut driver = RecordingDriver::new(SIZE, Some(panel_frame()));
+    fn paste_sequence_clicks_the_login_screen_point_on_a_stretched_client() {
+        let mut driver = RecordingDriver::new(size(1920, 1238));
         run_paste_sequence(&mut driver, "acc", "otp");
-        assert_eq!(driver.clicks(), vec![LOCATED]);
-        assert!(driver.calls.contains(&Call::Capture(SIZE)));
-    }
-
-    #[test]
-    fn paste_sequence_uses_the_ratio_when_capture_fails() {
-        let mut driver = RecordingDriver::new(SIZE, None);
-        run_paste_sequence(&mut driver, "acc", "otp");
-        assert_eq!(driver.clicks(), vec![ratio_click_point(SIZE)]);
+        assert_eq!(driver.clicks(), vec![Point { x: 960, y: 432 }]);
     }
 
     #[test]
     fn paste_sequence_order_is_unchanged() {
-        let mut driver = RecordingDriver::new(SIZE, None);
+        let s = size(800, 600);
+        let mut driver = RecordingDriver::new(s);
         run_paste_sequence(&mut driver, "ab", "12");
 
         let mut expected = vec![
             Call::Key(VK_ESCAPE),
             Call::Sleep(ESCAPE_SETTLE_MS),
             Call::ClientSize,
-            Call::Capture(SIZE),
-            Call::Click(ratio_click_point(SIZE)),
+            Call::Click(compute_click_point(s)),
             Call::Key(VK_END),
         ];
         expected.extend(std::iter::repeat_n(Call::Key(VK_BACK), 64));
