@@ -86,10 +86,22 @@ export default function DemoSessions() {
     setAdding(false);
   }
   const coach = adding
-    ? t("這就是登入頁，只多了「返回帳號列表」。填好帳密按「登入」。", "这就是登录页，只多了「返回账号列表」。填好账密点「登录」。", "This is the sign-in page with one extra button, Back to Accounts. Fill in and sign in.")
+    ? t(
+        "這就是登入頁，只多了「返回帳號列表」。填好帳密按「登入」。",
+        "这就是登录页，只多了「返回账号列表」。填好账密点「登录」。",
+        "This is the sign-in page with one extra button, Back to Accounts. Fill in and sign in.",
+      )
     : sessions.length >= 2
-      ? t("每個分頁各有自己的帳號列表和 OTP。點分頁切換；滑到分頁上按 × 可登出該帳號。", "每个标签各有自己的账号列表和 OTP。点标签切换；移到标签上点 × 可登出该账号。", "Each tab has its own accounts and OTP. Click a tab to switch; hover one and press × to sign that account out.")
-      : t("按分頁列右邊的「+」加入第二個帳號。", "点标签栏右边的「+」添加第二个账号。", "Click + at the end of the tab strip to add a second account.");
+      ? t(
+          "每個分頁各有自己的帳號列表和 OTP。點分頁切換；滑到分頁上按 × 可登出該帳號。",
+          "每个标签各有自己的账号列表和 OTP。点标签切换；移到标签上点 × 可登出该账号。",
+          "Each tab has its own accounts and OTP. Click a tab to switch; hover one and press × to sign that account out.",
+        )
+      : t(
+          "按分頁列右邊的「+」加入第二個帳號。",
+          "点标签栏右边的「+」添加第二个账号。",
+          "Click + at the end of the tab strip to add a second account.",
+        );
   const done = sessions.length >= 2 && !adding;
 
   return (
@@ -113,7 +125,12 @@ export default function DemoSessions() {
                   setAdding(false);
                 }}
               >
-                <i className={clsx(styles.se__dot, s.region === "TW" ? styles["se__dot--tw"] : styles["se__dot--hk"])}></i>
+                <i
+                  className={clsx(
+                    styles.se__dot,
+                    s.region === "TW" ? styles["se__dot--tw"] : styles["se__dot--hk"],
+                  )}
+                ></i>
                 {s.name}
                 <small>{s.region}</small>
                 {sessions.length > 1 && (
@@ -131,7 +148,11 @@ export default function DemoSessions() {
               </button>
             ))}
             <button
-              className={clsx(styles.se__tab, styles["se__tab--add"], sessions.length < 2 && !adding && "ml-hint")}
+              className={clsx(
+                styles.se__tab,
+                styles["se__tab--add"],
+                sessions.length < 2 && !adding && "ml-hint",
+              )}
               title={t("新增帳號", "添加账号", "Add Account")}
               onClick={() => setAdding(true)}
             >
@@ -145,7 +166,13 @@ export default function DemoSessions() {
                 <UiPlayColumn key={session.id} canClassic={session.region === "HK"} />
               </div>
               <div className={styles.se__right}>
-                <UiAccountPanel key={session.id} accounts={session.accounts} user={session.name} beans={session.beans} region={session.region} />
+                <UiAccountPanel
+                  key={session.id}
+                  accounts={session.accounts}
+                  user={session.name}
+                  beans={session.beans}
+                  region={session.region}
+                />
               </div>
             </div>
           ) : (
@@ -171,7 +198,15 @@ export default function DemoSessions() {
                 placeholder={t("輸入你的密碼", "输入你的密码", "Enter your password")}
                 {...NATIVE_INPUT}
               />
-              <button type="submit" className={clsx(styles.se__submit, "ml-grad", !canSubmit && styles["se__submit--off"])} disabled={!canSubmit}>
+              <button
+                type="submit"
+                className={clsx(
+                  styles.se__submit,
+                  "ml-grad",
+                  !canSubmit && styles["se__submit--off"],
+                )}
+                disabled={!canSubmit}
+              >
                 {busy ? t("登入中...", "登录中...", "Signing in...") : t("登入", "登录", "Sign In")}
               </button>
               <button type="button" className={styles.se__back} onClick={() => setAdding(false)}>
@@ -181,7 +216,14 @@ export default function DemoSessions() {
           )}
         </div>
       </UiFrame>
-      <UiCoach done={done} action={done ? <button onClick={reset}>{t("再試一次", "再试一次", "Try again")}</button> : undefined}>
+      <UiCoach
+        done={done}
+        action={
+          done ? (
+            <button onClick={reset}>{t("再試一次", "再试一次", "Try again")}</button>
+          ) : undefined
+        }
+      >
         {coach}
       </UiCoach>
     </div>
