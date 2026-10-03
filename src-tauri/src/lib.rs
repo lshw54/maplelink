@@ -779,13 +779,10 @@ pub fn run() {
                         .and_then(|s| s.config.try_read().ok().map(|c| c.cafe_mode))
                         .unwrap_or(false);
                     if cafe {
+                        // The wipe itself happens in `request_quit`, so every
+                        // way out of the app (this close, the tray's quit, the
+                        // close dialog) erases the same things.
                         api.prevent_close();
-                        if let Some(state) = state_opt.as_ref() {
-                            services::cafe_service::wipe_local_data(
-                                window.app_handle(),
-                                state.inner(),
-                            );
-                        }
                         request_quit(window.app_handle());
                         return;
                     }
@@ -912,8 +909,26 @@ static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 /// its normal teardown. This avoids `app.exit(0)`'s abrupt process exit, which on
 /// Windows logs a benign "Failed to unregister class Chrome_WidgetWin_0" error
 /// from WebView2's Chromium during shutdown.
+///
+/// Every quit path ends here — the title bar's X, the tray menu's quit, the
+/// close dialog — so this is also where café mode wipes the local data. It
+/// used to live only on the title-bar path, and quitting from the tray left
+/// everything behind on a shared PC.
 pub fn request_quit(app: &tauri::AppHandle) {
-    QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    if QUIT_REQUESTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return; // already quitting
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        let cafe = state
+            .config
+            .try_read()
+            .ok()
+            .map(|c| c.cafe_mode)
+            .unwrap_or(false);
+        if cafe {
+            services::cafe_service::wipe_local_data(app, state.inner());
+        }
+    }
     for (_, win) in app.webview_windows() {
         let _ = win.close();
     }
