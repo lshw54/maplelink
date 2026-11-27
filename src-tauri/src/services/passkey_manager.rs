@@ -748,6 +748,27 @@ mod tests {
     }
 
     #[test]
+    fn extracts_deflated_extension_files() {
+        use std::io::{Cursor, Write};
+        use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+
+        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        zip.start_file("content/script.js", options).unwrap();
+        zip.write_all(b"// extension fixture").unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+
+        let dir = std::env::temp_dir().join(format!("maplelink_zip_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        unzip_into(&bytes, &dir).unwrap();
+        let script = dir.join("content/script.js");
+        assert_eq!(std::fs::read(&script).unwrap(), b"// extension fixture");
+        std::fs::remove_file(script).unwrap();
+        std::fs::remove_dir(dir.join("content")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
     fn crx_parse_rejects_wrong_magic_version_and_lengths() {
         assert!(crx::parse(b"nope").is_err());
         let mut bad_version = crx::build_for_test(b"k", b"z");
