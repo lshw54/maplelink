@@ -257,7 +257,7 @@ pub async fn launch_game(
         });
     }
 
-    tracing::info!(pid, account_id = %account_id, use_lr, "game launched");
+    tracing::info!(pid, account_id = %account_id, use_lr, "game launch requested");
     Ok(pid)
 }
 
@@ -379,6 +379,7 @@ pub async fn launch_game_direct(
                     (None, None) => {
                         consecutive_missing += 1;
                         if consecutive_missing >= 30 {
+                            tracing::warn!("MapleStory.exe never appeared after direct launch");
                             return;
                         }
                     }
@@ -402,7 +403,7 @@ pub async fn launch_game_direct(
         });
     }
 
-    tracing::info!(pid, use_lr, "game launched directly (no login)");
+    tracing::info!(pid, use_lr, "game launch requested (no login)");
     Ok(pid)
 }
 

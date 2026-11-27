@@ -9,6 +9,9 @@ use super::session::Region;
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub game_path: String,
+    /// Optional parent directory for the LR fallback bundle.
+    #[serde(default)]
+    pub lr_fallback_dir: String,
     pub theme: Theme,
     pub language: Language,
     pub auto_update: bool,
@@ -147,6 +150,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             game_path: String::new(),
+            lr_fallback_dir: String::new(),
             theme: Theme::System,
             language: Language::ZhTW,
             auto_update: true,

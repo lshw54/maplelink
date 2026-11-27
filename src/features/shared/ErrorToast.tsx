@@ -71,7 +71,18 @@ function ErrorToastItem({ toast }: { toast: Toast }) {
         </svg>
       )}
 
-      <span className="flex-1 text-xs text-[var(--text)]">{toast.message}</span>
+      <div className="flex flex-1 flex-col gap-1 text-xs text-[var(--text)]">
+        <span>{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            onClick={toast.action.onClick}
+            className="self-start text-left font-semibold text-accent hover:underline"
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
 
       <button
         onClick={() => removeToast(toast.id)}

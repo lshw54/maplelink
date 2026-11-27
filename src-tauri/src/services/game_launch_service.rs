@@ -344,6 +344,7 @@ pub async fn launch_with_lr(
     _region: &Region,
     credentials: &GameCredentials,
 ) -> Result<u32, ProcessError> {
+    lr_service::check_launch_runtime(std::path::Path::new(&launch_cmd.executable))?;
     let lr_proc = lr_service::ensure_lr_files(app).await?;
     let lr_path = lr_proc.to_string_lossy().to_string();
 
@@ -378,7 +379,7 @@ pub async fn launch_with_lr(
 
     tracing::info!(
         lr_proc = %lr_path,
-        lr_args = %lr_args,
+        game = %launch_cmd.executable,
         traditional_login,
         "launching game via Locale Remulator"
     );

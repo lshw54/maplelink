@@ -5,6 +5,7 @@ export interface Toast {
   message: string;
   category: string;
   critical: boolean;
+  action?: { label: string; onClick: () => void };
 }
 
 export interface ErrorToastState {

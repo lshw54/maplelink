@@ -7,7 +7,6 @@ import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
 import { MASK_CLASS } from "../../lib/mask";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
-import { useErrorToastStore } from "../../lib/stores/error-toast-store";
 import { AccountGrid } from "./AccountGrid";
 import { OtpPanel } from "./OtpPanel";
 import { SessionTabs } from "./SessionTabs";
@@ -17,7 +16,7 @@ import { useGameAccounts } from "../../lib/hooks/use-accounts";
 import { StatusBar } from "../shared/StatusBar";
 import { Modal } from "../../components/Modal";
 import type { GameAccountDto, ClassicCheckDto } from "../../lib/types";
-import { errorMessage } from "../../lib/errors";
+import { reportGameLaunchError } from "../../lib/game-launch-error";
 
 export function MainPage() {
   const { t } = useTranslation();
@@ -212,6 +211,8 @@ export function MainPage() {
           setGamePid(processId);
           setGameRunning(true);
         }
+      } catch (err) {
+        reportGameLaunchError(err);
       } finally {
         setLaunching(false);
       }
@@ -257,12 +258,7 @@ export function MainPage() {
           setGameRunning(true);
         }
       } catch (err) {
-        const msg = errorMessage(err);
-        useErrorToastStore.getState().addToast({
-          message: msg,
-          category: "process",
-          critical: false,
-        });
+        reportGameLaunchError(err);
       } finally {
         setLaunching(false);
       }
@@ -326,6 +322,8 @@ export function MainPage() {
           setGamePid(processId);
           setGameRunning(true);
         }
+      } catch (err) {
+        reportGameLaunchError(err);
       } finally {
         setLaunching(false);
       }

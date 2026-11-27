@@ -7,6 +7,7 @@ import { useUiStore } from "../stores/ui-store";
 import { useErrorToastStore } from "../stores/error-toast-store";
 import type { SessionDto } from "../types";
 import { errorMessage } from "../errors";
+import { reportGameLaunchError } from "../game-launch-error";
 
 /** Translate outside React render (mutation callbacks) using the current language. */
 const tr = (key: string) => getTranslation(useUiStore.getState().language, key);
@@ -34,8 +35,8 @@ function autoLaunchGameIfEnabled(sessionId: string) {
         useUiStore.getState().setGamePid(pid);
         useUiStore.getState().setGameRunning(true);
       }
-    } catch {
-      /* auto-launch failure is non-critical */
+    } catch (err) {
+      reportGameLaunchError(err, true);
     }
   })();
 }

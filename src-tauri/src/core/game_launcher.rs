@@ -238,6 +238,7 @@ mod tests {
                 )| {
                     AppConfig {
                         game_path,
+                        lr_fallback_dir: String::new(),
                         theme,
                         language,
                         auto_update,

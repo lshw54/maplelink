@@ -359,17 +359,20 @@ pub fn client_free_space(dir: String) -> Option<u64> {
     client_manager::free_space(std::path::Path::new(&dir))
 }
 
-/// Pick the game folder. Starts at `start_in` when the caller has one, so the
-/// player lands next to their existing install rather than at the drive root.
+/// Pick a folder. Callers can supply a title and a starting directory.
 #[tauri::command]
 pub async fn client_pick_folder(
     start_in: Option<String>,
+    title: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<Option<String>, ErrorDto> {
     use tauri_plugin_dialog::DialogExt;
 
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-    let mut dialog = app.dialog().file().set_title("Select the game folder");
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title(title.as_deref().unwrap_or("Select the game folder"));
     if let Some(dir) = start_in.filter(|d| !d.is_empty()) {
         dialog = dialog.set_directory(dir);
     }

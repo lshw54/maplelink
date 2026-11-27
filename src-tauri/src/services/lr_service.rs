@@ -1,24 +1,29 @@
-//! Locale Remulator (LR) file management — embedded LR binaries are
-//! extracted to the app data directory at runtime.
+//! Locale Remulator (LR) file management. The embedded files are extracted at
+//! runtime to a directory whose path survives LR's ANSI conversions.
 //!
 //! LR spoofs the system locale so MapleStory runs under Traditional Chinese
 //! code-page (950) without requiring the user to change their Windows locale.
 
-use std::path::PathBuf;
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 use crate::core::error::ProcessError;
+use crate::utils::ascii_path;
 
 /// The LR profile GUID for "Run in Taiwan (Admin)" in `LRConfig.xml`.
 pub const LR_PROFILE_GUID: &str = "ef3e7b42-a87c-4c07-ae3e-eeebeef12762";
 
-/// Environment roots that are ASCII on every Windows install, used when the
-/// user profile isn't — see [`lr_dir_candidates`]. `%ProgramData%` first: it is
-/// writable without elevation and is where shared app data belongs.
+/// Shared roots to try when the per-user path is unsuitable or unwritable.
 const ASCII_ROOTS: [&str; 3] = ["ProgramData", "ALLUSERSPROFILE", "SystemDrive"];
 
 /// Folder we create under an [`ASCII_ROOTS`] entry. Kept in sync with the
 /// uninstaller (`installer/hooks.nsh`), which deletes it.
 const ASCII_FALLBACK_DIR: &str = "MapleLink";
+
+/// The bundled x64 LRProc and LRHookx64 import this runtime.
+#[cfg(any(target_os = "windows", test))]
+const VC_RUNTIME_DLL: &str = "VCRUNTIME140.dll";
 
 /// Embedded LR files — compiled directly into the binary so a standalone
 /// `maplelink.exe` works without needing a `resources/lr/` folder alongside it.
@@ -45,254 +50,230 @@ const EMBEDDED_LR: &[(&str, &[u8])] = &[
     ),
 ];
 
-/// What `sync_lr_file` did with one file.
-#[derive(Debug, PartialEq, Eq)]
-enum SyncOutcome {
-    /// The embedded copy was written over whatever was there.
-    Written,
-    /// The file couldn't be replaced, but what's on disk is byte-identical to
-    /// the embedded copy anyway — nothing is stale.
-    AlreadyCurrent,
-    /// The file couldn't be replaced and its content differs (locked by a
-    /// running game). The old copy is left in place; the launch continues.
-    UpdateSkipped,
-}
-
-/// Re-extract one embedded LR file into `lr_dir`, replacing what's there.
-///
-/// The on-disk copy is never trusted: every call rewrites the file, so a stale,
-/// truncated or externally-modified binary can't survive. The write goes to a
-/// `.tmp` sibling and is renamed over the destination, so an interrupted write
-/// can never leave a half-written binary in place.
-///
-/// Windows refuses to rename over a file that is locked — typically
-/// `LRHookx*.dll` mapped into a MapleStory process that is still running. In
-/// that case the destination is first moved aside to `<name>.old` so the fresh
-/// copy still lands (and is restored if that second step fails). Only if even
-/// that fails do we keep the existing file: non-fatal when one exists
-/// ([`SyncOutcome::UpdateSkipped`]), fatal when the file is missing entirely,
-/// since LR then has nothing to run.
-async fn sync_lr_file(
-    lr_dir: &std::path::Path,
-    filename: &str,
-    data: &[u8],
-) -> Result<SyncOutcome, ProcessError> {
+/// Replace one file atomically. Each extraction uses its own staging file
+/// because the UI and the headless launcher can run at the same time.
+fn sync_lr_file(lr_dir: &Path, filename: &str, data: &[u8]) -> io::Result<()> {
     let dest = lr_dir.join(filename);
+    let result = (|| {
+        let staged = lr_dir.join(format!("{filename}.{}.tmp", uuid::Uuid::new_v4()));
+        let mut file = fs::File::create_new(&staged)?;
+        let write_result = file.write_all(data);
+        drop(file);
 
-    let mut tmp = dest.clone().into_os_string();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-
-    let mut aside = dest.clone().into_os_string();
-    aside.push(".old");
-    let aside = PathBuf::from(aside);
-
-    let write_and_swap = async {
-        tokio::fs::write(&tmp, data).await?;
-        tokio::fs::rename(&tmp, &dest).await
-    };
-
-    let err = match write_and_swap.await {
-        Ok(()) => {
-            // Drop any copy parked by an earlier locked run; best-effort, it may
-            // still be held open.
-            let _ = tokio::fs::remove_file(&aside).await;
-            tracing::debug!(file = %filename, "extracted embedded LR file");
-            return Ok(SyncOutcome::Written);
+        let result = write_result.and_then(|()| fs::rename(&staged, &dest));
+        if result.is_err() {
+            let _ = fs::remove_file(&staged);
         }
-        Err(e) => e,
-    };
+        result
+    })();
 
-    // Couldn't replace the destination. If it already holds exactly the embedded
-    // bytes there is nothing to fix, so don't fight the lock.
-    if tokio::fs::read(&dest).await.ok().as_deref() == Some(data) {
-        let _ = tokio::fs::remove_file(&tmp).await;
-        return Ok(SyncOutcome::AlreadyCurrent);
-    }
-
-    // Stale content behind a lock: park the locked file and move the fresh copy
-    // into its place. Renaming an open file is allowed where replacing it isn't.
-    let _ = tokio::fs::remove_file(&aside).await;
-    if tokio::fs::rename(&dest, &aside).await.is_ok() {
-        match tokio::fs::rename(&tmp, &dest).await {
-            Ok(()) => {
-                tracing::info!(file = %filename, "replaced in-use LR file (old copy moved aside)");
-                return Ok(SyncOutcome::Written);
-            }
-            // Put the working copy back rather than leave nothing there.
-            Err(_) => {
-                let _ = tokio::fs::rename(&aside, &dest).await;
-            }
+    // An existing hook can be locked by a running game, and a shared directory
+    // prepared by the elevated UI can be read-only for the headless launcher.
+    // In either case only allow the existing file if it matches this build.
+    result.or_else(|error| {
+        if lr_file_matches(&dest, data) {
+            Ok(())
+        } else {
+            Err(error)
         }
-    }
-
-    let _ = tokio::fs::remove_file(&tmp).await; // clean up the staged copy
-    if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
-        // The old copy is still usable — keep running rather than block the
-        // launch. This is the "DLL locked by a running game" path.
-        tracing::warn!(
-            file = %filename,
-            "could not replace LR file (in use?); keeping the existing copy: {err}"
-        );
-        Ok(SyncOutcome::UpdateSkipped)
-    } else {
-        Err(ProcessError::SpawnFailed {
-            path: dest.display().to_string(),
-            reason: format!("Failed to write LR file: {err}"),
-        })
-    }
+    })
 }
 
-/// Every directory the LR files may live in, best first.
-///
-/// **LR cannot be given a non-ASCII path.** It bridges 32/64-bit by reading its
-/// own DLL path back with `GetModuleFileNameA` and formatting it into
-/// `rundll32.exe "%hs",#1` — a narrow string, converted under the code page LR
-/// has itself just spoofed to 950. A profile name outside that code page (a
-/// Chinese account name, Simplified or Traditional; a full-width symbol) comes
-/// back mangled, and rundll32 pops "the specified module could not be found".
-/// The conversion lives inside LR's shipped binaries, so the only lever we have
-/// is where we put the files.
-///
-/// So: `<app_data_dir>/lr` when the profile name is ASCII (nearly everyone,
-/// unchanged); its 8.3 short form next, which names the very same directory and
-/// so needs no migration; and then [`ASCII_ROOTS`], which are ASCII on every
-/// Windows install.
-///
-/// Do not count on the short form. Windows only generates an 8.3 alias for a
-/// name it cannot already express in the *OEM* code page — and on exactly the
-/// machines that hit this bug (a Chinese Windows, OEM 936/950) a Chinese folder
-/// name is expressible, so `GetShortPathNameW` hands the name straight back
-/// unchanged. `C:\Users\小明` shortens to `C:\Users\C3DD~1` on an English
-/// install and to `C:\Users\小明` on a Chinese one. The [`ASCII_ROOTS`] fallback
-/// is what actually carries these users.
-///
-/// The plain long path is always last so a failure is a failed launch with the
-/// real path in the log, not an empty candidate list.
-fn lr_dir_candidates(app_data_dir: &std::path::Path) -> Vec<PathBuf> {
-    use crate::utils::ascii_path;
+fn lr_file_matches(path: &Path, data: &[u8]) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() == data.len() as u64)
+        && fs::read(path).is_ok_and(|bytes| bytes == data)
+}
 
-    let primary = app_data_dir.join("lr");
-    if ascii_path::is_ascii(&primary) {
-        return vec![primary];
-    }
-
-    let mut candidates = Vec::new();
-    // Same directory, ASCII alias — only exists once `primary` does, which is
-    // why the caller creates it before asking. Often absent; see above.
-    if let Some(short) = ascii_path::ascii_safe(&primary) {
-        candidates.push(short);
+fn lr_dir_candidates(app_data_dir: &Path, fallback_root: &str) -> Vec<PathBuf> {
+    let mut candidates = vec![app_data_dir.join("lr")];
+    if !fallback_root.is_empty() {
+        let root = Path::new(fallback_root);
+        match check_lr_dir(root) {
+            Ok(()) => candidates.push(root.join(ASCII_FALLBACK_DIR).join("lr")),
+            Err(error) => {
+                tracing::warn!(dir = %root.display(), "ignoring invalid LR fallback directory: {error}");
+            }
+        }
     }
     for var in ASCII_ROOTS {
         if let Some(root) = ascii_path::env_root(var) {
             let dir = root.join(ASCII_FALLBACK_DIR).join("lr");
-            if ascii_path::is_ascii(&dir) && !candidates.contains(&dir) {
+            if !candidates.contains(&dir) {
                 candidates.push(dir);
             }
         }
     }
-    candidates.push(primary);
+    candidates.retain(|dir| dir.is_absolute() && ascii_path::is_ascii(dir));
     candidates
 }
 
-/// Extract embedded LR files to an ASCII-safe directory.
-///
-/// Returns the path to `LRProc.exe`. All LR files are placed in one directory
-/// so they are co-located as required by LRProc — normally `<app_data_dir>/lr/`,
-/// but see [`lr_dir_candidates`] for why a non-ASCII user profile forces us
-/// somewhere else.
-///
-/// Every file is re-extracted on each call (see [`sync_lr_file`]) rather than
-/// compared first, so the shipped binaries always win over whatever is on disk.
-pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, ProcessError> {
-    use tauri::Manager;
-
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| ProcessError::SpawnFailed {
-            path: "app_data_dir".to_string(),
-            reason: format!("Failed to resolve app data directory: {e}"),
-        })?;
-
-    // Create the normal location first: a short name can only be read back off
-    // a directory that exists, and this is where the files go anyway when the
-    // path is already ASCII.
-    let primary = app_data_dir.join("lr");
-    let primary_err = tokio::fs::create_dir_all(&primary).await.err();
-
-    let candidates = lr_dir_candidates(&app_data_dir);
-    let lr_dir = pick_lr_dir(&candidates, primary_err).await?;
-
-    if lr_dir != primary {
-        tracing::info!(
-            requested = %primary.display(),
-            using = %lr_dir.display(),
-            "user profile is not ASCII — extracting LR somewhere Locale Remulator can name"
-        );
+/// LRProc uses the CLR assembly location to locate its hooks and Detours
+/// passes the DLL path through ANSI. Validate the real directory too so a
+/// short name or junction cannot send LR back to a Unicode profile path.
+pub(crate) fn check_lr_dir(dir: &Path) -> io::Result<()> {
+    if !dir.is_absolute()
+        || !ascii_path::is_ascii(dir)
+        || dir
+            .as_os_str()
+            .as_encoded_bytes()
+            .iter()
+            .any(u8::is_ascii_control)
+        || !ascii_path::is_ascii(&fs::canonicalize(dir)?)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Locale Remulator requires an absolute ASCII directory",
+        ));
     }
-
-    for &(filename, data) in EMBEDDED_LR {
-        sync_lr_file(&lr_dir, filename, data).await?;
+    if !fs::metadata(dir)?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Locale Remulator needs a folder",
+        ));
     }
-
-    Ok(lr_dir.join("LRProc.exe"))
+    Ok(())
 }
 
-/// First candidate we can actually create, or a spawn error naming them all.
-///
-/// `primary_err` is the failure from creating the first candidate, if any — it
-/// is the most useful thing to report when nothing works.
-async fn pick_lr_dir(
-    candidates: &[PathBuf],
-    primary_err: Option<std::io::Error>,
-) -> Result<PathBuf, ProcessError> {
-    let mut last_err = primary_err;
+fn prepare_lr_dir(dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    check_lr_dir(dir)?;
+    for &(filename, data) in EMBEDDED_LR {
+        sync_lr_file(dir, filename, data)
+            .map_err(|error| io::Error::new(error.kind(), format!("{filename}: {error}")))?;
+    }
+    Ok(())
+}
 
+/// Extract the full LR bundle before returning its executable. A directory
+/// may exist even when the launcher cannot write its files, so try the next
+/// location if preparing the bundle fails.
+pub fn ensure_lr_files_in(
+    app_data_dir: &Path,
+    fallback_root: &str,
+) -> Result<PathBuf, ProcessError> {
+    prepare_lr_from_candidates(
+        app_data_dir,
+        &lr_dir_candidates(app_data_dir, fallback_root),
+    )
+}
+
+fn prepare_lr_from_candidates(
+    app_data_dir: &Path,
+    candidates: &[PathBuf],
+) -> Result<PathBuf, ProcessError> {
+    let mut failures = Vec::new();
     for dir in candidates {
-        match tokio::fs::create_dir_all(dir).await {
-            Ok(()) => return Ok(dir.clone()),
-            Err(e) => {
-                tracing::warn!(dir = %dir.display(), "could not create LR directory: {e}");
-                last_err = Some(e);
+        match prepare_lr_dir(dir) {
+            Ok(()) => {
+                tracing::debug!(dir = %dir.display(), "Locale Remulator files ready");
+                return Ok(dir.join("LRProc.exe"));
+            }
+            Err(error) => {
+                tracing::warn!(dir = %dir.display(), "could not prepare LR files: {error}");
+                failures.push(format!("{}: {error}", dir.display()));
             }
         }
     }
 
-    let tried = candidates
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
+    let primary = app_data_dir.join("lr");
+    let reason = if failures.is_empty() {
+        "No absolute ASCII directory is available for Locale Remulator".to_owned()
+    } else {
+        format!(
+            "Failed to prepare Locale Remulator: {}",
+            failures.join("; ")
+        )
+    };
     Err(ProcessError::SpawnFailed {
-        path: tried,
-        reason: match last_err {
-            Some(e) => format!("Failed to create LR directory: {e}"),
-            None => "Failed to create LR directory".to_string(),
-        },
+        path: primary.display().to_string(),
+        reason,
     })
 }
 
-/// Locate an already-extracted `LRProc.exe` without an `AppHandle`.
-///
-/// Used by the headless web-launch path, which runs before Tauri starts. Walks
-/// the same candidates [`ensure_lr_files`] would have written to and returns the
-/// first that is actually there.
-pub fn find_lr_proc(app_data_dir: &std::path::Path) -> Option<PathBuf> {
-    lr_proc_in(&lr_dir_candidates(app_data_dir))
+/// Prepare LR for the in-app launcher without blocking the async runtime.
+pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, ProcessError> {
+    use tauri::Manager;
+
+    let app_data_dir =
+        app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|error| ProcessError::SpawnFailed {
+                path: "app_data_dir".to_string(),
+                reason: format!("Failed to resolve app data directory: {error}"),
+            })?;
+
+    let state = app_handle.state::<crate::models::app_state::AppState>();
+    let fallback_root = state.config.read().await.lr_fallback_dir.clone();
+    tokio::task::spawn_blocking(move || ensure_lr_files_in(&app_data_dir, &fallback_root))
+        .await
+        .map_err(|error| ProcessError::SpawnFailed {
+            path: "LRProc.exe".to_owned(),
+            reason: format!("LR extraction task failed: {error}"),
+        })?
 }
 
-/// First `LRProc.exe` that exists across `candidates`.
-///
-/// Order matters on an upgrade: a user whose profile is not ASCII may still
-/// have last version's copy sitting in the app data dir, and picking that one
-/// would put us straight back into the rundll32 failure. Candidates are already
-/// ordered ASCII-first, so the fresh copy wins.
+/// Report readiness only when a complete, current bundle exists.
+#[cfg(target_os = "windows")]
+pub fn find_lr_proc(app_data_dir: &Path, fallback_root: &str) -> Option<PathBuf> {
+    lr_proc_in(&lr_dir_candidates(app_data_dir, fallback_root))
+}
+
+#[cfg(any(target_os = "windows", test))]
 fn lr_proc_in(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates
         .iter()
+        .find(|dir| {
+            check_lr_dir(dir).is_ok()
+                && EMBEDDED_LR
+                    .iter()
+                    .all(|(filename, data)| lr_file_matches(&dir.join(filename), data))
+        })
         .map(|dir| dir.join("LRProc.exe"))
-        .find(|exe| exe.is_file())
+}
+
+/// Catch a missing runtime before Windows starts LRProc or the injected game.
+/// The game directory and inherited PATH also support app-local runtimes.
+#[cfg(target_os = "windows")]
+pub fn check_launch_runtime(game_path: &Path) -> Result<(), ProcessError> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+
+    let mut buffer = [0u16; 260];
+    let len = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if len == 0 || len >= buffer.len() {
+        tracing::warn!("could not resolve the Windows system directory for the LR runtime check");
+        return Ok(());
+    }
+
+    let system_dir = PathBuf::from(OsString::from_wide(&buffer[..len]));
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = std::iter::once(system_dir)
+        .chain(game_path.parent().map(Path::to_path_buf))
+        .chain(std::env::split_paths(&path).filter(|dir| dir.is_absolute()));
+    let result = check_runtime_in(dirs);
+    if let Err(error) = &result {
+        tracing::warn!(game = %game_path.display(), "LR launch prerequisite failed: {error}");
+    }
+    result
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn check_runtime_in(dirs: impl IntoIterator<Item = PathBuf>) -> Result<(), ProcessError> {
+    if dirs
+        .into_iter()
+        .any(|dir| dir.join(VC_RUNTIME_DLL).is_file())
+    {
+        Ok(())
+    } else {
+        Err(ProcessError::MissingVcRuntime)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn check_launch_runtime(_game_path: &Path) -> Result<(), ProcessError> {
+    Ok(())
 }
 
 /// Check if the system locale is Traditional Chinese.
@@ -336,162 +317,218 @@ pub fn is_system_locale_chinese_traditional() -> bool {
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join("maplelink_lr_test").join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    const MIXED_CHINESE_PROFILE: &str = "简体用户（管理員）";
+
+    fn scratch() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("maplelink_lr_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
         dir
     }
 
-    #[tokio::test]
-    async fn writes_a_missing_file() {
-        let dir = scratch("missing");
-        let out = sync_lr_file(&dir, "f.bin", b"hello").await.unwrap();
-        assert_eq!(out, SyncOutcome::Written);
-        assert_eq!(std::fs::read(dir.join("f.bin")).unwrap(), b"hello");
-    }
+    #[test]
+    fn missing_runtime_reports_an_actionable_process_error() {
+        let system_dir = scratch();
+        let game_dir = scratch();
+        let dirs = [system_dir, game_dir.clone()];
 
-    #[tokio::test]
-    async fn rewrites_even_when_content_is_identical() {
-        let dir = scratch("identical");
-        std::fs::write(dir.join("f.bin"), b"hello").unwrap();
-        let out = sync_lr_file(&dir, "f.bin", b"hello").await.unwrap();
-        assert_eq!(out, SyncOutcome::Written);
-        assert_eq!(std::fs::read(dir.join("f.bin")).unwrap(), b"hello");
-    }
-
-    #[tokio::test]
-    async fn rewrites_when_content_changed_at_same_length() {
-        let dir = scratch("same_len");
-        std::fs::write(dir.join("f.bin"), b"AAAA").unwrap();
-        let out = sync_lr_file(&dir, "f.bin", b"BBBB").await.unwrap();
-        assert_eq!(out, SyncOutcome::Written);
-        assert_eq!(std::fs::read(dir.join("f.bin")).unwrap(), b"BBBB");
+        assert!(matches!(
+            check_runtime_in(dirs.clone()),
+            Err(ProcessError::MissingVcRuntime)
+        ));
+        fs::write(game_dir.join(VC_RUNTIME_DLL), b"runtime fixture").unwrap();
+        assert!(check_runtime_in(dirs).is_ok());
     }
 
     #[test]
-    fn an_ascii_profile_keeps_the_files_in_app_data() {
-        let dirs = lr_dir_candidates(std::path::Path::new(r"C:\Users\bob\AppData\Roaming\app"));
+    fn writes_a_missing_file() {
+        let dir = scratch();
+        sync_lr_file(&dir, "f.bin", b"hello").unwrap();
+        assert_eq!(fs::read(dir.join("f.bin")).unwrap(), b"hello");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn rewrites_when_content_changed_at_same_length() {
+        let dir = scratch();
+        fs::write(dir.join("f.bin"), b"AAAA").unwrap();
+        sync_lr_file(&dir, "f.bin", b"BBBB").unwrap();
+        assert_eq!(fs::read(dir.join("f.bin")).unwrap(), b"BBBB");
+    }
+
+    #[test]
+    fn an_ascii_profile_prefers_app_data() {
+        let primary = scratch();
+        let fallback = scratch();
+        let dirs = lr_dir_candidates(&primary, fallback.to_str().unwrap());
+        assert_eq!(dirs.first(), Some(&primary.join("lr")));
         assert_eq!(
-            dirs,
-            vec![PathBuf::from(r"C:\Users\bob\AppData\Roaming\app\lr")]
+            dirs.get(1),
+            Some(&fallback.join(ASCII_FALLBACK_DIR).join("lr"))
         );
     }
 
-    /// The profile names actually seen in the wild: Simplified, Traditional,
-    /// mixed script, full-width punctuation, Latin-plus-Chinese.
-    const NON_ASCII_PROFILES: [&str; 5] = [
-        "小明",
-        "简体（管理員）",
-        "Dj小明",
-        "测试 user",
-        "ＭａｐｌｅＬｉｎｋ",
-    ];
-
     #[test]
-    fn a_non_ascii_profile_falls_back_to_ascii_roots() {
-        for profile in NON_ASCII_PROFILES {
-            let requested = PathBuf::from(format!(
-                r"C:\Users\{profile}\AppData\Roaming\com.maplelink.app"
-            ));
-            let dirs = lr_dir_candidates(&requested);
-
-            // Everything we would actually use has to survive LR's ANSI
-            // round-trip — the last entry is the log-only fallback.
-            let (log_only, usable) = dirs.split_last().unwrap();
-            assert!(
-                !usable.is_empty(),
-                "{profile}: no candidate but the original"
-            );
-            for dir in usable {
-                assert!(
-                    crate::utils::ascii_path::is_ascii(dir),
-                    "{profile}: non-ASCII candidate {}",
-                    dir.display()
-                );
+    fn non_ascii_profiles_are_never_candidates() {
+        let root = scratch();
+        for profile in [
+            MIXED_CHINESE_PROFILE,
+            "测试 user",
+            "Dj小明",
+            "繁體",
+            "ＭａｐｌｅＬｉｎｋ",
+        ] {
+            let requested = root.join(profile).join("AppData").join("Roaming");
+            let candidates = lr_dir_candidates(&requested, "");
+            assert!(!candidates.contains(&requested.join("lr")));
+            for dir in candidates {
+                assert!(dir.is_absolute() && ascii_path::is_ascii(&dir));
+                assert!(dir.ends_with(Path::new(ASCII_FALLBACK_DIR).join("lr")));
             }
-
-            // 8.3 aliases are unreliable on Chinese Windows, so an ASCII root
-            // must always be offered, not just a short name.
-            assert!(
-                usable.iter().any(|d| d.starts_with(r"C:\")
-                    && d.components().any(|c| c.as_os_str() == ASCII_FALLBACK_DIR)),
-                "{profile}: no ASCII-root fallback in {usable:?}"
-            );
-
-            // The original stays last so a total failure logs what was wanted.
-            assert_eq!(log_only, &requested.join("lr"));
         }
     }
 
     #[test]
-    fn candidates_are_free_of_duplicates() {
-        // ProgramData and ALLUSERSPROFILE are the same directory on every
-        // modern Windows; offering it twice would double every retry.
-        let dirs = lr_dir_candidates(std::path::Path::new(r"C:\Users\小明\AppData\Roaming\app"));
-        let mut seen = dirs.clone();
-        seen.sort();
-        seen.dedup();
-        assert_eq!(seen.len(), dirs.len(), "duplicate candidate in {dirs:?}");
+    fn a_chinese_profile_prefers_the_configured_backup_folder() {
+        let root = scratch();
+        let app_data = root.join(MIXED_CHINESE_PROFILE).join("AppData/Roaming");
+        let fallback = root.join("LR Backup");
+        fs::create_dir(&fallback).unwrap();
+        let dirs = lr_dir_candidates(&app_data, fallback.to_str().unwrap());
+        let expected = fallback.join(ASCII_FALLBACK_DIR).join("lr");
+
+        assert_eq!(dirs.first(), Some(&expected));
+        let chosen = prepare_lr_from_candidates(&app_data, &dirs[..1]).unwrap();
+        assert_eq!(chosen, expected.join("LRProc.exe"));
+        assert_eq!(lr_proc_in(&dirs[..1]), Some(chosen));
     }
 
     #[test]
-    fn a_stale_copy_in_the_non_ascii_dir_never_wins() {
-        let root = scratch("stale");
-        let ascii = root.join("ProgramData").join("MapleLink").join("lr");
-        let non_ascii = root.join("小明").join("lr");
-        for dir in [&ascii, &non_ascii] {
-            std::fs::create_dir_all(dir).unwrap();
-            std::fs::write(dir.join("LRProc.exe"), b"stub").unwrap();
-        }
-
-        // Candidate order is ASCII-first, so an upgrade doesn't get dragged
-        // back to last version's unusable copy.
+    fn a_removed_backup_folder_is_skipped() {
+        let root = scratch();
+        let fallback = root.join("Missing Backup");
+        let automatic = lr_dir_candidates(&root, "");
         assert_eq!(
-            lr_proc_in(&[ascii.clone(), non_ascii.clone()]),
-            Some(ascii.join("LRProc.exe"))
+            lr_dir_candidates(&root, fallback.to_str().unwrap()),
+            automatic
         );
-        // ...but a lone old copy is still better than refusing to launch.
-        assert_eq!(
-            lr_proc_in(&[root.join("nope"), non_ascii.clone()]),
-            Some(non_ascii.join("LRProc.exe"))
-        );
-        assert_eq!(lr_proc_in(&[root.join("nope")]), None);
     }
 
-    #[tokio::test]
-    async fn pick_lr_dir_skips_candidates_it_cannot_create() {
-        let good = scratch("pick").join("lr");
-        // A path under a *file* can never be created.
-        let blocked = scratch("pick_blocked").join("wall");
-        std::fs::write(&blocked, b"x").unwrap();
+    #[test]
+    fn readiness_rejects_a_legacy_bundle_under_a_chinese_profile() {
+        let legacy = scratch()
+            .join(MIXED_CHINESE_PROFILE)
+            .join("AppData/Roaming/com.maplelink.app/lr");
+        fs::create_dir_all(&legacy).unwrap();
+        for &(filename, data) in EMBEDDED_LR {
+            fs::write(legacy.join(filename), data).unwrap();
+        }
 
-        let chosen = pick_lr_dir(&[blocked.join("lr"), good.clone()], None)
-            .await
+        assert_eq!(lr_proc_in(&[legacy]), None);
+    }
+
+    #[test]
+    fn readiness_requires_the_complete_current_bundle() {
+        let dir = scratch();
+        fs::write(dir.join("LRProc.exe"), EMBEDDED_LR[0].1).unwrap();
+        assert_eq!(lr_proc_in(std::slice::from_ref(&dir)), None);
+
+        prepare_lr_dir(&dir).unwrap();
+        assert_eq!(
+            lr_proc_in(std::slice::from_ref(&dir)),
+            Some(dir.join("LRProc.exe")),
+        );
+
+        fs::write(dir.join("LRConfig.xml"), b"old").unwrap();
+        assert_eq!(lr_proc_in(&[dir]), None);
+    }
+
+    #[test]
+    fn extraction_retries_if_a_directory_exists_but_cannot_hold_the_bundle() {
+        let root = scratch();
+        let app_data = root
+            .join(MIXED_CHINESE_PROFILE)
+            .join("AppData/Roaming/com.maplelink.app");
+        let blocked = root.join("blocked");
+        fs::create_dir_all(blocked.join("LRHookx32.dll")).unwrap();
+        let backup = root.join("backup");
+        let legacy = app_data.join("lr");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("LRProc.exe"), b"legacy").unwrap();
+
+        let chosen = prepare_lr_from_candidates(
+            &app_data,
+            &[blocked.clone(), legacy.clone(), backup.clone()],
+        )
+        .unwrap();
+        assert_eq!(chosen, backup.join("LRProc.exe"));
+        assert_eq!(lr_proc_in(&[blocked, backup]), Some(chosen));
+        assert_eq!(fs::read(legacy.join("LRProc.exe")).unwrap(), b"legacy");
+    }
+
+    #[test]
+    fn extraction_reports_failed_locations_and_never_uses_a_chinese_path() {
+        let root = scratch();
+        let app_data = root.join("简体用户");
+        let blocked = root.join("wall");
+        fs::write(&blocked, b"x").unwrap();
+
+        let error = prepare_lr_from_candidates(
+            &app_data,
+            &[
+                blocked.join("first"),
+                blocked.join("second"),
+                app_data.join("lr"),
+            ],
+        )
+        .unwrap_err();
+        let ProcessError::SpawnFailed { path, reason } = error else {
+            panic!("unexpected preparation error: {error}");
+        };
+        assert_eq!(path, app_data.join("lr").display().to_string());
+        assert!(
+            reason.contains("first") && reason.contains("second"),
+            "{reason}"
+        );
+        assert!(reason.contains("absolute ASCII directory"), "{reason}");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_locked_file_is_reused_only_if_it_matches_the_embedded_copy() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let dir = scratch();
+        let file = dir.join("f.bin");
+        fs::write(&file, b"current").unwrap();
+        let _lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&file)
             .unwrap();
-        assert_eq!(chosen, good);
-        assert!(good.is_dir());
+
+        sync_lr_file(&dir, "f.bin", b"current").unwrap();
+        assert!(sync_lr_file(&dir, "f.bin", b"changed").is_err());
+        assert_eq!(fs::read(file).unwrap(), b"current");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
     }
 
-    #[tokio::test]
-    async fn pick_lr_dir_reports_every_path_it_tried() {
-        let blocked = scratch("pick_none").join("wall");
-        std::fs::write(&blocked, b"x").unwrap();
-        let err = pick_lr_dir(&[blocked.join("a"), blocked.join("b")], None)
-            .await
-            .unwrap_err();
-        let ProcessError::SpawnFailed { path, .. } = err;
-        assert!(path.contains("a") && path.contains("b"), "got {path}");
-    }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn an_ascii_junction_to_a_chinese_directory_is_rejected() {
+        let root = scratch();
+        let target = root.join(MIXED_CHINESE_PROFILE);
+        fs::create_dir(&target).unwrap();
+        let junction = root.join("alias");
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "{status:?}");
 
-    #[tokio::test]
-    async fn leaves_no_temp_or_aside_file_behind() {
-        let dir = scratch("no_temp");
-        // A leftover .old from an earlier locked run is cleaned up on success.
-        std::fs::write(dir.join("f.bin.old"), b"stale").unwrap();
-        sync_lr_file(&dir, "f.bin", b"data").await.unwrap();
-        assert!(!dir.join("f.bin.tmp").exists());
-        assert!(!dir.join("f.bin.old").exists());
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let result = check_lr_dir(&junction);
+        fs::remove_dir(&junction).unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
     }
 }

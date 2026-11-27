@@ -106,17 +106,20 @@ export function RowButton({
   onClick,
   danger,
   title,
+  disabled,
 }: {
   children: ReactNode;
   onClick: () => void;
   danger?: boolean;
   title?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+      disabled={disabled}
+      className={`shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
         danger
           ? "border-[var(--tb-border)] text-text-dim hover:border-[var(--danger)] hover:text-[var(--danger)]"
           : "border-[var(--tb-border)] text-text-dim hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
