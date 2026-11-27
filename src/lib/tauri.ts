@@ -222,8 +222,8 @@ export const commands = {
   clientTestSources: () => invoke<ClientSourceTestsDto>("client_test_sources"),
   clientRemoveExtra: (dir: string, paths: string[]) =>
     invoke<ClientRemoveReportDto>("client_remove_extra", { dir, paths }),
-  clientPickFolder: (startIn: string | null) =>
-    invoke<string | null>("client_pick_folder", { startIn }),
+  clientPickFolder: (startIn: string | null, title?: string) =>
+    invoke<string | null>("client_pick_folder", { startIn, title }),
   clientDefaultFolder: () => invoke<string | null>("client_default_folder"),
   clientLocalVersion: (dir: string) =>
     invoke<ClientLocalVersionDto | null>("client_local_version", { dir }),

@@ -156,6 +156,9 @@ pub fn parse_ini(input: &str) -> Result<AppConfig, ConfigError> {
         if let Some(v) = game.get("path") {
             config.game_path = v.clone();
         }
+        if let Some(v) = game.get("lr_fallback_dir") {
+            config.lr_fallback_dir = v.clone();
+        }
         if let Some(v) = game.get("skip_play_confirm") {
             config.skip_play_confirm =
                 parse_bool(v, "skip_play_confirm", defaults.skip_play_confirm);
@@ -278,6 +281,7 @@ pub fn serialize_ini(config: &AppConfig) -> String {
     // [game]
     out.push_str("[game]\n");
     out.push_str(&format!("path = {}\n", config.game_path));
+    out.push_str(&format!("lr_fallback_dir = {}\n", config.lr_fallback_dir));
     out.push_str(&format!(
         "skip_play_confirm = {}\n",
         config.skip_play_confirm
@@ -592,6 +596,7 @@ x = not_a_number
     fn serialize_then_parse_round_trip() {
         let original = AppConfig {
             game_path: "D:\\Games\\Maple.exe".into(),
+            lr_fallback_dir: r"D:\Game Tools".into(),
             theme: Theme::Light,
             language: Language::EnUS,
             auto_update: false,

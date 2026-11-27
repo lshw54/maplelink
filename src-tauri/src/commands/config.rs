@@ -12,7 +12,7 @@ use crate::models::config::{
 };
 use crate::models::error::ErrorDto;
 use crate::models::session::Region;
-use crate::services::config_service;
+use crate::services::{config_service, lr_service};
 
 /// Return the current in-memory configuration.
 #[tauri::command]
@@ -24,7 +24,7 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, ErrorDt
 /// Update a single configuration field by key and persist to disk.
 ///
 /// Supported keys (flat, snake_case):
-/// `game_path`, `theme`, `language`,
+/// `game_path`, `lr_fallback_dir`, `theme`, `language`,
 /// `auto_update`, `skip_play_confirm`, `auto_start`, `region`,
 /// `debug_logging`, `window_x`, `window_y`, `window_width`, `window_height`,
 /// `default_login_view`.
@@ -83,6 +83,17 @@ async fn apply_and_persist(
 fn apply_config_field(config: &mut AppConfig, key: &str, value: &str) -> Result<(), ConfigError> {
     match key {
         "game_path" => config.game_path = value.to_string(),
+        "lrFallbackDir" | "lr_fallback_dir" => {
+            let dir = value.trim();
+            if !dir.is_empty() {
+                lr_service::check_lr_dir(std::path::Path::new(dir)).map_err(|error| {
+                    ConfigError::ParseError {
+                        reason: format!("Invalid LR fallback directory: {error}"),
+                    }
+                })?;
+            }
+            config.lr_fallback_dir = dir.to_owned();
+        }
         "theme" => {
             config.theme = match value.to_lowercase().as_str() {
                 "system" => Theme::System,
@@ -374,5 +385,49 @@ mod apply_and_persist_tests {
         assert_eq!(live, AppConfig::default());
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn lr_backup_folder_can_be_saved_and_reset() {
+        let dir = temp_dir("lr_backup");
+        let path = dir.join("config.ini");
+        let backup = dir.join("LR Backup");
+        std::fs::create_dir(&backup).unwrap();
+        let mut config = AppConfig::default();
+
+        apply_and_persist(
+            &mut config,
+            &path,
+            "lrFallbackDir",
+            backup.to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(config.lr_fallback_dir, backup.to_str().unwrap());
+        assert_eq!(config_service::load_config(&path).await.unwrap(), config);
+
+        let invalid = dir.join("简体用户（管理員）");
+        std::fs::create_dir(&invalid).unwrap();
+        assert!(apply_and_persist(
+            &mut config,
+            &path,
+            "lrFallbackDir",
+            invalid.to_str().unwrap()
+        )
+        .await
+        .is_err());
+        assert_eq!(config.lr_fallback_dir, backup.to_str().unwrap());
+        assert_eq!(config_service::load_config(&path).await.unwrap(), config);
+
+        apply_and_persist(&mut config, &path, "lrFallbackDir", "")
+            .await
+            .unwrap();
+        assert!(config.lr_fallback_dir.is_empty());
+        assert_eq!(config_service::load_config(&path).await.unwrap(), config);
+
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(backup).unwrap();
+        std::fs::remove_dir(invalid).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

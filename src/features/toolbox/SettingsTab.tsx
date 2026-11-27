@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
 import { useUiStore, resizeWindow } from "../../lib/stores/ui-store";
 import { commands } from "../../lib/tauri";
+import { errorMessage } from "../../lib/errors";
 import { Toggle } from "../../components/Toggle";
 import { Section, Row, RowButton, RowValue, Segmented } from "./ToolboxUi";
 import { ACCENT_PRESETS, DEFAULT_ACCENT, applyAccent, isHexColor } from "../../lib/accent";
@@ -41,6 +42,7 @@ export function SettingsTab() {
   const setTheme = useUiStore((s) => s.setTheme);
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
+  const [lrFallbackError, setLrFallbackError] = useState("");
 
   // Auto-detect game path from registry if not set
   useEffect(() => {
@@ -67,6 +69,21 @@ export function SettingsTab() {
     const path = await commands.openFileDialog();
     if (path) {
       setConfig.mutate({ key: "classicNgmPath", value: path });
+    }
+  }
+
+  async function changeLrFallback(reset: boolean) {
+    setLrFallbackError("");
+    try {
+      const path = reset
+        ? ""
+        : await commands.clientPickFolder(
+            config?.lrFallbackDir || null,
+            t("settings.lr_fallback_dir"),
+          );
+      if (path !== null) await setConfig.mutateAsync({ key: "lrFallbackDir", value: path });
+    } catch (error) {
+      setLrFallbackError(errorMessage(error));
     }
   }
 
@@ -114,6 +131,29 @@ export function SettingsTab() {
         <Row label={t("settings.game_path")}>
           <RowValue mono>{config?.gamePath || "—"}</RowValue>
           <RowButton onClick={handleBrowseGamePath}>{t("settings.browse")}</RowButton>
+        </Row>
+        <Row
+          label={t("settings.lr_fallback_dir")}
+          hint={
+            <>
+              {t("settings.lr_fallback_dir_desc")}
+              {lrFallbackError && (
+                <div role="alert" className="mt-1 text-[var(--danger)]">
+                  {lrFallbackError}
+                </div>
+              )}
+            </>
+          }
+        >
+          <RowValue mono>{config?.lrFallbackDir || t("settings.lr_fallback_auto")}</RowValue>
+          <RowButton disabled={setConfig.isPending} onClick={() => changeLrFallback(false)}>
+            {t("settings.browse")}
+          </RowButton>
+          {config?.lrFallbackDir && (
+            <RowButton disabled={setConfig.isPending} onClick={() => changeLrFallback(true)}>
+              {t("settings.lr_fallback_reset")}
+            </RowButton>
+          )}
         </Row>
         <Row label={t("settings.classic_ngm_path")}>
           <RowValue mono>{config?.classicNgmPath || t("settings.classic_ngm_auto")}</RowValue>

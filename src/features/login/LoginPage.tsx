@@ -16,6 +16,7 @@ import { TotpForm } from "./TotpForm";
 import { VerifyForm } from "./VerifyForm";
 import type { SessionDto } from "../../lib/types";
 import { errorMessage } from "../../lib/errors";
+import { reportGameLaunchError } from "../../lib/game-launch-error";
 
 type LoginView = "normal" | "qr" | "totp" | "verify" | "gamepass";
 
@@ -285,12 +286,7 @@ async function doDirectLaunch() {
       setGameRunning(true);
     }
   } catch (err) {
-    const msg = errorMessage(err);
-    useErrorToastStore.getState().addToast({
-      message: msg,
-      category: "process",
-      critical: false,
-    });
+    reportGameLaunchError(err);
   }
 }
 

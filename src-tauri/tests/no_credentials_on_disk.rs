@@ -93,6 +93,7 @@ fn arb_app_config() -> impl Strategy<Value = AppConfig> {
         )| {
             AppConfig {
                 game_path,
+                lr_fallback_dir: String::new(),
                 theme,
                 language,
                 auto_update,

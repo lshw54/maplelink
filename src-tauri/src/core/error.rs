@@ -69,6 +69,8 @@ pub enum FsError {
 pub enum ProcessError {
     #[error("Failed to start process: {path} — {reason}")]
     SpawnFailed { path: String, reason: String },
+    #[error("VCRUNTIME140.dll is missing. Install Microsoft Visual C++ Redistributable (x64), then try again.")]
+    MissingVcRuntime,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]

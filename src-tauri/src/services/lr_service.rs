@@ -21,6 +21,10 @@ const ASCII_ROOTS: [&str; 3] = ["ProgramData", "ALLUSERSPROFILE", "SystemDrive"]
 /// uninstaller (`installer/hooks.nsh`), which deletes it.
 const ASCII_FALLBACK_DIR: &str = "MapleLink";
 
+/// The bundled x64 LRProc and LRHookx64 import this runtime.
+#[cfg(any(target_os = "windows", test))]
+const VC_RUNTIME_DLL: &str = "VCRUNTIME140.dll";
+
 /// Embedded LR files — compiled directly into the binary so a standalone
 /// `maplelink.exe` works without needing a `resources/lr/` folder alongside it.
 const EMBEDDED_LR: &[(&str, &[u8])] = &[
@@ -80,8 +84,17 @@ fn lr_file_matches(path: &Path, data: &[u8]) -> bool {
         && fs::read(path).is_ok_and(|bytes| bytes == data)
 }
 
-fn lr_dir_candidates(app_data_dir: &Path) -> Vec<PathBuf> {
+fn lr_dir_candidates(app_data_dir: &Path, fallback_root: &str) -> Vec<PathBuf> {
     let mut candidates = vec![app_data_dir.join("lr")];
+    if !fallback_root.is_empty() {
+        let root = Path::new(fallback_root);
+        match check_lr_dir(root) {
+            Ok(()) => candidates.push(root.join(ASCII_FALLBACK_DIR).join("lr")),
+            Err(error) => {
+                tracing::warn!(dir = %root.display(), "ignoring invalid LR fallback directory: {error}");
+            }
+        }
+    }
     for var in ASCII_ROOTS {
         if let Some(root) = ascii_path::env_root(var) {
             let dir = root.join(ASCII_FALLBACK_DIR).join("lr");
@@ -97,18 +110,28 @@ fn lr_dir_candidates(app_data_dir: &Path) -> Vec<PathBuf> {
 /// LRProc uses the CLR assembly location to locate its hooks and Detours
 /// passes the DLL path through ANSI. Validate the real directory too so a
 /// short name or junction cannot send LR back to a Unicode profile path.
-fn check_lr_dir(dir: &Path) -> io::Result<()> {
-    if dir.is_absolute()
-        && ascii_path::is_ascii(dir)
-        && ascii_path::is_ascii(&fs::canonicalize(dir)?)
+pub(crate) fn check_lr_dir(dir: &Path) -> io::Result<()> {
+    if !dir.is_absolute()
+        || !ascii_path::is_ascii(dir)
+        || dir
+            .as_os_str()
+            .as_encoded_bytes()
+            .iter()
+            .any(u8::is_ascii_control)
+        || !ascii_path::is_ascii(&fs::canonicalize(dir)?)
     {
-        Ok(())
-    } else {
-        Err(io::Error::new(
+        return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Locale Remulator requires an absolute ASCII directory",
-        ))
+        ));
     }
+    if !fs::metadata(dir)?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Locale Remulator needs a folder",
+        ));
+    }
+    Ok(())
 }
 
 fn prepare_lr_dir(dir: &Path) -> io::Result<()> {
@@ -124,8 +147,14 @@ fn prepare_lr_dir(dir: &Path) -> io::Result<()> {
 /// Extract the full LR bundle before returning its executable. A directory
 /// may exist even when the launcher cannot write its files, so try the next
 /// location if preparing the bundle fails.
-pub fn ensure_lr_files_in(app_data_dir: &Path) -> Result<PathBuf, ProcessError> {
-    prepare_lr_from_candidates(app_data_dir, &lr_dir_candidates(app_data_dir))
+pub fn ensure_lr_files_in(
+    app_data_dir: &Path,
+    fallback_root: &str,
+) -> Result<PathBuf, ProcessError> {
+    prepare_lr_from_candidates(
+        app_data_dir,
+        &lr_dir_candidates(app_data_dir, fallback_root),
+    )
 }
 
 fn prepare_lr_from_candidates(
@@ -174,7 +203,9 @@ pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, P
                 reason: format!("Failed to resolve app data directory: {error}"),
             })?;
 
-    tokio::task::spawn_blocking(move || ensure_lr_files_in(&app_data_dir))
+    let state = app_handle.state::<crate::models::app_state::AppState>();
+    let fallback_root = state.config.read().await.lr_fallback_dir.clone();
+    tokio::task::spawn_blocking(move || ensure_lr_files_in(&app_data_dir, &fallback_root))
         .await
         .map_err(|error| ProcessError::SpawnFailed {
             path: "LRProc.exe".to_owned(),
@@ -184,8 +215,8 @@ pub async fn ensure_lr_files(app_handle: &tauri::AppHandle) -> Result<PathBuf, P
 
 /// Report readiness only when a complete, current bundle exists.
 #[cfg(target_os = "windows")]
-pub fn find_lr_proc(app_data_dir: &Path) -> Option<PathBuf> {
-    lr_proc_in(&lr_dir_candidates(app_data_dir))
+pub fn find_lr_proc(app_data_dir: &Path, fallback_root: &str) -> Option<PathBuf> {
+    lr_proc_in(&lr_dir_candidates(app_data_dir, fallback_root))
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -199,6 +230,50 @@ fn lr_proc_in(candidates: &[PathBuf]) -> Option<PathBuf> {
                     .all(|(filename, data)| lr_file_matches(&dir.join(filename), data))
         })
         .map(|dir| dir.join("LRProc.exe"))
+}
+
+/// Catch a missing runtime before Windows starts LRProc or the injected game.
+/// The game directory and inherited PATH also support app-local runtimes.
+#[cfg(target_os = "windows")]
+pub fn check_launch_runtime(game_path: &Path) -> Result<(), ProcessError> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+
+    let mut buffer = [0u16; 260];
+    let len = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if len == 0 || len >= buffer.len() {
+        tracing::warn!("could not resolve the Windows system directory for the LR runtime check");
+        return Ok(());
+    }
+
+    let system_dir = PathBuf::from(OsString::from_wide(&buffer[..len]));
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = std::iter::once(system_dir)
+        .chain(game_path.parent().map(Path::to_path_buf))
+        .chain(std::env::split_paths(&path).filter(|dir| dir.is_absolute()));
+    let result = check_runtime_in(dirs);
+    if let Err(error) = &result {
+        tracing::warn!(game = %game_path.display(), "LR launch prerequisite failed: {error}");
+    }
+    result
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn check_runtime_in(dirs: impl IntoIterator<Item = PathBuf>) -> Result<(), ProcessError> {
+    if dirs
+        .into_iter()
+        .any(|dir| dir.join(VC_RUNTIME_DLL).is_file())
+    {
+        Ok(())
+    } else {
+        Err(ProcessError::MissingVcRuntime)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn check_launch_runtime(_game_path: &Path) -> Result<(), ProcessError> {
+    Ok(())
 }
 
 /// Check if the system locale is Traditional Chinese.
@@ -251,6 +326,20 @@ mod tests {
     }
 
     #[test]
+    fn missing_runtime_reports_an_actionable_process_error() {
+        let system_dir = scratch();
+        let game_dir = scratch();
+        let dirs = [system_dir, game_dir.clone()];
+
+        assert!(matches!(
+            check_runtime_in(dirs.clone()),
+            Err(ProcessError::MissingVcRuntime)
+        ));
+        fs::write(game_dir.join(VC_RUNTIME_DLL), b"runtime fixture").unwrap();
+        assert!(check_runtime_in(dirs).is_ok());
+    }
+
+    #[test]
     fn writes_a_missing_file() {
         let dir = scratch();
         sync_lr_file(&dir, "f.bin", b"hello").unwrap();
@@ -269,9 +358,12 @@ mod tests {
     #[test]
     fn an_ascii_profile_prefers_app_data() {
         let primary = scratch();
+        let fallback = scratch();
+        let dirs = lr_dir_candidates(&primary, fallback.to_str().unwrap());
+        assert_eq!(dirs.first(), Some(&primary.join("lr")));
         assert_eq!(
-            lr_dir_candidates(&primary).first(),
-            Some(&primary.join("lr"))
+            dirs.get(1),
+            Some(&fallback.join(ASCII_FALLBACK_DIR).join("lr"))
         );
     }
 
@@ -286,13 +378,39 @@ mod tests {
             "ＭａｐｌｅＬｉｎｋ",
         ] {
             let requested = root.join(profile).join("AppData").join("Roaming");
-            let candidates = lr_dir_candidates(&requested);
+            let candidates = lr_dir_candidates(&requested, "");
             assert!(!candidates.contains(&requested.join("lr")));
             for dir in candidates {
                 assert!(dir.is_absolute() && ascii_path::is_ascii(&dir));
                 assert!(dir.ends_with(Path::new(ASCII_FALLBACK_DIR).join("lr")));
             }
         }
+    }
+
+    #[test]
+    fn a_chinese_profile_prefers_the_configured_backup_folder() {
+        let root = scratch();
+        let app_data = root.join(MIXED_CHINESE_PROFILE).join("AppData/Roaming");
+        let fallback = root.join("LR Backup");
+        fs::create_dir(&fallback).unwrap();
+        let dirs = lr_dir_candidates(&app_data, fallback.to_str().unwrap());
+        let expected = fallback.join(ASCII_FALLBACK_DIR).join("lr");
+
+        assert_eq!(dirs.first(), Some(&expected));
+        let chosen = prepare_lr_from_candidates(&app_data, &dirs[..1]).unwrap();
+        assert_eq!(chosen, expected.join("LRProc.exe"));
+        assert_eq!(lr_proc_in(&dirs[..1]), Some(chosen));
+    }
+
+    #[test]
+    fn a_removed_backup_folder_is_skipped() {
+        let root = scratch();
+        let fallback = root.join("Missing Backup");
+        let automatic = lr_dir_candidates(&root, "");
+        assert_eq!(
+            lr_dir_candidates(&root, fallback.to_str().unwrap()),
+            automatic
+        );
     }
 
     #[test]
@@ -363,7 +481,9 @@ mod tests {
             ],
         )
         .unwrap_err();
-        let ProcessError::SpawnFailed { path, reason } = error;
+        let ProcessError::SpawnFailed { path, reason } = error else {
+            panic!("unexpected preparation error: {error}");
+        };
         assert_eq!(path, app_data.join("lr").display().to_string());
         assert!(
             reason.contains("first") && reason.contains("second"),

@@ -219,6 +219,7 @@ export interface ClassicCheckDto {
 
 export interface AppConfigDto {
   gamePath: string;
+  lrFallbackDir: string;
   theme: "system" | "dark" | "light";
   language: "en-US" | "zh-TW" | "zh-CN";
   autoUpdate: boolean;
@@ -361,6 +362,7 @@ export type WebLaunchTestCode =
   | "ok"
   | "skipped_running"
   | "no_game_path"
+  | "missing_vc_runtime"
   | "spawn_failed"
   | "not_found";
 

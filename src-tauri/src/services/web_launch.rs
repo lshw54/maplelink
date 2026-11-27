@@ -6,7 +6,8 @@
 //! and the headless execution path that runs when beanfun invokes us as the
 //! "game".
 
-use crate::core::game_intercept::InterceptCreds;
+use crate::core::{config_parser, game_intercept::InterceptCreds};
+use crate::models::config::AppConfig;
 use crate::services::lr_service;
 
 /// Registry location beanfun reads to find the game launcher.
@@ -258,8 +259,11 @@ pub fn is_registered() -> bool {
 /// to launch the game.
 #[cfg(target_os = "windows")]
 pub fn lr_ready() -> bool {
-    lr_app_data_dir()
-        .and_then(|dir| lr_service::find_lr_proc(&dir))
+    web_app_data_dir()
+        .and_then(|dir| {
+            let config = load_web_config(&dir).unwrap_or_default();
+            lr_service::find_lr_proc(&dir, &config.lr_fallback_dir)
+        })
         .is_some()
 }
 
@@ -440,6 +444,11 @@ async fn test_launch_game(game_already_running: bool) -> &'static str {
         Some(p) => p,
         None => return "no_game_path",
     };
+    if !lr_service::is_system_locale_chinese_traditional()
+        && lr_service::check_launch_runtime(std::path::Path::new(&game_path)).is_err()
+    {
+        return "missing_vc_runtime";
+    }
     let game_exe = std::path::Path::new(&game_path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -705,48 +714,29 @@ fn show_creds_popup(_account: &str, _otp: &str) {}
 /// config without spinning up Tauri. Falls back to (on, on) if unreadable so the
 /// behaviour matches the historical always-on default.
 fn load_web_launch_prefs() -> (bool, bool) {
-    let defaults = (true, true);
-    let Ok(appdata) = std::env::var("APPDATA") else {
-        return defaults;
-    };
-    let config_path = std::path::Path::new(&appdata)
-        .join("com.maplelink.app")
-        .join("config.ini");
-    let Ok(text) = std::fs::read_to_string(&config_path) else {
-        return defaults;
-    };
-    match crate::core::config_parser::parse_ini(&text) {
-        Ok(c) => (c.web_launch_auto_launch, c.web_launch_auto_paste),
-        Err(_) => defaults,
-    }
+    let config = web_app_data_dir()
+        .and_then(|dir| load_web_config(&dir).ok())
+        .unwrap_or_default();
+    (config.web_launch_auto_launch, config.web_launch_auto_paste)
+}
+
+fn load_web_config(app_data_dir: &std::path::Path) -> Result<AppConfig, String> {
+    let path = app_data_dir.join("config.ini");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("cannot read config {}: {error}", path.display()))?;
+    config_parser::parse_ini(&text).map_err(|error| error.to_string())
 }
 
 /// Read `game_path` from the on-disk config without spinning up Tauri.
 fn load_game_path() -> Option<String> {
-    let appdata = match std::env::var("APPDATA") {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("web-launch: APPDATA not set ({e}); cannot locate config");
-            return None;
-        }
+    let Some(app_data_dir) = web_app_data_dir() else {
+        tracing::warn!("web-launch: APPDATA is unset, cannot locate config");
+        return None;
     };
-    let config_path = std::path::Path::new(&appdata)
-        .join("com.maplelink.app")
-        .join("config.ini");
-    let text = match std::fs::read_to_string(&config_path) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!(
-                "web-launch: cannot read config {}: {e}",
-                config_path.display()
-            );
-            return None;
-        }
-    };
-    let config = match crate::core::config_parser::parse_ini(&text) {
+    let config = match load_web_config(&app_data_dir) {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("web-launch: failed to parse config: {e}");
+            tracing::warn!("web-launch: {e}");
             return None;
         }
     };
@@ -789,6 +779,13 @@ fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
         "web-launch: launching game"
     );
     if !zh_tw {
+        if let Err(error) = lr_service::check_launch_runtime(std::path::Path::new(game_path)) {
+            #[cfg(target_os = "windows")]
+            show_runtime_error(&error.to_string());
+            #[cfg(not(target_os = "windows"))]
+            tracing::error!("{error}");
+            return false;
+        }
         let Some(lrproc) = prepare_lr_for_web_launch() else {
             return false;
         };
@@ -802,24 +799,43 @@ fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
     )
 }
 
+#[cfg(target_os = "windows")]
+fn show_runtime_error(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST,
+    };
+
+    let title = windows_sys::core::w!("MapleLink");
+    let text: Vec<_> = message.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title,
+            MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
+        );
+    }
+}
+
 fn lr_game_args(game_path: &str, raw_args: &[String]) -> Vec<String> {
     let mut args = vec![lr_service::LR_PROFILE_GUID.to_owned(), game_path.to_owned()];
     args.extend_from_slice(raw_args);
     args
 }
 
-/// The web interceptor runs before Tauri starts, so it resolves app data
-/// without an AppHandle and prepares the same embedded LR bundle as the UI.
-fn lr_app_data_dir() -> Option<std::path::PathBuf> {
+/// The web interceptor runs before Tauri starts and resolves app data without
+/// an AppHandle.
+fn web_app_data_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("APPDATA").map(|root| std::path::PathBuf::from(root).join("com.maplelink.app"))
 }
 
 fn prepare_lr_for_web_launch() -> Option<std::path::PathBuf> {
-    let Some(app_data_dir) = lr_app_data_dir() else {
+    let Some(app_data_dir) = web_app_data_dir() else {
         tracing::error!("web-launch: APPDATA is unset, cannot prepare Locale Remulator");
         return None;
     };
-    match lr_service::ensure_lr_files_in(&app_data_dir) {
+    let config = load_web_config(&app_data_dir).unwrap_or_default();
+    match lr_service::ensure_lr_files_in(&app_data_dir, &config.lr_fallback_dir) {
         Ok(path) => Some(path),
         Err(error) => {
             tracing::error!("web-launch: {error}");
