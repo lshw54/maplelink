@@ -33,7 +33,7 @@
     "typescript": "~6.0.2"
   },
   "overrides": {
-    "qs": "^6.16.0",
+    "qs": "^6.16.1",
     "serialize-javascript": "^7.1.3",
     "postcss-selector-parser": "^7.1.6",
     "tinypool": "^2.1.2",
