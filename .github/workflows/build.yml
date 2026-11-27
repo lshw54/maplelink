@@ -62,16 +62,17 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          # Read current version from Cargo.toml
+          # Read the package version without matching dependency versions.
           $cargoToml = Get-Content "src-tauri/Cargo.toml" -Raw
-          if ($cargoToml -match 'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
-              $major = [int]$matches[1]
-              $minor = [int]$matches[2]
-              $patch = [int]$matches[3]
-          } else {
-              Write-Error "Could not parse version from Cargo.toml"
+          $packageSection = [regex]::Match($cargoToml, '(?ms)^[ \t]*\[package\][ \t]*(?:#[^\r\n]*)?\r?\n.*?(?=^[ \t]*\[|\z)')
+          $packageVersion = [regex]::Match($packageSection.Value, '(?m)^[ \t]*version[ \t]*=[ \t]*"(?<version>(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+))"')
+          if (-not $packageVersion.Success) {
+              Write-Error "Could not parse [package].version from Cargo.toml"
               exit 1
           }
+          $major = [int]$packageVersion.Groups['major'].Value
+          $minor = [int]$packageVersion.Groups['minor'].Value
+          $patch = [int]$packageVersion.Groups['patch'].Value
 
           # Check latest tag for actual version
           git fetch --tags 2>$null
@@ -100,8 +101,10 @@ jobs:
 
           Write-Host "New version: $version (tag: $tagName)"
 
-          # Inject version into Cargo.toml (build-time only, not committed)
-          $cargoToml = $cargoToml -replace 'version\s*=\s*"\d+\.\d+\.\d+"', "version = `"$version`""
+          # Replace only the version captured in [package].
+          $versionGroup = $packageVersion.Groups['version']
+          $versionOffset = $packageSection.Index + $versionGroup.Index
+          $cargoToml = $cargoToml.Remove($versionOffset, $versionGroup.Length).Insert($versionOffset, $version)
           $cargoToml | Set-Content "src-tauri/Cargo.toml" -NoNewline
 
           # Inject into tauri.conf.json5
