@@ -83,6 +83,8 @@ fn extract_parent_dir(path: &str) -> String {
     // Find the last path separator (either \ or /)
     let last_sep = path.rfind(['\\', '/']);
     match last_sep {
+        Some(0) => path[..=0].to_string(),
+        Some(2) if path.as_bytes()[1] == b':' => path[..=2].to_string(),
         Some(idx) => path[..idx].to_string(),
         None => ".".to_string(),
     }
@@ -133,6 +135,12 @@ mod tests {
     }
 
     // --- build_launch_command ---
+
+    #[test]
+    fn portable_game_at_drive_root_uses_the_absolute_root_as_working_directory() {
+        assert_eq!(extract_parent_dir(r"E:\MapleStory.exe"), r"E:\");
+        assert_eq!(extract_parent_dir("E:/MapleStory.exe"), "E:/");
+    }
 
     fn make_config(game_path: &str) -> AppConfig {
         AppConfig {

@@ -81,8 +81,11 @@ pub struct WebLaunchStatus {
 pub async fn get_web_launch_status(
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<WebLaunchStatus, ErrorDto> {
-    let game_path = state.config.read().await.game_path.clone();
-    let game_path_ok = !game_path.trim().is_empty() && std::path::Path::new(&game_path).exists();
+    let configured_path = state.config.read().await.game_path.clone();
+    let (game_path, game_path_ok) = match game_env_service::resolve_game_path(&configured_path) {
+        Ok(path) => (path, true),
+        Err(_) => (configured_path, false),
+    };
 
     Ok(WebLaunchStatus {
         registered: crate::services::web_launch::is_registered(),
@@ -311,12 +314,14 @@ pub async fn open_file_dialog(
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
 
     let current_path = state.config.read().await.game_path.clone();
-    let default_dir = if !current_path.is_empty() {
-        std::path::Path::new(&current_path)
+    let default_dir = if current_path.trim().is_empty() {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    } else {
+        std::path::Path::new(current_path.trim())
             .parent()
             .map(|p| p.to_path_buf())
-    } else {
-        None
     };
 
     let mut dialog = app.dialog().file();
@@ -581,13 +586,6 @@ pub fn get_platform_info() -> String {
 }
 
 /// Auto-detect the MapleStory game path from the Windows Registry.
-/// Inner function for detect_game_path, callable from both the command and startup.
-pub async fn detect_game_path_inner(
-    state: &crate::models::app_state::AppState,
-) -> Result<Option<String>, ErrorDto> {
-    game_env_service::detect_game_path(state).await
-}
-
 #[tauri::command]
 pub async fn detect_game_path(
     state: tauri::State<'_, crate::models::app_state::AppState>,
