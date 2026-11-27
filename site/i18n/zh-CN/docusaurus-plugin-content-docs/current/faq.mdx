@@ -135,19 +135,21 @@ GamaPass 在每次登录时都要求重新验证（它的 OAuth 请求带 `promp
 <details>
 <summary>做法</summary>
 
-到工具箱「设置」确认 `MapleStory.exe` 所在的文件夹。程序会先尝试自动检测，检测不到时请手动选择。
-
-<DemoSettings focus="path" />
+到工具箱「设置」确认游戏路径，必要时点「浏览」选择 `MapleStory.exe`。详细步骤请见[游戏路径设置](./guide.mdx#game-path)。
 
 </details>
-### 游戏出现乱码或无法启动
+### 游戏出现乱码或无法启动 {#locale-launch}
 
-系统区域不是繁体中文时会发生。
+MapleLink 会根据 Windows 系统区域自动判断是否使用 Locale Remulator 启动游戏。
 
 <details>
 <summary>做法</summary>
 
-程序会自动检测系统区域，不是繁体中文时就经 Locale Remulator 启动游戏，没有开关。仍然乱码的话，请先确认游戏路径正确，再到 [GitHub Issues](https://github.com/lshw54/maplelink/issues) 附上日志反馈。
+如果错误消息提示缺少 `VCRUNTIME140.dll`，请安装或修复 [Microsoft Visual C++ 可再发行组件包（x64）](https://aka.ms/vc14/vc_redist.x64.exe)，然后重新启动游戏。
+
+从 v0.6.4 起，如果用户的 AppData 路径无法用于区域模拟时，会自动选择兼容路径，例如 `%ProgramData%\MapleLink\lr`。也可以到工具箱的「设置 → 游戏 → 区域模拟备用文件夹」指定仅包含英文字母、数字及半角符号的路径。例如选择 `D:\`，需要使用备用位置时，组件会放在 `D:\MapleLink\lr`。
+
+如果问题仍然出现，请附上错误消息和日志反馈。[GitHub Issues](https://github.com/lshw54/maplelink/issues)
 
 </details>
 ## 账号与数据

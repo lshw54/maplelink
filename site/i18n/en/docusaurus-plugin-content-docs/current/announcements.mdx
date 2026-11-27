@@ -7,7 +7,7 @@ pagination_prev: null
 
 # Announcements
 
-Announcements come in two kinds. **Notices** are about the project itself and are worth interrupting you for once; **release notes** are what changed in a version. This page carries the same text the app shows, newest first, and the app keeps it under Toolbox → Announcements.
+This page collects project notices and release notes. Project notices also appear in the app under Toolbox → Announcements.
 
 ## Notices {#notices}
 
@@ -46,9 +46,33 @@ MapleLink is developed side by side with the original Beanfun to give players mo
 
 ## Release notes {#updates}
 
-What changed in each version is listed below; the full history and downloads are on [GitHub Releases](https://github.com/lshw54/maplelink/releases). Release notes never ride the ticker at the top of the page and never open on launch — the ticker carries notices only.
+For the full history and downloads of released versions, see [GitHub Releases](https://github.com/lshw54/maplelink/releases).
 
 <div className="timeline">
+
+<section className="tl-item">
+<div className="tl-meta"><span className="tl-tag">Unreleased</span></div>
+
+## MapleLink v0.6.4 {#v0-6-4}
+
+**Fixed**
+
+- Fixed a RunDLL error caused by garbled DLL paths on Windows profiles with Chinese characters or full-width parentheses, such as `简体用户（管理員）`. When Locale Remulator is needed, MapleLink chooses a compatible path automatically.
+- When `VCRUNTIME140.dll` is missing, MapleLink shows a prompt before launching the game and links to Microsoft's Visual C++ Redistributable (x64) download.
+
+**New**
+
+- Launch MapleStory from an external drive. MapleLink checks the configured game path first. If it is blank, MapleLink looks for `MapleStory.exe` next to itself and then checks the Windows registry. The launch prompt offers a file picker if the game cannot be found.
+- Toolbox → Settings → Game now lets you select an ASCII path as a backup folder for Locale Remulator.
+
+**Security and builds**
+
+- Updated npm dependencies for the desktop app and website, and Rust dependencies for the app, to address published security advisories.
+- Scoped frontend source detection to the files the app uses to speed up packaging.
+
+See [Set the game path](./guide.mdx#game-path) and [Locale Remulator and missing components](./faq.mdx#locale-launch) for details.
+
+</section>
 
 <section className="tl-item">
 <div className="tl-meta"><time>2026-10-01</time><span className="tl-tag">Stable</span></div>

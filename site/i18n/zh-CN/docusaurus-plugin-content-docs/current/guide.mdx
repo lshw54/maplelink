@@ -90,11 +90,15 @@ pagination_prev: null
 - **GamaPass**：依画面指示在 GamaPass App 完成验证。用 Passkey 的话，每次登录都要再验证一次（这是 GamaPass 的设定）；若 Passkey 放在 Bitwarden，可在工具箱的 **GamaPass** 分页改由它响应，详见[常见问题](/faq#passkey)。
 - **账号密码**：需要通过 reCAPTCHA，程序会打开一个小窗口让你完成。
 
-## 5. 设置游戏路径
+## 5. 设置游戏路径 {#game-path}
 
-第一次启动游戏前，到工具箱的「设置」指定 `MapleStory.exe` 所在的文件夹。程序会先尝试自动检测，检测不到时才需要手动选择。工具箱在标题栏右上角的 🛠。
+要手动指定路径，打开标题栏右上角的工具箱，进入「设置 → 游戏」，点「游戏路径」旁的「浏览」，选择 `MapleStory.exe`。
 
 还没有安装游戏，或客户端损坏需要修复，见[游戏客户端](/client)。
+
+**v0.6.4 起的自动检测**
+
+MapleLink 会优先使用手动指定的路径。选择「重置」后，会先查找 MapleLink 程序所在文件夹内的 `MapleStory.exe`，再检查 Windows 注册表。两处都找不到时，可以在启动提示中直接选择游戏程序。
 
 <DemoSettings focus="path" />
 

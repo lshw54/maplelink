@@ -20,7 +20,7 @@ export default function DemoSettings({ focus = "path" }: { focus?: "path" | "pat
   const [done, setDone] = useState(false);
 
   function browse() {
-    setGamePath("C:\\Games\\MapleStory");
+    setGamePath("C:\\Games\\MapleStory\\MapleStory.exe");
     if (focus === "path") setDone(true);
   }
   function togglePatcher() {
@@ -35,9 +35,9 @@ export default function DemoSettings({ focus = "path" }: { focus?: "path" | "pat
   }
   const coach = (() => {
     if (focus === "path") {
-      if (done) return t("路徑會存入 config.ini。之後啟動遊戲就用這裏的位置。", "路径会存入 config.ini。之后启动游戏就用这里的位置。", "The path is saved to config.ini and used for every launch.");
+      if (done) return t("已選取遊戲程式，啟動時會優先使用這個路徑。", "已选择游戏程序，启动时会优先使用这个路径。", "MapleLink uses this path first when launching the game.");
       if (tab !== "settings") return t("按左邊的「設定」。", "点左边的「设置」。", "Click Settings on the left.");
-      return t("遊戲路徑顯示「—」代表未偵測到。按「瀏覽」，選 MapleStory.exe 所在的資料夾。", "游戏路径显示「—」代表未检测到。点「浏览」，选 MapleStory.exe 所在的文件夹。", "A dash means no path was detected. Click Browse and pick the folder that holds MapleStory.exe.");
+      return t("按「瀏覽」可手動選取 MapleStory.exe。", "点「浏览」可手动选择 MapleStory.exe。", "Click Browse to select MapleStory.exe.");
     }
     if (done)
       return killPatcher
@@ -58,10 +58,23 @@ export default function DemoSettings({ focus = "path" }: { focus?: "path" | "pat
                 <div className={styles.st__card}>
                   <div className={styles.st__row}>
                     <div className={styles.st__label}>{t("遊戲路徑", "游戏路径", "Game Path")}</div>
-                    <span className={clsx(styles.st__val, styles.st__mono)}>{gamePath ?? "—"}</span>
+                    <span className={clsx(styles.st__val, gamePath && styles.st__mono)}>
+                      {gamePath ?? t("自動偵測", "自动检测", "Auto-detect")}
+                    </span>
                     <button className={clsx(styles.st__btn, focus === "path" && !done && "ml-hint")} onClick={browse}>
                       {t("瀏覽", "浏览", "Browse")}
                     </button>
+                    {gamePath && (
+                      <button
+                        className={styles.st__btn}
+                        onClick={() => {
+                          setGamePath(null);
+                          if (focus === "path") setDone(false);
+                        }}
+                      >
+                        {t("重設", "重置", "Reset")}
+                      </button>
+                    )}
                   </div>
                   <div className={styles.st__row}>
                     <div className={styles.st__label}>{t("經典版 NGM 路徑", "经典版 NGM 路径", "Classic NGM path")}</div>
