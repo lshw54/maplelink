@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { commands } from "../../lib/tauri";
-import { writeConfig } from "../../lib/hooks/use-config";
 import { useTranslation } from "../../lib/i18n";
 import { useLogout } from "../../lib/hooks/use-auth";
 import { useAuthStore, selectActiveSession } from "../../lib/stores/auth-store";
@@ -128,7 +127,7 @@ export function MainPage() {
     return () => clearTimeout(id);
   }, [activeSessionId, accountCount]);
 
-  // Fetch remain points on mount + auto-detect game path if empty
+  // Fetch remain points and app version on mount or session change.
   useEffect(() => {
     commands
       .getRemainPoint(activeSessionId ?? "")
@@ -139,21 +138,6 @@ export function MainPage() {
       .then(setAppVersion)
       .catch(() => {});
   }, [activeSessionId]);
-
-  // Auto-detect game path on first mount only
-  useEffect(() => {
-    const currentConfig = useConfigStore.getState().config;
-    if (!currentConfig?.gamePath) {
-      commands
-        .detectGamePath()
-        .then((path) => {
-          if (path) {
-            writeConfig("gamePath", path).catch(() => {});
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
 
   // Session keep-alive: frontend backup ping every 60 seconds.
   // The main ping loop runs in the Rust backend (not affected by browser throttling).

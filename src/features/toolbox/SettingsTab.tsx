@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "../../lib/i18n";
 import { useConfigStore } from "../../lib/stores/config-store";
 import { useSetConfig } from "../../lib/hooks/use-config";
@@ -43,20 +43,6 @@ export function SettingsTab() {
   const setLanguage = useUiStore((s) => s.setLanguage);
   const setConfig = useSetConfig();
   const [lrFallbackError, setLrFallbackError] = useState("");
-
-  // Auto-detect game path from registry if not set
-  useEffect(() => {
-    if (!config?.gamePath) {
-      commands
-        .detectGamePath()
-        .then((path) => {
-          if (path) {
-            setConfig.mutate({ key: "gamePath", value: path });
-          }
-        })
-        .catch(() => {});
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleBrowseGamePath() {
     const path = await commands.openFileDialog();
@@ -128,9 +114,24 @@ export function SettingsTab() {
     <div className="flex flex-col gap-4">
       {/* Game */}
       <Section title={t("settings.section.game")}>
-        <Row label={t("settings.game_path")}>
-          <RowValue mono>{config?.gamePath || "—"}</RowValue>
-          <RowButton onClick={handleBrowseGamePath}>{t("settings.browse")}</RowButton>
+        <Row
+          label={t("settings.game_path")}
+          hint={config?.gamePath ? undefined : t("settings.game_path_auto_desc")}
+        >
+          <RowValue mono={!!config?.gamePath}>
+            {config?.gamePath || t("settings.game_path_auto")}
+          </RowValue>
+          <RowButton disabled={setConfig.isPending} onClick={handleBrowseGamePath}>
+            {t("settings.browse")}
+          </RowButton>
+          {config?.gamePath && (
+            <RowButton
+              disabled={setConfig.isPending}
+              onClick={() => setConfig.mutate({ key: "gamePath", value: "" })}
+            >
+              {t("settings.reset")}
+            </RowButton>
+          )}
         </Row>
         <Row
           label={t("settings.lr_fallback_dir")}
@@ -151,7 +152,7 @@ export function SettingsTab() {
           </RowButton>
           {config?.lrFallbackDir && (
             <RowButton disabled={setConfig.isPending} onClick={() => changeLrFallback(true)}>
-              {t("settings.lr_fallback_reset")}
+              {t("settings.reset")}
             </RowButton>
           )}
         </Row>

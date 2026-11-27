@@ -5,12 +5,14 @@
 use tauri::State;
 
 use crate::core::auth;
-use crate::core::error::{to_dto, FsError};
+use crate::core::error::to_dto;
 use crate::core::game_launcher;
 use crate::models::app_state::AppState;
 use crate::models::error::ErrorDto;
 use crate::models::game_account::GameCredentials;
-use crate::services::{beanfun_service, game_launch_service, lr_service, process_service};
+use crate::services::{
+    beanfun_service, game_env_service, game_launch_service, lr_service, process_service,
+};
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -43,28 +45,10 @@ pub async fn launch_game(
     let session_guard = ss.session.read().await;
     let session = auth::require_valid_session(&session_guard).map_err(to_dto)?;
 
-    // 3. Read config and validate game path exists on disk
-    let config = state.config.read().await.clone();
-
-    // Syntactic validation
-    game_launcher::validate_game_path(&config.game_path).map_err(to_dto)?;
-
-    // Actual file existence check on disk
-    tokio::fs::metadata(&config.game_path).await.map_err(|e| {
-        let fs_err = match e.kind() {
-            std::io::ErrorKind::NotFound => FsError::NotFound {
-                path: config.game_path.clone(),
-            },
-            std::io::ErrorKind::PermissionDenied => FsError::PermissionDenied {
-                path: config.game_path.clone(),
-            },
-            _ => FsError::Io {
-                path: config.game_path.clone(),
-                reason: e.to_string(),
-            },
-        };
-        to_dto(fs_err)
-    })?;
+    // 3. Resolve the game path before requesting credentials.
+    let mut config = state.config.read().await.clone();
+    config.game_path =
+        game_env_service::resolve_game_path(&config.game_path).map_err(ErrorDto::from)?;
 
     // 4. Get game credentials — skip HTTP if OTP was provided by the frontend.
     let credentials = if let Some(otp_value) = otp {
@@ -271,25 +255,9 @@ pub async fn launch_game_direct(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<u32, ErrorDto> {
-    let config = state.config.read().await.clone();
-
-    game_launcher::validate_game_path(&config.game_path).map_err(to_dto)?;
-
-    tokio::fs::metadata(&config.game_path).await.map_err(|e| {
-        let fs_err = match e.kind() {
-            std::io::ErrorKind::NotFound => FsError::NotFound {
-                path: config.game_path.clone(),
-            },
-            std::io::ErrorKind::PermissionDenied => FsError::PermissionDenied {
-                path: config.game_path.clone(),
-            },
-            _ => FsError::Io {
-                path: config.game_path.clone(),
-                reason: e.to_string(),
-            },
-        };
-        to_dto(fs_err)
-    })?;
+    let mut config = state.config.read().await.clone();
+    config.game_path =
+        game_env_service::resolve_game_path(&config.game_path).map_err(ErrorDto::from)?;
 
     let dummy_creds = GameCredentials {
         account_id: String::new(),

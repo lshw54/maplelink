@@ -8,16 +8,16 @@
 
 use crate::core::{config_parser, game_intercept::InterceptCreds};
 use crate::models::config::AppConfig;
-use crate::services::lr_service;
+use crate::services::{game_env_service, lr_service};
 
 /// Registry location beanfun reads to find the game launcher.
 #[cfg(target_os = "windows")]
-const GAMANIA_SUBKEY: &str = r"SOFTWARE\Gamania\MapleStory";
+pub(super) const GAMANIA_SUBKEY: &str = r"SOFTWARE\Gamania\MapleStory";
 #[cfg(target_os = "windows")]
-const PATH_VALUE: &str = "PATH";
+pub(super) const PATH_VALUE: &str = "PATH";
 /// Where we stash beanfun's original PATH so unregister can restore it.
 #[cfg(target_os = "windows")]
-const BACKUP_VALUE: &str = "PATH_MapleLinkBackup";
+pub(super) const BACKUP_VALUE: &str = "PATH_MapleLinkBackup";
 
 /// Filename written next to the game (read by external scripts) holding the
 /// intercepted account + OTP — only used when invoked directly (not via .bat).
@@ -31,7 +31,7 @@ const CREDS_FILENAME: &str = "maplelink_launch.ini";
 #[cfg(target_os = "windows")]
 const HELPER_BAT: &str = "maplelink_web_launch.bat";
 
-/// Absolute path of the helper `.bat` inside the game folder (needs game_path).
+/// Absolute path of the helper `.bat` inside the resolved game folder.
 #[cfg(target_os = "windows")]
 fn helper_bat_path() -> Option<std::path::PathBuf> {
     let game_path = load_game_path()?;
@@ -722,12 +722,17 @@ fn load_web_launch_prefs() -> (bool, bool) {
 
 fn load_web_config(app_data_dir: &std::path::Path) -> Result<AppConfig, String> {
     let path = app_data_dir.join("config.ini");
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("cannot read config {}: {error}", path.display()))?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(AppConfig::default());
+        }
+        Err(error) => return Err(format!("cannot read config {}: {error}", path.display())),
+    };
     config_parser::parse_ini(&text).map_err(|error| error.to_string())
 }
 
-/// Read `game_path` from the on-disk config without spinning up Tauri.
+/// Resolve the game path without spinning up Tauri.
 fn load_game_path() -> Option<String> {
     let Some(app_data_dir) = web_app_data_dir() else {
         tracing::warn!("web-launch: APPDATA is unset, cannot locate config");
@@ -740,15 +745,13 @@ fn load_game_path() -> Option<String> {
             return None;
         }
     };
-    let path = config.game_path.trim().to_string();
-    if path.is_empty() {
-        tracing::warn!("web-launch: game_path is empty in config — set the game path in MapleLink");
-        return None;
-    }
-    if !std::path::Path::new(&path).exists() {
-        tracing::warn!("web-launch: configured game_path does not exist on disk: {path}");
-        return None;
-    }
+    let path = match game_env_service::resolve_game_path(&config.game_path) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!("web-launch: {error}");
+            return None;
+        }
+    };
     tracing::info!("web-launch: resolved game_path = {path}");
     Some(path)
 }

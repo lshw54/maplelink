@@ -388,19 +388,22 @@ pub async fn client_pick_folder(
     })
 }
 
-/// The game folder the app already knows about, if the player has set one.
-/// `game_path` points at `MapleStory.exe`; the manager works on its folder.
+/// The configured game folder or the detected portable installation folder.
 #[tauri::command]
 pub async fn client_default_folder(
     state: tauri::State<'_, crate::models::app_state::AppState>,
 ) -> Result<Option<String>, ErrorDto> {
-    let game_path = state.config.read().await.game_path.clone();
-    if game_path.is_empty() {
-        return Ok(None);
-    }
-    Ok(std::path::Path::new(&game_path)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string()))
+    let configured_path = state.config.read().await.game_path.clone();
+    let path = if configured_path.trim().is_empty() {
+        crate::services::game_env_service::resolve_game_path(&configured_path).ok()
+    } else {
+        Some(configured_path)
+    };
+    Ok(path.as_deref().and_then(|path| {
+        std::path::Path::new(path)
+            .parent()
+            .map(|dir| dir.to_string_lossy().into_owned())
+    }))
 }
 
 /// What version the install in `dir` reports for itself, compared against the

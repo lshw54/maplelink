@@ -71,6 +71,8 @@ pub enum ProcessError {
     SpawnFailed { path: String, reason: String },
     #[error("VCRUNTIME140.dll is missing. Install Microsoft Visual C++ Redistributable (x64), then try again.")]
     MissingVcRuntime,
+    #[error("MapleStory.exe was not detected. Choose the game executable to continue.")]
+    GamePathNotFound,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
