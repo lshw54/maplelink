@@ -7,6 +7,7 @@
 //! "game".
 
 use crate::core::game_intercept::InterceptCreds;
+use crate::services::lr_service;
 
 /// Registry location beanfun reads to find the game launcher.
 #[cfg(target_os = "windows")]
@@ -257,7 +258,9 @@ pub fn is_registered() -> bool {
 /// to launch the game.
 #[cfg(target_os = "windows")]
 pub fn lr_ready() -> bool {
-    lr_proc_path().is_some()
+    lr_app_data_dir()
+        .and_then(|dir| lr_service::find_lr_proc(&dir))
+        .is_some()
 }
 
 /// Whether Gamania's official launcher (`GamaniaGameDownloader.exe`) is really
@@ -443,9 +446,9 @@ async fn test_launch_game(game_already_running: bool) -> &'static str {
         .unwrap_or_else(|| "MapleStory.exe".to_string());
 
     // No beanfun args — we only need to prove the process boots, not log in.
-    let pid = match spawn_game_capture(&game_path, &[]) {
-        Some(p) => p,
-        None => return "spawn_failed",
+    let pid = match tokio::task::spawn_blocking(move || spawn_game_capture(&game_path, &[])).await {
+        Ok(Some(p)) => p,
+        _ => return "spawn_failed",
     };
 
     // Poll a few seconds for the real game process to show up.
@@ -493,15 +496,9 @@ async fn test_launch_gamania() -> &'static str {
 #[cfg(target_os = "windows")]
 fn spawn_game_capture(game_path: &str, raw_args: &[String]) -> Option<u32> {
     let cwd = std::path::Path::new(game_path).parent();
-    if !crate::services::lr_service::is_system_locale_chinese_traditional() {
-        if let Some(lrproc) = lr_proc_path() {
-            let mut args = vec![
-                crate::services::lr_service::LR_PROFILE_GUID.to_string(),
-                game_path.to_string(),
-            ];
-            args.extend(raw_args.iter().cloned());
-            return spawn_capture(&lrproc, &args, cwd);
-        }
+    if !lr_service::is_system_locale_chinese_traditional() {
+        let lrproc = prepare_lr_for_web_launch()?;
+        return spawn_capture(&lrproc, &lr_game_args(game_path, raw_args), cwd);
     }
     spawn_capture(std::path::Path::new(game_path), raw_args, cwd)
 }
@@ -784,27 +781,18 @@ fn write_creds_file(creds: &InterceptCreds, game_path: Option<&str>) {
 /// isn't Traditional Chinese, route through Locale Remulator (LRProc.exe) — the
 /// same as the normal launch path — otherwise MapleStory TW won't start.
 fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
-    let zh_tw = crate::services::lr_service::is_system_locale_chinese_traditional();
+    let zh_tw = lr_service::is_system_locale_chinese_traditional();
     tracing::info!(
         system_zh_tw = zh_tw,
         exe = game_path,
         args = ?raw_args,
         "web-launch: launching game"
     );
-    let use_lr = !zh_tw;
-    if use_lr {
-        if let Some(lrproc) = lr_proc_path() {
-            // LRProc args: <profile-guid> <game exe> <beanfun args…>
-            let mut args = vec![
-                crate::services::lr_service::LR_PROFILE_GUID.to_string(),
-                game_path.to_string(),
-            ];
-            args.extend(raw_args.iter().cloned());
-            return spawn_game(&lrproc, &args, game_path, "LR");
-        }
-        tracing::warn!(
-            "web-launch: non-zh-TW locale but LRProc.exe not found — launching directly (may fail)"
-        );
+    if !zh_tw {
+        let Some(lrproc) = prepare_lr_for_web_launch() else {
+            return false;
+        };
+        return spawn_game(&lrproc, &lr_game_args(game_path, raw_args), game_path, "LR");
     }
     spawn_game(
         std::path::Path::new(game_path),
@@ -814,14 +802,30 @@ fn launch_game(game_path: &str, raw_args: &[String]) -> bool {
     )
 }
 
-/// Locate the extracted `LRProc.exe` without a Tauri handle (it lives under the
-/// app data dir once any normal launch has run).
-fn lr_proc_path() -> Option<std::path::PathBuf> {
-    let appdata = std::env::var("APPDATA").ok()?;
-    let app_data_dir = std::path::Path::new(&appdata).join("com.maplelink.app");
-    // Not always `<app_data>/lr` — a non-ASCII profile name pushes the files
-    // elsewhere. See `lr_service::lr_dir_candidates`.
-    crate::services::lr_service::find_lr_proc(&app_data_dir)
+fn lr_game_args(game_path: &str, raw_args: &[String]) -> Vec<String> {
+    let mut args = vec![lr_service::LR_PROFILE_GUID.to_owned(), game_path.to_owned()];
+    args.extend_from_slice(raw_args);
+    args
+}
+
+/// The web interceptor runs before Tauri starts, so it resolves app data
+/// without an AppHandle and prepares the same embedded LR bundle as the UI.
+fn lr_app_data_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("APPDATA").map(|root| std::path::PathBuf::from(root).join("com.maplelink.app"))
+}
+
+fn prepare_lr_for_web_launch() -> Option<std::path::PathBuf> {
+    let Some(app_data_dir) = lr_app_data_dir() else {
+        tracing::error!("web-launch: APPDATA is unset, cannot prepare Locale Remulator");
+        return None;
+    };
+    match lr_service::ensure_lr_files_in(&app_data_dir) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            tracing::error!("web-launch: {error}");
+            None
+        }
+    }
 }
 
 /// Spawn `program` with `args`, cwd = the game folder. Returns whether spawn
