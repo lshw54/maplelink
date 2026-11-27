@@ -90,11 +90,15 @@ Pick any of three:
 - **GamaPass**: complete the check in the GamaPass app as prompted. With a passkey you are asked again on every login (GamaPass requires it); if the passkey lives in Bitwarden, the toolbox's **GamaPass** tab can hand it to Bitwarden instead, see the [FAQ](/faq#passkey).
 - **Username and password**: requires a reCAPTCHA, which the app opens in a small window for you.
 
-## 5. Set the game path
+## 5. Set the game path {#game-path}
 
-Before the first launch, open Toolbox → Settings and point the app at the folder containing `MapleStory.exe`. It tries to detect the path first; choose by hand only if that fails. The toolbox is the 🛠 at the top right of the title bar.
+To set the path manually, open the toolbox at the top right of the title bar and go to Settings → Game. Click Browse next to Game Path and select `MapleStory.exe`.
 
 If the game isn't installed yet, or the client is damaged and needs repairing, see [Game Client](/client).
+
+**Auto-detection from v0.6.4**
+
+MapleLink uses the path you set manually first. Click Reset to return to auto-detection. It looks for `MapleStory.exe` next to the MapleLink executable, then checks the Windows registry. If neither provides a path, the launch prompt lets you choose the game executable.
 
 <DemoSettings focus="path" />
 

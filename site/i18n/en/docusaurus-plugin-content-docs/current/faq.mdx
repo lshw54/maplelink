@@ -133,19 +133,21 @@ Usually the game path is unset or wrong.
 <details>
 <summary>Fix</summary>
 
-Open Toolbox → Settings and check the folder containing `MapleStory.exe`. The app tries to detect it first; pick it by hand if that fails.
-
-<DemoSettings focus="path" />
+Open Toolbox → Settings and check Game Path. If needed, click Browse and select `MapleStory.exe`. See [Set the game path](./guide.mdx#game-path) for the full steps.
 
 </details>
-### The game shows garbled text or will not start
+### The game shows garbled text or will not start {#locale-launch}
 
-This happens when the system locale is not Traditional Chinese.
+MapleLink uses the Windows system locale to decide whether to launch the game through Locale Remulator.
 
 <details>
 <summary>Fix</summary>
 
-The app detects the system locale and, when it is not Traditional Chinese, launches the game through Locale Remulator by itself; there is no switch. If text is still garbled, confirm the game path first, then report it on [GitHub Issues](https://github.com/lshw54/maplelink/issues) with the log.
+If the error says `VCRUNTIME140.dll` is missing, install or repair the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vc14/vc_redist.x64.exe) and try launching the game again.
+
+From v0.6.4, if the user's AppData path cannot be used for Locale Remulator, MapleLink will choose a compatible path such as `%ProgramData%\MapleLink\lr`. To set your own ASCII path, go to Toolbox → Settings → Game → Locale Remulator backup folder. For example, if you choose `D:\`, MapleLink will put the files in `D:\MapleLink\lr` when it needs the backup folder.
+
+If the problem persists, include the error message and log when reporting it. [GitHub Issues](https://github.com/lshw54/maplelink/issues)
 
 </details>
 ## Accounts and data
